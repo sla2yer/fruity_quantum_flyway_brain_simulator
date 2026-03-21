@@ -1,0 +1,5 @@
+Implemented FW-002 in [registry.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L280). Explicit optional source overrides are now treated as strict config inputs: if `paths.<key>` is present and the target file is missing, `_resolve_optional_path` raises a `FileNotFoundError` that includes both the config key and the missing path instead of silently returning `None`. Auto-discovery behavior is unchanged when no override key is provided.
+
+Added regression coverage in [test_registry.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_registry.py#L23). One test proves a missing `paths.connections_csv` override fails even when `connections_filtered.csv` exists for auto-discovery, and one test proves auto-discovery still succeeds when no override is set.
+
+Verified with `.venv/bin/python -m unittest tests.test_registry.RegistryBuildTest.test_resolve_registry_source_paths_rejects_missing_optional_override tests.test_registry.RegistryBuildTest.test_resolve_registry_source_paths_autodiscovers_optional_sources_without_override -v` and `make test` (`16` tests passed).

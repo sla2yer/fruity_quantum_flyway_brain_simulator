@@ -16,7 +16,7 @@ sys.path.insert(0, str(SRC))
 from flywire_wave.config import load_config
 from flywire_wave.io_utils import read_root_ids, write_json
 from flywire_wave.mesh_pipeline import process_mesh_into_wave_assets
-from flywire_wave.registry import load_neuron_registry
+from flywire_wave.registry import load_neuron_registry, validate_selected_root_ids
 
 
 def _json_safe(value: object) -> object:
@@ -48,7 +48,10 @@ def main() -> int:
     if not root_ids:
         raise RuntimeError("No root IDs found. Run scripts/01_select_subset.py first.")
 
-    registry = load_neuron_registry(registry_path).set_index("root_id", drop=False)
+    registry_df = load_neuron_registry(registry_path)
+    validate_selected_root_ids(root_ids, registry_df, registry_path)
+
+    registry = registry_df.set_index("root_id", drop=False)
     manifest: dict[str, dict[str, str]] = {}
     for root_id in tqdm(root_ids, desc="Building wave assets"):
         raw_mesh_path = Path(paths["meshes_raw_dir"]) / f"{int(root_id)}.ply"

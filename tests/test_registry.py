@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
@@ -16,6 +18,7 @@ from flywire_wave.registry import (
     load_connectivity_registry,
     load_neuron_registry,
     resolve_registry_source_paths,
+    validate_selected_root_ids,
 )
 from flywire_wave.selection import extract_root_ids, select_visual_subset
 
@@ -252,6 +255,22 @@ class RegistryBuildTest(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+
+
+class RegistryMembershipValidationTest(unittest.TestCase):
+    def test_validate_selected_root_ids_accepts_registered_roots(self) -> None:
+        registry = pd.DataFrame({"root_id": [101, 102]})
+
+        validate_selected_root_ids([101, 102], registry, "registry.csv")
+
+    def test_validate_selected_root_ids_reports_missing_roots_with_sample(self) -> None:
+        registry = pd.DataFrame({"root_id": [101, 102]})
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            re.escape("2 selected root IDs were not found in the registry registry.csv. Sample missing IDs: [999, 1000]"),
+        ):
+            validate_selected_root_ids([101, 999, 1000], registry, "registry.csv")
 
 
 if __name__ == "__main__":

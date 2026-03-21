@@ -1,0 +1,65 @@
+[
+  {
+    "ticket_id": "FW-001",
+    "title": "Resolve config path handling so pipeline commands work outside the repo root",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/stdout.log",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/last_message.md"
+  },
+  {
+    "ticket_id": "FW-002",
+    "title": "Fail fast when optional registry source overrides point at missing files",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-002_Fail_fast_when_optional_registry_source_overrides_point_at_missing_files/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-002_Fail_fast_when_optional_registry_source_overrides_point_at_missing_files",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-002_Fail_fast_when_optional_registry_source_overrides_point_at_missing_files/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-002_Fail_fast_when_optional_registry_source_overrides_point_at_missing_files/stdout.log",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-002_Fail_fast_when_optional_registry_source_overrides_point_at_missing_files/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-002_Fail_fast_when_optional_registry_source_overrides_point_at_missing_files/last_message.md"
+  },
+  {
+    "ticket_id": "FW-003",
+    "title": "Enforce registry membership before building processed wave assets",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-003_Enforce_registry_membership_before_building_processed_wave_assets/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-003_Enforce_registry_membership_before_building_processed_wave_assets",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-003_Enforce_registry_membership_before_building_processed_wave_assets/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-003_Enforce_registry_membership_before_building_processed_wave_assets/stdout.log",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-003_Enforce_registry_membership_before_building_processed_wave_assets/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T161646Z/FW-003_Enforce_registry_membership_before_building_processed_wave_assets/last_message.md"
+  }
+]

@@ -90,7 +90,57 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 self.assertEqual(manifest["101"]["processed_mesh_path"], str(processed_mesh_path.resolve()))
                 self.assertEqual(manifest["101"]["project_role"], "surface_simulated")
 
-    def _run_script(self, script_name: str, config_path: Path, cwd: Path, env: dict[str, str]) -> None:
+    def test_build_wave_assets_rejects_selected_root_ids_missing_from_registry(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as fixture_dir_str:
+            fixture_dir = Path(fixture_dir_str)
+            fixture_rel = fixture_dir.relative_to(ROOT)
+            with tempfile.TemporaryDirectory() as outside_dir_str:
+                outside_dir = Path(outside_dir_str)
+                config_path = _write_pipeline_fixture(fixture_dir, fixture_rel)
+                stub_dir = _write_stub_dependencies(fixture_dir)
+                env = os.environ.copy()
+                env["FLYWIRE_TOKEN"] = ""
+                existing_pythonpath = env.get("PYTHONPATH", "")
+                env["PYTHONPATH"] = (
+                    str(stub_dir)
+                    if not existing_pythonpath
+                    else os.pathsep.join([str(stub_dir), existing_pythonpath])
+                )
+
+                self._run_script("build_registry.py", config_path, outside_dir, env)
+
+                root_ids_path = fixture_dir / "out" / "root_ids.txt"
+                root_ids_path.parent.mkdir(parents=True, exist_ok=True)
+                root_ids_path.write_text("101\n999\n", encoding="utf-8")
+
+                meshes_raw_dir = fixture_dir / "out" / "meshes_raw"
+                _write_stub_mesh(meshes_raw_dir / "101.ply")
+                _write_stub_mesh(meshes_raw_dir / "999.ply")
+
+                result = self._run_script(
+                    "03_build_wave_assets.py",
+                    config_path,
+                    outside_dir,
+                    env,
+                    expect_success=False,
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                combined_output = result.stdout + result.stderr
+                self.assertIn("1 selected root IDs were not found in the registry", combined_output)
+                self.assertIn("[999]", combined_output)
+                self.assertIn(str(fixture_dir / "out" / "registry" / "neuron_registry.csv"), combined_output)
+                self.assertFalse((fixture_dir / "out" / "asset_manifest.json").exists())
+
+    def _run_script(
+        self,
+        script_name: str,
+        config_path: Path,
+        cwd: Path,
+        env: dict[str, str],
+        *,
+        expect_success: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / script_name), "--config", str(config_path)],
             cwd=cwd,
@@ -99,12 +149,13 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
             text=True,
             check=False,
         )
-        if result.returncode != 0:
+        if expect_success and result.returncode != 0:
             self.fail(
                 f"{script_name} failed with code {result.returncode}\n"
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"
             )
+        return result
 
 
 def _write_pipeline_fixture(fixture_dir: Path, fixture_rel: Path) -> Path:
@@ -271,6 +322,35 @@ def _write_stub_dependencies(fixture_dir: Path) -> Path:
         encoding="utf-8",
     )
     return stub_dir
+
+
+def _write_stub_mesh(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        textwrap.dedent(
+            """
+            ply
+            format ascii 1.0
+            element vertex 4
+            property float x
+            property float y
+            property float z
+            element face 4
+            property list uchar int vertex_indices
+            end_header
+            0 0 0
+            1 0 0
+            0 1 0
+            0 0 1
+            3 0 1 2
+            3 0 1 3
+            3 0 2 3
+            3 1 2 3
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

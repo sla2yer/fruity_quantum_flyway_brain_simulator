@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import pandas as pd
 
@@ -191,6 +191,22 @@ def load_connectivity_registry(path: str | Path) -> pd.DataFrame:
     df["post_root_id"] = _normalize_int_series(df["post_root_id"], "post_root_id")
     df["syn_count"] = _normalize_int_series(df["syn_count"], "syn_count")
     return df
+
+
+def validate_selected_root_ids(
+    root_ids: Sequence[int],
+    registry: pd.DataFrame,
+    registry_path: str | Path,
+    *,
+    sample_size: int = 10,
+) -> None:
+    known_root_ids = {int(root_id) for root_id in registry["root_id"].tolist()}
+    missing_root_ids = sorted({int(root_id) for root_id in root_ids} - known_root_ids)
+    if missing_root_ids:
+        raise RuntimeError(
+            f"{len(missing_root_ids)} selected root IDs were not found in the registry {registry_path}. "
+            f"Sample missing IDs: {missing_root_ids[:sample_size]}"
+        )
 
 
 def build_registry(cfg: dict[str, Any]) -> dict[str, Any]:
