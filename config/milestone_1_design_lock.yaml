@@ -1,0 +1,193 @@
+metadata:
+  milestone_id: milestone_1
+  title: Freeze the scientific claim and the demo claim
+  status: design_locked
+  brief_version: 1.0.0
+  hypothesis_version: 1.0.0
+  last_updated: 2026-03-21
+  owners:
+    - Grant: scientific content lead
+    - Jack: repo artifact implementation
+  source_documents:
+    - path: ../response_milestone_1.md
+      role: scientific source of truth for Milestone 1
+    - path: ../fruit_fly_wave_simulation_milestones.md
+      role: ownership and deliverable requirements for Milestone 1
+
+scientific_lock:
+  locked_hypothesis: "Morphology-resolved surface dynamics constitute an additional intraneuronal computational degree of freedom, capable of shaping circuit input-output transformations through distributed spatiotemporal state on neuronal structure."
+  operational_claim: "In a connectome-constrained Drosophila visual motion circuit, adding a morphology-resolved surface state should produce small but reproducible, geometry-dependent departures in shared circuit observables relative to fair point/reduced-neuron baselines."
+  emphasis:
+    - detectability of a small effect
+    - distinctness of a small effect
+    - falsifiability of a small effect
+  core_observable: geometry-sensitive shared-output effect
+  primary_observable: geometry-sensitive null-direction suppression
+  companion_observables:
+    - response latency
+    - direction selectivity index
+  baseline_definitions:
+    P0: Canonical point baseline using passive leaky linear non-spiking single-compartment neurons matched to the same connectome slice and readout.
+    P1: Stronger reduced baseline using an effective-point or reduced-compartment model with explicit synaptic integration current or explicit delay structure.
+
+decision_rule:
+  require_all: true
+  items:
+    - id: m1_nonzero_shared_output_effect
+      statement: Nonzero shared-output effect on null-direction suppression, latency, or DSI.
+    - id: m1_geometry_dependence
+      statement: Geometry dependence through topology or morphology perturbation.
+    - id: m1_survives_stronger_baseline
+      statement: Survival against the stronger reduced baseline P1.
+    - id: m1_seed_parameter_stability
+      statement: Stability across seeds and modest parameter changes.
+
+success_criteria:
+  - id: m1_nonzero_shared_output_effect
+    name: Geometry-sensitive null-direction suppression effect
+    description: Detect a nonzero shared-output effect centered on null-direction suppression when morphology-bound surface dynamics are present.
+    metric:
+      name: geometry_sensitive_null_direction_suppression_effect
+      derived_from:
+        - null_direction_suppression_index
+        - geometry_sensitive_shared_output_effect
+      threshold: null
+      threshold_status: intentionally_unspecified
+    comparison: surface_wave/intact versus matched baseline/intact, with the intact-minus-baseline gap contrasted against the shuffled condition
+    expected_relationship: The surface-wave model produces a small but reproducible shared-output departure relative to the matched baseline.
+    required_conditions:
+      - same circuit
+      - same stimulus
+      - shared downstream readout
+      - intact topology present
+      - shuffled topology present
+    evidence_level: strong
+    notes: Optimize Milestone 1 around null-direction suppression rather than headline task accuracy.
+  - id: m1_latency_companion_effect
+    name: Latency companion effect
+    description: Track latency as the main mechanistic companion observable for the primary shared-output effect.
+    metric:
+      name: response_latency_to_peak_ms
+      derived_from:
+        - shared output traces
+      threshold: null
+      threshold_status: intentionally_unspecified
+    comparison: surface_wave/intact versus matched baseline/intact, then intact versus shuffled
+    expected_relationship: Latency shifts or latency gradients should align with the shared-output difference instead of contradicting it.
+    required_conditions:
+      - same circuit
+      - same stimulus
+      - paired shared-output traces
+      - intact topology present
+      - shuffled topology present
+    evidence_level: moderate
+    notes: Latency is a companion observable, not a substitute for the primary geometry-sensitive null-direction suppression effect.
+  - id: m1_geometry_dependence
+    name: Intact-versus-shuffled geometry dependence
+    description: Show that the shared-output effect materially shrinks or disappears when synapse landing geometry or topology is shuffled.
+    metric:
+      name: geometry_sensitive_shared_output_effect
+      derived_from:
+        - null_direction_suppression_index
+        - response_latency_to_peak_ms
+        - direction_selectivity_index
+      threshold: null
+      threshold_status: intentionally_unspecified
+    comparison: (surface_wave/intact - baseline/intact) versus (surface_wave/shuffled - baseline/shuffled)
+    expected_relationship: The intact condition retains a larger effect than the shuffled condition.
+    required_conditions:
+      - intact topology arm
+      - shuffled topology arm
+      - matched baseline arm
+      - matched surface-wave arm
+    evidence_level: strong
+    notes: This is the clearest falsifiability check for Milestone 1.
+  - id: m1_survives_stronger_baseline
+    name: Survival against stronger reduced baseline P1
+    description: Confirm that the shared-output effect is not explained away by a stronger reduced baseline with explicit integration current or delay structure.
+    metric:
+      name: geometry_sensitive_shared_output_effect
+      derived_from:
+        - null_direction_suppression_index
+        - response_latency_to_peak_ms
+      threshold: null
+      threshold_status: intentionally_unspecified
+    comparison: surface_wave/intact versus baseline P1/intact, with the same comparison available under shuffled topology
+    expected_relationship: The Milestone 1 effect remains detectable against P1, not only against P0.
+    required_conditions:
+      - baseline P1 arm
+      - matched surface-wave arm
+      - intact topology present
+    evidence_level: very_strong
+    notes: No numeric margin is locked yet; only the requirement that the effect survive the stronger reduced baseline.
+  - id: m1_seed_parameter_stability
+    name: Stability across seeds and modest parameter changes
+    description: Verify that the effect is not a one-seed or one-parameter accident.
+    metric:
+      name: geometry_sensitive_shared_output_effect_across_seeds
+      derived_from:
+        - geometry_sensitive_shared_output_effect
+      threshold: null
+      threshold_status: intentionally_unspecified
+    comparison: repeated runs across a small seed sweep and modest parameter perturbations
+    expected_relationship: Effect direction and qualitative interpretation remain stable across the planned seed sweep and modest parameter changes.
+    required_conditions:
+      - seed sweep
+      - modest parameter perturbation sweep
+      - same circuit
+      - same stimulus family
+    evidence_level: strong
+    notes: The source material specifies stability qualitatively and does not yet lock a numeric tolerance.
+
+demo_story:
+  duration_seconds: 60
+  beats:
+    - id: stimulus_setup
+      seconds: 0-10
+      description: Show a simple moving edge across a small retinotopic patch.
+    - id: matched_split_view
+      seconds: 10-25
+      description: Show point baseline and surface-wave model side by side on the same T4/T5-centered circuit.
+    - id: shared_output_overlay
+      seconds: 25-38
+      description: Overlay the shared output traces and call out a small difference in null-direction suppression or latency.
+    - id: geometry_ablation
+      seconds: 38-50
+      description: Toggle intact versus shuffled synapse landing geometry and show the wave-specific difference collapse or materially shrink.
+    - id: summary_freeze
+      seconds: 50-60
+      description: Freeze on a summary panel stating Small, causal, geometry-dependent computational effect.
+
+must_show_outputs:
+  - id: stimulus_overview
+    kind: ui_state
+    description: Simple moving-edge stimulus shown on the chosen retinotopic patch.
+    artifact_name: ui/stimulus_overview.json
+  - id: surface_vs_baseline_split_view
+    kind: ui_state
+    description: Side-by-side view of scalar baseline activity and distributed surface state for the same circuit and stimulus.
+    artifact_name: ui/surface_vs_baseline_split_view.json
+  - id: shared_output_trace_overlay
+    kind: plot
+    description: Overlay of shared output traces for the matched surface-wave and baseline conditions.
+    artifact_name: plots/shared_output_trace_overlay.png
+  - id: null_direction_suppression_comparison
+    kind: plot
+    description: Comparison plot for the primary observable centered on geometry-sensitive null-direction suppression.
+    artifact_name: plots/null_direction_suppression_comparison.png
+  - id: latency_shift_comparison
+    kind: plot
+    description: Latency companion plot aligned to the same comparison arms.
+    artifact_name: plots/latency_shift_comparison.png
+  - id: topology_ablation_comparison
+    kind: plot
+    description: Intact versus shuffled comparison showing whether the shared-output effect is geometry-dependent.
+    artifact_name: plots/topology_ablation_comparison.png
+  - id: baseline_challenge_comparison
+    kind: plot
+    description: P0 versus P1 baseline challenge plot for the same observable family.
+    artifact_name: plots/baseline_challenge_comparison.png
+  - id: milestone_decision_panel
+    kind: ui_state
+    description: Final panel summarizing the four-part Milestone 1 decision rule.
+    artifact_name: ui/milestone_decision_panel.json

@@ -3,6 +3,7 @@
 __all__ = [
     "config",
     "io_utils",
+    "manifests",
     "mesh_pipeline",
     "selection",
 ]

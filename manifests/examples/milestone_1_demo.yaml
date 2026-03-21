@@ -1,0 +1,122 @@
+experiment_id: milestone_1_demo_motion_patch
+milestone: milestone_1
+brief_version: 1.0.0
+hypothesis_version: 1.0.0
+subset_name: motion_minimal
+circuit_name: t4_t5_motion_patch
+model_scope: T4/T5 carry morphology-resolved surface dynamics; upstream and downstream partners remain matched reduced or point models.
+stimulus_family: moving_edge
+stimulus_name: simple_moving_edge
+primary_metric: geometry_sensitive_null_direction_suppression_effect
+companion_metrics:
+  - response_latency_to_peak_ms
+  - direction_selectivity_index
+  - geometry_sensitive_shared_output_effect
+success_criteria_ids:
+  - m1_nonzero_shared_output_effect
+  - m1_latency_companion_effect
+  - m1_geometry_dependence
+  - m1_survives_stronger_baseline
+  - m1_seed_parameter_stability
+must_show_outputs:
+  - stimulus_overview
+  - surface_vs_baseline_split_view
+  - shared_output_trace_overlay
+  - null_direction_suppression_comparison
+  - latency_shift_comparison
+  - topology_ablation_comparison
+  - baseline_challenge_comparison
+  - milestone_decision_panel
+random_seed: 11
+seed_sweep:
+  - 11
+  - 17
+  - 23
+notes: Milestone 1 demo manifest for the same circuit, same simple moving-edge stimulus, matched readout, intact-versus-shuffled topology ablation, and explicit P0/P1 baseline challenge. Numeric pass thresholds remain intentionally unspecified at design-lock time.
+tags:
+  - milestone_1
+  - design_lock
+  - motion_demo
+  - same_circuit_same_stimulus
+comparison_arms:
+  - arm_id: baseline_p0_intact
+    model_mode: baseline
+    baseline_family: P0
+    topology_condition: intact
+    morphology_condition: intact_synapse_landing_geometry
+    random_seed: 11
+    notes: Canonical point baseline on the matched circuit and shared readout.
+    tags:
+      - canonical_baseline
+      - intact
+  - arm_id: surface_wave_intact
+    model_mode: surface_wave
+    baseline_family: null
+    topology_condition: intact
+    morphology_condition: intact_synapse_landing_geometry
+    random_seed: 11
+    notes: Surface-wave condition with distributed morphology-bound state on T4/T5 only.
+    tags:
+      - surface_wave
+      - intact
+  - arm_id: baseline_p0_shuffled
+    model_mode: baseline
+    baseline_family: P0
+    topology_condition: shuffled
+    morphology_condition: shuffled_synapse_landing_geometry
+    random_seed: 11
+    notes: Canonical point baseline under the same shuffled topology perturbation used for the surface-wave ablation.
+    tags:
+      - canonical_baseline
+      - shuffled
+  - arm_id: surface_wave_shuffled
+    model_mode: surface_wave
+    baseline_family: null
+    topology_condition: shuffled
+    morphology_condition: shuffled_synapse_landing_geometry
+    random_seed: 11
+    notes: Surface-wave condition with synapse landing geometry shuffled to test geometry dependence.
+    tags:
+      - surface_wave
+      - shuffled
+  - arm_id: baseline_p1_intact
+    model_mode: baseline
+    baseline_family: P1
+    topology_condition: intact
+    morphology_condition: intact_synapse_landing_geometry
+    random_seed: 11
+    notes: Stronger reduced baseline with explicit integration current or delay structure under intact topology.
+    tags:
+      - stronger_baseline
+      - intact
+  - arm_id: baseline_p1_shuffled
+    model_mode: baseline
+    baseline_family: P1
+    topology_condition: shuffled
+    morphology_condition: shuffled_synapse_landing_geometry
+    random_seed: 11
+    notes: Stronger reduced baseline under shuffled topology for the same comparison family.
+    tags:
+      - stronger_baseline
+      - shuffled
+output_bundle:
+  metrics_json: outputs/milestone_1/milestone_1_demo_motion_patch/metrics/summary_metrics.json
+  summary_table_csv: outputs/milestone_1/milestone_1_demo_motion_patch/metrics/per_condition_summary.csv
+  plots:
+    - id: shared_output_trace_overlay
+      path: outputs/milestone_1/milestone_1_demo_motion_patch/plots/shared_output_trace_overlay.png
+    - id: null_direction_suppression_comparison
+      path: outputs/milestone_1/milestone_1_demo_motion_patch/plots/null_direction_suppression_comparison.png
+    - id: latency_shift_comparison
+      path: outputs/milestone_1/milestone_1_demo_motion_patch/plots/latency_shift_comparison.png
+    - id: topology_ablation_comparison
+      path: outputs/milestone_1/milestone_1_demo_motion_patch/plots/topology_ablation_comparison.png
+    - id: baseline_challenge_comparison
+      path: outputs/milestone_1/milestone_1_demo_motion_patch/plots/baseline_challenge_comparison.png
+  ui_states:
+    - id: stimulus_overview
+      path: outputs/milestone_1/milestone_1_demo_motion_patch/ui/stimulus_overview.json
+    - id: surface_vs_baseline_split_view
+      path: outputs/milestone_1/milestone_1_demo_motion_patch/ui/surface_vs_baseline_split_view.json
+    - id: milestone_decision_panel
+      path: outputs/milestone_1/milestone_1_demo_motion_patch/ui/milestone_decision_panel.json

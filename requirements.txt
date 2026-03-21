@@ -4,6 +4,7 @@ pandas>=2.2
 networkx>=3.2
 trimesh>=4.4
 PyYAML>=6.0
+jsonschema>=4.23
 python-dotenv>=1.0
 tqdm>=4.66
 # cloud-files/cloud-volume bring in chardet, but requests warns on chardet>=6.

@@ -60,22 +60,35 @@ flywire_wave_repo/
 ├── Makefile
 ├── .env.example
 ├── config/
+│   ├── milestone_1_design_lock.yaml
 │   └── visual_subset.example.yaml
 ├── docs/
+│   ├── milestones/
+│   │   ├── milestone_1_brief.md
+│   │   └── milestone_1_traceability.md
 │   └── pipeline_notes.md
+├── manifests/
+│   └── examples/
+│       └── milestone_1_demo.yaml
+├── schemas/
+│   └── milestone_1_experiment_manifest.schema.json
 ├── scripts/
 │   ├── 00_verify_access.py
 │   ├── 01_select_subset.py
 │   ├── 02_fetch_meshes.py
 │   ├── 03_build_wave_assets.py
+│   ├── 04_validate_manifest.py
 │   └── setup_flywire_token.py
 ├── src/
 │   └── flywire_wave/
 │       ├── __init__.py
 │       ├── config.py
 │       ├── io_utils.py
+│       ├── manifests.py
 │       ├── mesh_pipeline.py
 │       └── selection.py
+├── tests/
+│   └── test_manifest_validation.py
 └── data/
     ├── raw/
     │   └── codex/
@@ -239,6 +252,31 @@ That is enough to support:
 - synapse-to-patch mapping later,
 - selective promotion of only the currently active neurons.
 
+## Milestone 1 design-lock artifacts
+
+Milestone 1 is treated here as a design/specification milestone rather than a proof-of-effect milestone.
+
+- Brief: [`docs/milestones/milestone_1_brief.md`](docs/milestones/milestone_1_brief.md)
+- Machine-readable design lock and success criteria: [`config/milestone_1_design_lock.yaml`](config/milestone_1_design_lock.yaml)
+- Traceability map: [`docs/milestones/milestone_1_traceability.md`](docs/milestones/milestone_1_traceability.md)
+- Example demo manifest: [`manifests/examples/milestone_1_demo.yaml`](manifests/examples/milestone_1_demo.yaml)
+- Manifest schema: [`schemas/milestone_1_experiment_manifest.schema.json`](schemas/milestone_1_experiment_manifest.schema.json)
+
+Validate the example manifest with:
+
+```bash
+make validate-manifest
+```
+
+or:
+
+```bash
+python3 scripts/04_validate_manifest.py \
+  --manifest manifests/examples/milestone_1_demo.yaml \
+  --schema schemas/milestone_1_experiment_manifest.schema.json \
+  --design-lock config/milestone_1_design_lock.yaml
+```
+
 ## Suggested first run for your project
 
 Do **not** start by meshing hundreds or thousands of neurons.
@@ -262,6 +300,7 @@ make verify CONFIG=config/local.yaml
 make select CONFIG=config/local.yaml
 make meshes CONFIG=config/local.yaml
 make assets CONFIG=config/local.yaml
+make validate-manifest
 make all CONFIG=config/local.yaml
 ```
 
