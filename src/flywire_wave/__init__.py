@@ -10,4 +10,5 @@ __all__ = [
     "mesh_pipeline",
     "registry",
     "selection",
+    "surface_operators",
 ]

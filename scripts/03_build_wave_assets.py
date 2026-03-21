@@ -96,6 +96,8 @@ def main() -> int:
             simplify_target_faces=int(meshing.get("simplify_target_faces", 15000)),
             patch_hops=int(meshing.get("patch_hops", 6)),
             patch_vertex_cap=int(meshing.get("patch_vertex_cap", 2500)),
+            fine_geodesic_hops=int(meshing.get("fine_geodesic_hops", 2)),
+            fine_geodesic_vertex_cap=int(meshing.get("fine_geodesic_vertex_cap", 32)),
             registry_metadata=registry_metadata,
             qa_thresholds=meshing.get("qa_thresholds"),
         )
@@ -136,6 +138,7 @@ def main() -> int:
                 registry_metadata=registry_metadata,
                 bundle_metadata=outputs["bundle_metadata"],
                 raw_asset_provenance=existing_record.get("raw_asset_provenance"),
+                operator_bundle_metadata=outputs["operator_bundle_metadata"],
             ),
         )
 

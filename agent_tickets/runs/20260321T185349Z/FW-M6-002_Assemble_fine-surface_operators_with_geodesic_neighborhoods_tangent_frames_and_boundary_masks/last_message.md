@@ -1,0 +1,11 @@
+Implemented FW-M6-002.
+
+**Changed**
+- Added a real fine-surface operator builder in [surface_operators.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/surface_operators.py). It assembles cotangent FEM stiffness, a symmetric mass-normalized operator, lumped mass/vertex areas, edge lengths and cotangent weights, vertex normals, right-handed tangent frames, boundary masks, and capped edge-path geodesic neighborhoods, then serializes them into `<root_id>_fine_operator.npz`.
+- Wired the build path through [mesh_pipeline.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/mesh_pipeline.py), [geometry_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_contract.py), and [03_build_wave_assets.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/03_build_wave_assets.py) so the script remains orchestration-only and `operator_bundle.assets.fine_operator` now points at the dedicated artifact. The coarse operator remains the patch-graph alias for now.
+- Updated regression coverage in [test_mesh_pipeline_build.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_mesh_pipeline_build.py), [test_surface_operators.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_surface_operators.py), [test_config_paths.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_config_paths.py), and [test_geometry_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_geometry_contract.py). I also aligned [pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md) and [operator_bundle_design.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/operator_bundle_design.md).
+
+**Verified**
+- Ran `make test`.
+- Result: 34 tests passed, 0 failed.
+- The new fixture coverage checks deterministic fine-operator output, sparse shape/sparsity consistency, symmetry and PSD expectations, zero row-sum stiffness, tangent-frame integrity, geodesic-neighborhood structure, and open-mesh boundary-mask behavior.

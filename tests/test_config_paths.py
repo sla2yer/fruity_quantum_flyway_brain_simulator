@@ -78,9 +78,13 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 raw_mesh_path = fixture_dir / "out" / "meshes_raw" / "101.ply"
                 processed_mesh_path = fixture_dir / "out" / "processed_meshes" / "101.ply"
                 surface_graph_path = fixture_dir / "out" / "processed_graphs" / "101_graph.npz"
+                fine_operator_path = fixture_dir / "out" / "processed_graphs" / "101_fine_operator.npz"
                 patch_graph_path = fixture_dir / "out" / "processed_graphs" / "101_patch_graph.npz"
+                coarse_operator_path = fixture_dir / "out" / "processed_graphs" / "101_coarse_operator.npz"
                 descriptor_path = fixture_dir / "out" / "processed_graphs" / "101_descriptors.json"
                 qa_path = fixture_dir / "out" / "processed_graphs" / "101_qa.json"
+                transfer_operator_path = fixture_dir / "out" / "processed_graphs" / "101_transfer_operators.npz"
+                operator_metadata_path = fixture_dir / "out" / "processed_graphs" / "101_operator_metadata.json"
                 legacy_meta_path = fixture_dir / "out" / "processed_graphs" / "101_meta.json"
                 manifest_path = fixture_dir / "out" / "asset_manifest.json"
 
@@ -88,13 +92,18 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 self.assertTrue(raw_mesh_path.exists())
                 self.assertTrue(processed_mesh_path.exists())
                 self.assertTrue(surface_graph_path.exists())
+                self.assertTrue(fine_operator_path.exists())
                 self.assertTrue(patch_graph_path.exists())
+                self.assertTrue(coarse_operator_path.exists())
                 self.assertTrue(descriptor_path.exists())
                 self.assertTrue(qa_path.exists())
+                self.assertTrue(transfer_operator_path.exists())
+                self.assertTrue(operator_metadata_path.exists())
                 self.assertTrue(legacy_meta_path.exists())
 
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 self.assertEqual(manifest["_asset_contract_version"], "geometry_bundle.v1")
+                self.assertEqual(manifest["_operator_contract_version"], "operator_bundle.v1")
                 self.assertEqual(manifest["_dataset"]["flywire_dataset"], "public")
                 self.assertEqual(manifest["_dataset"]["materialization_version"], 783)
                 self.assertEqual(manifest["_meshing_config_snapshot"]["patch_hops"], 2)
@@ -102,6 +111,8 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 self.assertEqual(manifest["101"]["processed_mesh_path"], str(processed_mesh_path.resolve()))
                 self.assertEqual(manifest["101"]["surface_graph_path"], str(surface_graph_path.resolve()))
                 self.assertEqual(manifest["101"]["patch_graph_path"], str(patch_graph_path.resolve()))
+                self.assertEqual(manifest["101"]["transfer_operator_path"], str(transfer_operator_path.resolve()))
+                self.assertEqual(manifest["101"]["operator_metadata_path"], str(operator_metadata_path.resolve()))
                 self.assertEqual(manifest["101"]["descriptor_sidecar_path"], str(descriptor_path.resolve()))
                 self.assertEqual(manifest["101"]["qa_sidecar_path"], str(qa_path.resolve()))
                 self.assertEqual(manifest["101"]["meta_json_path"], str(legacy_meta_path.resolve()))
@@ -111,6 +122,7 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 self.assertEqual(manifest["101"]["assets"]["raw_mesh"]["status"], "ready")
                 self.assertEqual(manifest["101"]["assets"]["raw_skeleton"]["status"], "skipped")
                 self.assertEqual(manifest["101"]["assets"]["patch_graph"]["status"], "ready")
+                self.assertEqual(manifest["101"]["assets"]["transfer_operators"]["status"], "ready")
                 self.assertEqual(manifest["101"]["raw_asset_provenance"]["raw_mesh"]["fetch_status"], "fetched")
                 self.assertEqual(manifest["101"]["raw_asset_provenance"]["raw_skeleton"]["fetch_status"], "skipped")
                 self.assertEqual(
@@ -123,6 +135,29 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 )
                 self.assertEqual(manifest["101"]["build"]["materialization_version"], 783)
                 self.assertEqual(manifest["101"]["build"]["meshing_config_snapshot"]["simplify_target_faces"], 8)
+                self.assertEqual(manifest["101"]["operator_bundle"]["contract_version"], "operator_bundle.v1")
+                self.assertEqual(
+                    manifest["101"]["operator_bundle"]["assets"]["fine_operator"]["path"],
+                    str(fine_operator_path.resolve()),
+                )
+                self.assertEqual(
+                    manifest["101"]["operator_bundle"]["assets"]["coarse_operator"]["path"],
+                    str(coarse_operator_path.resolve()),
+                )
+                self.assertNotIn(
+                    "legacy_alias",
+                    manifest["101"]["operator_bundle"]["assets"]["coarse_operator"],
+                )
+                self.assertEqual(
+                    manifest["101"]["operator_bundle"]["transfer_operators"]["coarse_to_fine_prolongation"]["path"],
+                    str(transfer_operator_path.resolve()),
+                )
+                self.assertEqual(
+                    manifest["101"]["operator_bundle"]["transfer_operators"]["fine_to_coarse_restriction"][
+                        "normalization"
+                    ],
+                    "lumped_mass_patch_average",
+                )
 
     def test_build_wave_assets_rejects_selected_root_ids_missing_from_registry(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as fixture_dir_str:

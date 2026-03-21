@@ -43,14 +43,20 @@ Per neuron, the bundle layout is:
 - `config.paths.skeletons_raw_dir/<root_id>.swc`: raw skeleton
 - `config.paths.processed_mesh_dir/<root_id>.ply`: simplified mesh
 - `config.paths.processed_graph_dir/<root_id>_graph.npz`: surface graph
+- `config.paths.processed_graph_dir/<root_id>_fine_operator.npz`: fine surface operator
 - `config.paths.processed_graph_dir/<root_id>_patch_graph.npz`: patch graph
+- `config.paths.processed_graph_dir/<root_id>_coarse_operator.npz`: Galerkin coarse patch operator
 - `config.paths.processed_graph_dir/<root_id>_descriptors.json`: derived descriptor sidecar
 - `config.paths.processed_graph_dir/<root_id>_qa.json`: QA sidecar
 
 The processed graph archives intentionally separate fine and coarse data:
 
 - the surface graph stores the simplified mesh vertices/faces, sparse surface adjacency/Laplacian arrays, and `surface_to_patch` so every surface vertex has an explicit coarse patch assignment
+- the fine operator archive stores cotangent stiffness and mass-normalized operator matrices plus explicit supporting geometry including edge lengths/weights, lumped mass, normals, tangent frames, boundary masks, and capped edge-geodesic neighborhoods
 - the patch graph stores sparse coarse adjacency/Laplacian arrays plus `patch_sizes`, `patch_centroids`, `patch_seed_vertices`, and CSR-style `member_vertex_indices` / `member_vertex_indptr` arrays for reconstructing patch membership deterministically
+- the coarse operator archive stores patch mass / area, Galerkin-projected stiffness, the mass-normalized coarse operator, and the quality metrics used to compare coarse and fine application
+- `config.paths.processed_graph_dir/<root_id>_transfer_operators.npz` stores explicit fine/coarse transfer structure, physical-field restriction / prolongation matrices, normalized-state transfer operators, and transfer-quality metrics
+- `config.paths.processed_graph_dir/<root_id>_operator_metadata.json` records the realized discretization family, fallback mode, boundary mode, geodesic-neighborhood settings, transfer availability, coarse assembly rule, and coarse-versus-fine quality metrics for downstream discovery
 
 `config.paths.manifest_json` records the bundle contract version, dataset,
 materialization version, meshing-config snapshot, and per-root asset
@@ -72,3 +78,6 @@ Compatibility shim:
 - `config.paths.processed_graph_dir/<root_id>_meta.json` is still written as
   a legacy metadata pointer so older consumers can keep reading the prior
   sidecar name during migration.
+- `docs/operator_bundle_design.md` is the authoritative Milestone 6 operator
+  decision note; later tickets should cite it instead of re-litigating the
+  default discretization family.

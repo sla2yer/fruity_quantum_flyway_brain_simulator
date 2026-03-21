@@ -464,7 +464,7 @@ For each active neuron, generate:
 - geometry QA tools  
 - preview viewers or notebooks
 
-### Agent researches, decides (placing all rational in a markdown file), and implements:
+### Agent provides advice on in a mark down file:
 
 - advising on what simplification can preserve wave-relevant geometry  
 - identifying which geometric descriptors matter for propagation  
@@ -499,7 +499,7 @@ Turn neuron surfaces into simulation-ready numerical objects.
 - optional anisotropy tensors  
 - fine-to-coarse transfer operators
 
-### Jack owns
+### Agent implements:
 
 - sparse matrix construction code  
 - asset serialization  
@@ -507,7 +507,7 @@ Turn neuron surfaces into simulation-ready numerical objects.
 - operator test harnesses  
 - visualization of operator outputs on meshes
 
-### Grant owns
+### Agent researches and weighs options, chooses best, implements and documents all reasoning in a mark down file:
 
 - choosing the correct discretization family  
 - deciding whether to use graph-based or mesh-based operators  

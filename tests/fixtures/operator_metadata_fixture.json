@@ -1,0 +1,62 @@
+{
+  "contract_version": "operator_bundle.v1",
+  "status": "ready",
+  "realization_mode": "graph_laplacian_fallback",
+  "preferred_discretization_family": "triangle_mesh_cotangent_fem",
+  "discretization_family": "surface_graph_uniform_laplacian",
+  "mass_treatment": "uniform_vertex_measure",
+  "normalization": "symmetric_combinatorial",
+  "boundary_condition_mode": "closed_surface_zero_flux",
+  "fallback_policy": {
+    "allowed": true,
+    "reason": "cotangent_operators_not_serialized_in_milestone5_bundle",
+    "fallback_discretization_family": "surface_graph_uniform_laplacian"
+  },
+  "geodesic_neighborhood": {
+    "mode": "surface_graph_hops",
+    "patch_hops": 2,
+    "patch_vertex_cap": 32,
+    "patch_generation_method": "deterministic_bfs_partition"
+  },
+  "transfer_operators": {
+    "surface_to_patch_membership": {
+      "available": true,
+      "path": "/tmp/flywire_wave_fixture/101_transfer_operators.npz",
+      "representation": "csr_membership_and_surface_to_patch"
+    },
+    "fine_to_coarse_restriction": {
+      "available": true,
+      "path": "/tmp/flywire_wave_fixture/101_transfer_operators.npz",
+      "normalization": "uniform_patch_average",
+      "conserves_constant_field": true
+    },
+    "coarse_to_fine_prolongation": {
+      "available": true,
+      "path": "/tmp/flywire_wave_fixture/101_transfer_operators.npz",
+      "normalization": "constant_on_patch",
+      "partition_of_unity": true
+    },
+    "fine_operator_available": true,
+    "coarse_operator_available": true
+  },
+  "assets": {
+    "fine_operator": {
+      "path": "/tmp/flywire_wave_fixture/101_graph.npz",
+      "status": "ready",
+      "legacy_alias": "surface_graph"
+    },
+    "coarse_operator": {
+      "path": "/tmp/flywire_wave_fixture/101_patch_graph.npz",
+      "status": "ready",
+      "legacy_alias": "patch_graph"
+    },
+    "transfer_operators": {
+      "path": "/tmp/flywire_wave_fixture/101_transfer_operators.npz",
+      "status": "ready"
+    },
+    "operator_metadata": {
+      "path": "/tmp/flywire_wave_fixture/101_operator_metadata.json",
+      "status": "ready"
+    }
+  }
+}

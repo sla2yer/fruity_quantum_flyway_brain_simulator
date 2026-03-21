@@ -11,15 +11,21 @@ sys.path.insert(0, str(SRC))
 from flywire_wave.geometry_contract import (
     ASSET_STATUS_READY,
     ASSET_STATUS_SKIPPED,
+    COARSE_OPERATOR_KEY,
     DESCRIPTOR_SIDECAR_KEY,
     FETCH_STATUS_CACHE_HIT,
     GEOMETRY_ASSET_CONTRACT_VERSION,
+    OPERATOR_BUNDLE_CONTRACT_VERSION,
+    OPERATOR_BUNDLE_DESIGN_NOTE,
+    OPERATOR_METADATA_KEY,
     PATCH_GRAPH_KEY,
     QA_SIDECAR_KEY,
+    TRANSFER_OPERATORS_KEY,
     RAW_MESH_KEY,
     RAW_SKELETON_KEY,
     SIMPLIFIED_MESH_KEY,
     SURFACE_GRAPH_KEY,
+    FINE_OPERATOR_KEY,
     build_geometry_bundle_paths,
     build_geometry_manifest,
     build_geometry_manifest_record,
@@ -42,12 +48,28 @@ class GeometryContractTest(unittest.TestCase):
         self.assertEqual(bundle_paths.raw_skeleton_path, (ROOT / "data/interim/skeletons_raw/101.swc").resolve())
         self.assertEqual(bundle_paths.simplified_mesh_path, (ROOT / "data/processed/meshes/101.ply").resolve())
         self.assertEqual(bundle_paths.surface_graph_path, (ROOT / "data/processed/graphs/101_graph.npz").resolve())
+        self.assertEqual(
+            bundle_paths.fine_operator_path,
+            (ROOT / "data/processed/graphs/101_fine_operator.npz").resolve(),
+        )
         self.assertEqual(bundle_paths.patch_graph_path, (ROOT / "data/processed/graphs/101_patch_graph.npz").resolve())
         self.assertEqual(
             bundle_paths.descriptor_sidecar_path,
             (ROOT / "data/processed/graphs/101_descriptors.json").resolve(),
         )
         self.assertEqual(bundle_paths.qa_sidecar_path, (ROOT / "data/processed/graphs/101_qa.json").resolve())
+        self.assertEqual(
+            bundle_paths.transfer_operator_path,
+            (ROOT / "data/processed/graphs/101_transfer_operators.npz").resolve(),
+        )
+        self.assertEqual(
+            bundle_paths.operator_metadata_path,
+            (ROOT / "data/processed/graphs/101_operator_metadata.json").resolve(),
+        )
+        self.assertEqual(
+            bundle_paths.coarse_operator_path,
+            (ROOT / "data/processed/graphs/101_coarse_operator.npz").resolve(),
+        )
 
     def test_manifest_record_captures_contract_metadata_and_asset_statuses(self) -> None:
         bundle_paths = build_geometry_bundle_paths(
@@ -66,6 +88,8 @@ class GeometryContractTest(unittest.TestCase):
                 PATCH_GRAPH_KEY: ASSET_STATUS_READY,
                 DESCRIPTOR_SIDECAR_KEY: ASSET_STATUS_READY,
                 QA_SIDECAR_KEY: ASSET_STATUS_READY,
+                TRANSFER_OPERATORS_KEY: ASSET_STATUS_READY,
+                OPERATOR_METADATA_KEY: ASSET_STATUS_READY,
             }
         )
 
@@ -92,11 +116,14 @@ class GeometryContractTest(unittest.TestCase):
         )
 
         self.assertEqual(manifest["_asset_contract_version"], GEOMETRY_ASSET_CONTRACT_VERSION)
+        self.assertEqual(manifest["_operator_contract_version"], OPERATOR_BUNDLE_CONTRACT_VERSION)
+        self.assertEqual(manifest["_operator_contract"]["design_note"], OPERATOR_BUNDLE_DESIGN_NOTE)
         self.assertEqual(manifest["_dataset"]["materialization_version"], 783)
         self.assertEqual(manifest["101"]["bundle_version"], GEOMETRY_ASSET_CONTRACT_VERSION)
         self.assertEqual(manifest["101"]["build"]["meshing_config_snapshot"]["patch_hops"], 2)
         self.assertEqual(manifest["101"]["assets"][RAW_MESH_KEY]["status"], ASSET_STATUS_READY)
         self.assertEqual(manifest["101"]["assets"][RAW_SKELETON_KEY]["status"], ASSET_STATUS_SKIPPED)
+        self.assertEqual(manifest["101"]["assets"][TRANSFER_OPERATORS_KEY]["status"], ASSET_STATUS_READY)
         self.assertEqual(
             manifest["101"]["artifact_sources"]["surface_graph"]["raw_mesh_path"],
             str(bundle_paths.raw_mesh_path),
@@ -108,6 +135,30 @@ class GeometryContractTest(unittest.TestCase):
         self.assertEqual(manifest["101"]["raw_asset_provenance"][RAW_MESH_KEY]["fetch_status"], FETCH_STATUS_CACHE_HIT)
         self.assertEqual(manifest["101"]["processed_graph_path"], str(bundle_paths.surface_graph_path))
         self.assertEqual(manifest["101"]["patch_graph_path"], str(bundle_paths.patch_graph_path))
+        self.assertEqual(manifest["101"]["transfer_operator_path"], str(bundle_paths.transfer_operator_path))
+        self.assertEqual(manifest["101"]["operator_metadata_path"], str(bundle_paths.operator_metadata_path))
+        self.assertEqual(manifest["101"]["operator_bundle"]["contract_version"], OPERATOR_BUNDLE_CONTRACT_VERSION)
+        self.assertEqual(manifest["101"]["operator_bundle"]["discretization_family"], "surface_graph_uniform_laplacian")
+        self.assertEqual(manifest["101"]["operator_bundle"]["mass_treatment"], "uniform_vertex_measure")
+        self.assertEqual(
+            manifest["101"]["operator_bundle"]["boundary_condition_mode"],
+            "closed_surface_zero_flux",
+        )
+        self.assertEqual(
+            manifest["101"]["operator_bundle"]["geodesic_neighborhood"]["patch_hops"],
+            2,
+        )
+        self.assertTrue(
+            manifest["101"]["operator_bundle"]["transfer_operators"]["fine_to_coarse_restriction"]["available"]
+        )
+        self.assertEqual(
+            manifest["101"]["operator_bundle"]["assets"][FINE_OPERATOR_KEY]["legacy_alias"],
+            SURFACE_GRAPH_KEY,
+        )
+        self.assertEqual(
+            manifest["101"]["operator_bundle"]["assets"][COARSE_OPERATOR_KEY]["legacy_alias"],
+            PATCH_GRAPH_KEY,
+        )
 
     def test_merge_manifest_record_preserves_existing_provenance_when_build_step_updates_assets(self) -> None:
         bundle_paths = build_geometry_bundle_paths(
@@ -135,6 +186,8 @@ class GeometryContractTest(unittest.TestCase):
                 PATCH_GRAPH_KEY: ASSET_STATUS_READY,
                 DESCRIPTOR_SIDECAR_KEY: ASSET_STATUS_READY,
                 QA_SIDECAR_KEY: ASSET_STATUS_READY,
+                TRANSFER_OPERATORS_KEY: ASSET_STATUS_READY,
+                OPERATOR_METADATA_KEY: ASSET_STATUS_READY,
             }
         )
         build_record = build_geometry_manifest_record(
@@ -151,6 +204,7 @@ class GeometryContractTest(unittest.TestCase):
         self.assertEqual(merged["bundle_status"], ASSET_STATUS_READY)
         self.assertEqual(merged["bundle_metadata"]["n_faces"], 4)
         self.assertEqual(merged["raw_asset_provenance"][RAW_MESH_KEY]["fetch_status"], FETCH_STATUS_CACHE_HIT)
+        self.assertEqual(merged["operator_bundle"]["status"], ASSET_STATUS_READY)
 
 
 if __name__ == "__main__":

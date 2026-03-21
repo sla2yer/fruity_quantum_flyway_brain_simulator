@@ -14,18 +14,23 @@ from .geometry_contract import (
     ASSET_STATUS_MISSING,
     ASSET_STATUS_READY,
     ASSET_STATUS_SKIPPED,
+    COARSE_OPERATOR_KEY,
     FETCH_STATUS_CACHE_HIT,
     FETCH_STATUS_FAILED,
     FETCH_STATUS_FETCHED,
     FETCH_STATUS_SKIPPED,
     GeometryBundlePaths,
+    FINE_OPERATOR_KEY,
+    OPERATOR_METADATA_KEY,
     PATCH_GRAPH_KEY,
     QA_SIDECAR_KEY,
     RAW_MESH_KEY,
     RAW_SKELETON_KEY,
     SIMPLIFIED_MESH_KEY,
     SURFACE_GRAPH_KEY,
+    TRANSFER_OPERATORS_KEY,
     DESCRIPTOR_SIDECAR_KEY,
+    build_operator_bundle_metadata,
 )
 from .geometry_qa import (
     build_descriptor_payload,
@@ -35,6 +40,15 @@ from .geometry_qa import (
     evaluate_geometry_qa,
 )
 from .io_utils import ensure_dir, write_json
+from .surface_operators import (
+    DEFAULT_GEODESIC_NEIGHBORHOOD_HOPS,
+    DEFAULT_GEODESIC_NEIGHBORHOOD_VERTEX_CAP,
+    assemble_patch_multiresolution_operators,
+    assemble_fine_surface_operator,
+    deserialize_sparse_matrix,
+    faces_to_adjacency,
+    serialize_sparse_matrix,
+)
 
 
 class RawAssetFetchError(RuntimeError):
@@ -80,45 +94,10 @@ def _optional_imports() -> tuple[Any, Any]:
     return flywire, navis
 
 
-def _faces_to_adjacency(faces: np.ndarray, n_vertices: int) -> sp.csr_matrix:
-    edges = set()
-    for tri in faces:
-        a, b, c = (int(tri[0]), int(tri[1]), int(tri[2]))
-        edges.add(tuple(sorted((a, b))))
-        edges.add(tuple(sorted((b, c))))
-        edges.add(tuple(sorted((a, c))))
-
-    if not edges:
-        raise ValueError("No edges could be built from faces.")
-
-    rows = []
-    cols = []
-    for i, j in sorted(edges):
-        rows.extend([i, j])
-        cols.extend([j, i])
-
-    data = np.ones(len(rows), dtype=np.float32)
-    adj = sp.csr_matrix((data, (rows, cols)), shape=(n_vertices, n_vertices))
-    adj.eliminate_zeros()
-    adj.sort_indices()
-    return adj
-
-
 def _uniform_laplacian(adj: sp.csr_matrix) -> sp.csr_matrix:
     deg = np.asarray(adj.sum(axis=1)).ravel()
     d = sp.diags(deg)
     return d - adj
-
-
-def _serialize_sparse_matrix(matrix: sp.csr_matrix) -> dict[str, np.ndarray]:
-    matrix = matrix.tocsr().astype(np.float32)
-    matrix.sort_indices()
-    return {
-        "data": matrix.data.astype(np.float32, copy=False),
-        "indices": matrix.indices.astype(np.int32, copy=False),
-        "indptr": matrix.indptr.astype(np.int32, copy=False),
-        "shape": np.asarray(matrix.shape, dtype=np.int32),
-    }
 
 
 def _collect_patch_vertices(
@@ -560,6 +539,19 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _merge_operator_metadata(*metadata_items: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for metadata in metadata_items:
+        for key, value in metadata.items():
+            if key in {"counts", "matrix_properties", "supporting_geometry"} and isinstance(value, dict):
+                nested = dict(merged.get(key, {}))
+                nested.update(value)
+                merged[key] = nested
+                continue
+            merged[key] = value
+    return merged
+
+
 def process_mesh_into_wave_assets(
     *,
     root_id: int,
@@ -567,18 +559,22 @@ def process_mesh_into_wave_assets(
     simplify_target_faces: int = 15000,
     patch_hops: int = 6,
     patch_vertex_cap: int = 2500,
+    fine_geodesic_hops: int = DEFAULT_GEODESIC_NEIGHBORHOOD_HOPS,
+    fine_geodesic_vertex_cap: int = DEFAULT_GEODESIC_NEIGHBORHOOD_VERTEX_CAP,
     registry_metadata: dict[str, Any] | None = None,
     qa_thresholds: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ensure_dir(bundle_paths.simplified_mesh_path.parent)
     ensure_dir(bundle_paths.surface_graph_path.parent)
+    ensure_dir(bundle_paths.fine_operator_path.parent)
+    ensure_dir(bundle_paths.coarse_operator_path.parent)
 
     raw_mesh = trimesh.load_mesh(bundle_paths.raw_mesh_path, process=False)
     if not isinstance(raw_mesh, trimesh.Trimesh):
         raise TypeError(f"Expected a Trimesh at {bundle_paths.raw_mesh_path}, got {type(raw_mesh)!r}")
     raw_vertices = np.asarray(raw_mesh.vertices, dtype=np.float32)
     raw_faces = np.asarray(raw_mesh.faces, dtype=np.int32)
-    raw_adj = _faces_to_adjacency(raw_faces, raw_vertices.shape[0])
+    raw_adj = faces_to_adjacency(raw_faces, raw_vertices.shape[0])
     raw_mesh_summary = describe_mesh(raw_mesh, adj=raw_adj)
 
     mesh = raw_mesh.copy()
@@ -593,7 +589,7 @@ def process_mesh_into_wave_assets(
 
     vertices = np.asarray(mesh.vertices, dtype=np.float32)
     faces = np.asarray(mesh.faces, dtype=np.int32)
-    adj = _faces_to_adjacency(faces, vertices.shape[0])
+    adj = faces_to_adjacency(faces, vertices.shape[0])
     lap = _uniform_laplacian(adj)
     patch_decomposition = _partition_surface_into_patches(
         adj,
@@ -611,13 +607,13 @@ def process_mesh_into_wave_assets(
     surface_graph_payload.update(
         {
             f"adj_{key}": value
-            for key, value in _serialize_sparse_matrix(adj).items()
+            for key, value in serialize_sparse_matrix(adj).items()
         }
     )
     surface_graph_payload.update(
         {
             f"lap_{key}": value
-            for key, value in _serialize_sparse_matrix(lap).items()
+            for key, value in serialize_sparse_matrix(lap).items()
         }
     )
 
@@ -635,20 +631,47 @@ def process_mesh_into_wave_assets(
     patch_graph_payload.update(
         {
             f"adj_{key}": value
-            for key, value in _serialize_sparse_matrix(patch_decomposition.patch_adj).items()
+            for key, value in serialize_sparse_matrix(patch_decomposition.patch_adj).items()
         }
     )
     patch_graph_payload.update(
         {
             f"lap_{key}": value
-            for key, value in _serialize_sparse_matrix(patch_decomposition.patch_lap).items()
+            for key, value in serialize_sparse_matrix(patch_decomposition.patch_lap).items()
         }
+    )
+
+    fine_operator_bundle = assemble_fine_surface_operator(
+        root_id=root_id,
+        vertices=vertices,
+        faces=faces,
+        geodesic_hops=int(fine_geodesic_hops),
+        geodesic_vertex_cap=int(fine_geodesic_vertex_cap),
+    )
+    multiresolution_bundle = assemble_patch_multiresolution_operators(
+        root_id=root_id,
+        vertices=vertices,
+        surface_to_patch=patch_decomposition.surface_to_patch,
+        patch_sizes=patch_decomposition.patch_sizes,
+        patch_seed_vertices=patch_decomposition.patch_seed_vertices,
+        patch_centroids=patch_decomposition.patch_centroids,
+        member_vertex_indices=patch_decomposition.member_vertex_indices,
+        member_vertex_indptr=patch_decomposition.member_vertex_indptr,
+        fine_mass_diagonal=np.asarray(fine_operator_bundle.payload["mass_diagonal"], dtype=np.float64),
+        fine_stiffness=deserialize_sparse_matrix(fine_operator_bundle.payload, prefix="stiffness"),
+        fine_operator=deserialize_sparse_matrix(fine_operator_bundle.payload, prefix="operator"),
+    )
+    realized_operator_metadata = _merge_operator_metadata(
+        fine_operator_bundle.metadata,
+        multiresolution_bundle.metadata,
     )
 
     mesh.export(bundle_paths.simplified_mesh_path)
 
     np.savez_compressed(bundle_paths.surface_graph_path, **surface_graph_payload)
+    np.savez_compressed(bundle_paths.fine_operator_path, **fine_operator_bundle.payload)
     np.savez_compressed(bundle_paths.patch_graph_path, **patch_graph_payload)
+    np.savez_compressed(bundle_paths.coarse_operator_path, **multiresolution_bundle.coarse_payload)
 
     simplified_mesh_summary = describe_mesh(mesh, adj=adj)
     coarse_summary = describe_patch_decomposition(
@@ -712,37 +735,65 @@ def process_mesh_into_wave_assets(
         bundle_paths.legacy_meta_json_path,
     )
 
+    np.savez_compressed(bundle_paths.transfer_operator_path, **multiresolution_bundle.transfer_payload)
+
+    bundle_metadata = {
+        "n_vertices": int(descriptor_payload["n_vertices"]),
+        "n_faces": int(descriptor_payload["n_faces"]),
+        "surface_graph_edge_count": int(descriptor_payload["surface_graph_edge_count"]),
+        "patch_count": int(descriptor_payload["patch_count"]),
+        "patch_graph_vertex_count": int(descriptor_payload["patch_graph_vertex_count"]),
+        "patch_graph_edge_count": int(descriptor_payload["patch_graph_edge_count"]),
+        "surface_to_patch_count": int(descriptor_payload["surface_to_patch_count"]),
+        "patch_generation_method": "deterministic_bfs_partition",
+        "simplify_target_faces": int(simplify_target_faces),
+        "raw_mesh_face_count": original_face_count,
+        "fine_geodesic_hops": int(fine_geodesic_hops),
+        "fine_geodesic_vertex_cap": int(fine_geodesic_vertex_cap),
+        "coarse_mass_total": float(multiresolution_bundle.coarse_payload["coarse_mass_total"]),
+        "qa_overall_status": str(qa_payload["summary"]["overall_status"]),
+        "qa_warning_count": int(qa_payload["summary"]["warning_count"]),
+        "qa_failure_count": int(qa_payload["summary"]["failure_count"]),
+        "qa_blocking_failure_count": int(qa_payload["summary"]["blocking_failure_count"]),
+        "qa_downstream_usable": bool(qa_payload["summary"]["downstream_usable"]),
+    }
     asset_statuses = {
         RAW_MESH_KEY: ASSET_STATUS_READY if bundle_paths.raw_mesh_path.exists() else ASSET_STATUS_MISSING,
         SIMPLIFIED_MESH_KEY: ASSET_STATUS_READY,
         SURFACE_GRAPH_KEY: ASSET_STATUS_READY,
+        FINE_OPERATOR_KEY: ASSET_STATUS_READY,
         PATCH_GRAPH_KEY: ASSET_STATUS_READY,
+        COARSE_OPERATOR_KEY: ASSET_STATUS_READY,
         DESCRIPTOR_SIDECAR_KEY: ASSET_STATUS_READY,
         QA_SIDECAR_KEY: ASSET_STATUS_READY,
+        TRANSFER_OPERATORS_KEY: ASSET_STATUS_READY,
+        OPERATOR_METADATA_KEY: ASSET_STATUS_READY,
     }
     if bundle_paths.raw_skeleton_path.exists():
         asset_statuses[RAW_SKELETON_KEY] = ASSET_STATUS_READY
 
+    operator_bundle_metadata = build_operator_bundle_metadata(
+        bundle_paths=bundle_paths,
+        asset_statuses=asset_statuses,
+        meshing_config_snapshot={
+            "simplify_target_faces": int(simplify_target_faces),
+            "patch_hops": int(patch_hops),
+            "patch_vertex_cap": int(patch_vertex_cap),
+            "fine_geodesic_hops": int(fine_geodesic_hops),
+            "fine_geodesic_vertex_cap": int(fine_geodesic_vertex_cap),
+            "transfer_restriction_mode": "lumped_mass_patch_average",
+            "transfer_prolongation_mode": "constant_on_patch",
+        },
+        bundle_metadata=bundle_metadata,
+        realized_operator_metadata=realized_operator_metadata,
+    )
+    write_json(operator_bundle_metadata, bundle_paths.operator_metadata_path)
+
     return {
         "asset_statuses": asset_statuses,
         "descriptor_payload": descriptor_payload,
+        "operator_bundle_metadata": operator_bundle_metadata,
         "qa_payload": qa_payload,
         "qa_summary": dict(qa_payload["summary"]),
-        "bundle_metadata": {
-            "n_vertices": int(descriptor_payload["n_vertices"]),
-            "n_faces": int(descriptor_payload["n_faces"]),
-            "surface_graph_edge_count": int(descriptor_payload["surface_graph_edge_count"]),
-            "patch_count": int(descriptor_payload["patch_count"]),
-            "patch_graph_vertex_count": int(descriptor_payload["patch_graph_vertex_count"]),
-            "patch_graph_edge_count": int(descriptor_payload["patch_graph_edge_count"]),
-            "surface_to_patch_count": int(descriptor_payload["surface_to_patch_count"]),
-            "patch_generation_method": "deterministic_bfs_partition",
-            "simplify_target_faces": int(simplify_target_faces),
-            "raw_mesh_face_count": original_face_count,
-            "qa_overall_status": str(qa_payload["summary"]["overall_status"]),
-            "qa_warning_count": int(qa_payload["summary"]["warning_count"]),
-            "qa_failure_count": int(qa_payload["summary"]["failure_count"]),
-            "qa_blocking_failure_count": int(qa_payload["summary"]["blocking_failure_count"]),
-            "qa_downstream_usable": bool(qa_payload["summary"]["downstream_usable"]),
-        },
+        "bundle_metadata": bundle_metadata,
     }
