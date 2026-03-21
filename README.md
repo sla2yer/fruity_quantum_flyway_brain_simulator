@@ -123,6 +123,11 @@ Creating a new token may invalidate the previous one.
 python scripts/00_verify_access.py --config config/local.yaml
 ```
 
+If FlyWire's materialization service is temporarily down, the verifier will now
+report that as an upstream outage while still confirming whether your token works
+against the global info service. Add `--require-materialize` if you want that
+case to return a non-zero exit code.
+
 This keeps the auth split explicit: **FlyWire Codex** handles website browsing/downloads, while `FLYWIRE_TOKEN` handles local API access.
 
 ## Quick start
@@ -173,6 +178,8 @@ python scripts/00_verify_access.py --config config/local.yaml
 ### 6) Select a subset to mesh
 
 Default example: select a small visual subset from `classification.csv`.
+The current FlyWire export uses `visual_projection` rather than `visual`, and
+the sample config is set accordingly.
 
 ```bash
 python scripts/01_select_subset.py --config config/local.yaml

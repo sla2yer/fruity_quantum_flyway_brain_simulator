@@ -6,6 +6,8 @@ trimesh>=4.4
 PyYAML>=6.0
 python-dotenv>=1.0
 tqdm>=4.66
+# cloud-files/cloud-volume bring in chardet, but requests warns on chardet>=6.
+chardet<6
 caveclient>=5.20
 fafbseg>=3.2
 navis>=1.7

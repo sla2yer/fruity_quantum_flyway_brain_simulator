@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from flywire_wave.auth import ensure_flywire_secret
 from flywire_wave.config import load_config
 from flywire_wave.io_utils import read_root_ids
 from flywire_wave.mesh_pipeline import fetch_mesh_and_optional_skeleton
@@ -33,9 +34,9 @@ def main() -> int:
 
     if token:
         try:
-            from fafbseg import flywire
-
-            flywire.set_chunkedgraph_secret(token)
+            token_sync = ensure_flywire_secret(token)
+            if token_sync == "updated":
+                print("Synced FLYWIRE_TOKEN into local FlyWire secret storage for fafbseg.")
         except Exception as exc:
             raise RuntimeError("Could not set FlyWire token for fafbseg.") from exc
 

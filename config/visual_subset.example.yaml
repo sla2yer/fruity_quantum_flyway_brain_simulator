@@ -13,7 +13,7 @@ paths:
   manifest_json: data/processed/asset_manifest.json
 
 selection:
-  super_class: visual
+  super_class: visual_projection
   limit: 12
   sort_by: root_id
 

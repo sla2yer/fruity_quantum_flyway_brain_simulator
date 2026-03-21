@@ -40,7 +40,7 @@ def load_classification_table(path: str | Path) -> pd.DataFrame:
 def select_visual_subset(
     df: pd.DataFrame,
     *,
-    super_class: str = "visual",
+    super_class: str = "visual_projection",
     limit: int = 12,
     sort_by: str = "root_id",
 ) -> pd.DataFrame:
