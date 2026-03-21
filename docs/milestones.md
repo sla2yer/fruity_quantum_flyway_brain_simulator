@@ -421,11 +421,9 @@ Make subset design fast, reproducible, and explorable.
 - small preview visualizations  
 - exporting manifests and reports
 
-### Grant owns
-
-- defining scientifically meaningful presets  
+- defining scientifically meaningful presets  (cleary state all reasoning for presets in a markdown file)
 - checking that subset boundaries preserve the intended behavior  
-- suggesting ablation-oriented subsets
+- suggesting ablation-oriented subsets (cleary state all reasoning for presets in a markdown file)
 
 ### Done when
 
