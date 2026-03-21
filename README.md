@@ -7,6 +7,8 @@ This scaffold is for the **adult female Drosophila FlyWire brain** (`FAFB v783`)
 - fetch **meshes/skeletons per neuron**,
 - precompute **surface graphs / Laplacians / active patches** for the wave-capable part of the sim.
 
+If you're onboarding quickly or using a coding agent, start with [`AGENTS.md`](AGENTS.md).
+
 ## What this repo is for
 
 This is **not** a whole-brain bulk mirror. The full EM volume and segmentation are too large for conventional downloads. Instead, the intended workflow is:
@@ -57,16 +59,16 @@ Skeletons for proofread public neurons are also available through the FlyWire an
 ```text
 flywire_wave_repo/
 ├── README.md
+├── AGENTS.md
 ├── requirements.txt
+├── pyproject.toml
 ├── Makefile
 ├── .env.example
 ├── config/
 │   ├── milestone_1_design_lock.yaml
 │   └── visual_subset.example.yaml
 ├── docs/
-│   ├── milestones/
-│   │   ├── milestone_1_brief.md
-│   │   └── milestone_1_traceability.md
+│   ├── milestones.md
 │   └── pipeline_notes.md
 ├── manifests/
 │   └── examples/
@@ -93,6 +95,7 @@ flywire_wave_repo/
 ├── tests/
 │   ├── test_manifest_validation.py
 │   └── test_registry.py
+├── flywire_codex/
 └── data/
     ├── raw/
     │   └── codex/
@@ -152,9 +155,18 @@ This keeps the auth split explicit: **FlyWire Codex** handles website browsing/d
 ### 1) Create environment
 
 ```bash
+make bootstrap
+```
+
+`make bootstrap` creates `.venv/` if needed, upgrades `pip`, and installs the repo in editable mode via [`pyproject.toml`](pyproject.toml).
+
+Manual equivalent:
+
+```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -e .
 ```
 
 ### 2) Set up FlyWire authentication
@@ -282,9 +294,8 @@ That is enough to support:
 
 Milestone 1 is treated here as a design/specification milestone rather than a proof-of-effect milestone.
 
-- Brief: [`docs/milestones/milestone_1_brief.md`](docs/milestones/milestone_1_brief.md)
+- Roadmap and detailed milestone planning: [`docs/milestones.md`](docs/milestones.md)
 - Machine-readable design lock and success criteria: [`config/milestone_1_design_lock.yaml`](config/milestone_1_design_lock.yaml)
-- Traceability map: [`docs/milestones/milestone_1_traceability.md`](docs/milestones/milestone_1_traceability.md)
 - Example demo manifest: [`manifests/examples/milestone_1_demo.yaml`](manifests/examples/milestone_1_demo.yaml)
 - Manifest schema: [`schemas/milestone_1_experiment_manifest.schema.json`](schemas/milestone_1_experiment_manifest.schema.json)
 
@@ -321,8 +332,15 @@ Once that is stable, you can add:
 
 ## Make targets
 
+The `Makefile` defaults to `.venv/bin/python` when that virtualenv exists, which makes the local test and pipeline loop work without manually swapping interpreters.
+
 ```bash
+make help
+make bootstrap
+make test
+make smoke
 make verify CONFIG=config/local.yaml
+make registry CONFIG=config/local.yaml
 make select CONFIG=config/local.yaml
 make meshes CONFIG=config/local.yaml
 make assets CONFIG=config/local.yaml
