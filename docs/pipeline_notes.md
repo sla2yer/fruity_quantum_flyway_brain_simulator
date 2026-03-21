@@ -2,7 +2,7 @@
 
 ## Recommended workflow
 
-1. Use Codex bulk exports for stable metadata snapshots.
+1. Use FlyWire Codex bulk exports for stable metadata snapshots.
 2. Use CAVE / fafbseg for programmatic per-neuron access.
 3. Build local preprocessed assets so the simulator does not talk to FlyWire live during runtime.
 

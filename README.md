@@ -11,7 +11,7 @@ This scaffold is for the **adult female Drosophila FlyWire brain** (`FAFB v783`)
 
 This is **not** a whole-brain bulk mirror. The full EM volume and segmentation are too large for conventional downloads. Instead, the intended workflow is:
 
-1. download **bulk metadata tables** from Codex,
+1. download **bulk metadata tables** from FlyWire Codex,
 2. query the **public FlyWire datastack** through CAVE,
 3. fetch **only the neurons you want to simulate** as meshes/skeletons,
 4. simplify those meshes and build graph/Laplacian assets for your wave solver.
@@ -23,15 +23,15 @@ That gives you the best of both worlds:
 ## Source-of-truth download locations
 
 ### 1) Bulk tables / annotations
-Use the Codex download portal for the **FAFB** dataset:
+Use the FlyWire Codex download portal for the **FAFB** dataset:
 
 - `https://codex.flywire.ai/api/download?dataset=fafb`
 
 Recommended files to place in `data/raw/codex/`:
 - `classification.csv`
 - `consolidated_cell_types.csv`
-- the Codex synapse table for FAFB v783
-- the Codex neuron / neurotransmitter export for FAFB v783
+- the FlyWire Codex synapse table for FAFB v783
+- the FlyWire Codex neuron / neurotransmitter export for FAFB v783
 
 Notes:
 - file names have varied a bit across downstream analysis repos, so always trust the portal first;
@@ -44,7 +44,7 @@ Use the public CAVE datastack:
 - materialization target in this repo: `783`
 
 ### 3) Meshes and skeletons
-Meshes are **not** bulk-downloaded directly from Codex. Fetch them per neuron using:
+Meshes are **not** bulk-downloaded directly from FlyWire Codex. Fetch them per neuron using:
 - `fafbseg` / `cloudvolume` / `meshparty`
 - or the FlyConnectome notebooks as reference
 
@@ -67,7 +67,8 @@ flywire_wave_repo/
 │   ├── 00_verify_access.py
 │   ├── 01_select_subset.py
 │   ├── 02_fetch_meshes.py
-│   └── 03_build_wave_assets.py
+│   ├── 03_build_wave_assets.py
+│   └── setup_flywire_token.py
 ├── src/
 │   └── flywire_wave/
 │       ├── __init__.py
@@ -82,6 +83,48 @@ flywire_wave_repo/
     └── processed/
 ```
 
+## FlyWire Authentication
+
+This repo uses two separate auth contexts:
+
+- **FlyWire Codex** (`codex.flywire.ai`) for browser/UI access and bulk CSV/static downloads
+- **CAVE / FlyWire API** for local programmatic access through `caveclient`, `fafbseg`, and the repo scripts that read `FLYWIRE_TOKEN` from `.env`
+
+Being signed into **FlyWire Codex** in the browser does **not** automatically configure local Python access. The `FLYWIRE_TOKEN` value in `.env` should be your **FlyWire/CAVE API token**.
+
+Recommended setup flow:
+
+1. Copy the example env file:
+
+```bash
+cp .env.example .env
+```
+
+2. Launch the helper script:
+
+```bash
+python scripts/setup_flywire_token.py
+```
+
+This opens the existing-token page first. If you specifically need to mint a new token, run:
+
+```bash
+python scripts/setup_flywire_token.py --new-token
+```
+
+Creating a new token may invalidate the previous one.
+
+3. Copy the token from the browser page.
+4. Paste it into `.env` as `FLYWIRE_TOKEN=...`, or rerun the helper with `--write-env` to update `.env` interactively.
+5. Optional: after installing dependencies, save the same token to local CAVE secret storage with `caveclient` if you want machine-wide auth for `caveclient` / `fafbseg`.
+6. Rerun access verification:
+
+```bash
+python scripts/00_verify_access.py --config config/local.yaml
+```
+
+This keeps the auth split explicit: **FlyWire Codex** handles website browsing/downloads, while `FLYWIRE_TOKEN` handles local API access.
+
 ## Quick start
 
 ### 1) Create environment
@@ -92,23 +135,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2) Put your token in `.env`
+### 2) Set up FlyWire authentication
 
 ```bash
 cp .env.example .env
+python scripts/setup_flywire_token.py
 ```
 
-Then set:
+Then copy the token from the browser page into `.env` as `FLYWIRE_TOKEN=...`, or rerun the helper with `--write-env` to update `.env` interactively.
 
-```env
-FLYWIRE_TOKEN=your_token_here
-```
+### 3) Download the FlyWire Codex metadata exports
 
-You can generate/store the token using the FlyWire/CAVE docs, or let this repo save it for local use.
-
-### 3) Download the Codex metadata exports
-
-Place the files you downloaded from Codex into:
+Place the files you downloaded from FlyWire Codex into:
 
 ```text
 data/raw/codex/
@@ -223,7 +261,7 @@ make all CONFIG=config/local.yaml
 ## Caveats
 
 - The full EM/segmentation volumes are massive; this repo intentionally avoids trying to mirror them locally.
-- Codex portal exports can change names over time; check the portal if a filename differs.
+- FlyWire Codex portal exports can change names over time; check the portal if a filename differs.
 - Mesh fetching depends on a valid token and network access.
 - The provided Laplacian is a **starter graph Laplacian**, not a full finite-element surface operator.
 - This scaffold is for preprocessing / asset generation, not the final simulator.
