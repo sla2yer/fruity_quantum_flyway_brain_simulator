@@ -381,6 +381,7 @@ class MeshBuildPipelineTest(unittest.TestCase):
             self.assertIn("representations", descriptor_payload)
             self.assertEqual(descriptor_payload["representations"]["raw_mesh"]["face_count"], 8)
             self.assertEqual(descriptor_payload["representations"]["simplified_mesh"]["component_count"], 1)
+            self.assertEqual(descriptor_payload["mesh_cleanup"]["removed_face_count"], 0)
             self.assertGreater(descriptor_payload["representations"]["coarse_patches"]["max_patch_vertex_fraction"], 0.0)
             self.assertTrue(descriptor_payload["representations"]["skeleton"]["available"])
             self.assertEqual(descriptor_payload["representations"]["skeleton"]["segment_count"], 3)
@@ -456,6 +457,7 @@ class MeshBuildPipelineTest(unittest.TestCase):
             self.assertEqual(outputs_a["bundle_metadata"]["operator_assembly_version"], "operator_assembly.v1")
             self.assertEqual(outputs_a["bundle_metadata"]["boundary_condition_mode"], "closed_surface_zero_flux")
             self.assertEqual(outputs_a["bundle_metadata"]["anisotropy_model"], "isotropic")
+            self.assertEqual(outputs_a["bundle_metadata"]["mesh_cleanup"]["removed_face_count"], 0)
             self.assertAlmostEqual(
                 float(outputs_a["bundle_metadata"]["coarse_mass_total"]),
                 float(coarse_operator_a["coarse_mass_total"]),
@@ -542,6 +544,36 @@ class MeshBuildPipelineTest(unittest.TestCase):
             self.assertFalse(fail_payload["summary"]["downstream_usable"])
             self.assertEqual(fail_outputs["bundle_metadata"]["qa_blocking_failure_count"], 1)
 
+    def test_process_mesh_removes_degenerate_faces_before_operator_assembly(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            bundle_paths = _bundle_paths(tmp_dir / "degenerate")
+
+            _write_octahedron_mesh_with_degenerate_face(bundle_paths.raw_mesh_path)
+            _write_stub_swc(bundle_paths.raw_skeleton_path)
+
+            outputs = process_mesh_into_wave_assets(
+                root_id=101,
+                bundle_paths=bundle_paths,
+                simplify_target_faces=9,
+                patch_hops=1,
+                patch_vertex_cap=2,
+                registry_metadata={"cell_type": "T5a", "project_role": "surface_simulated"},
+            )
+
+            descriptor_payload = json.loads(bundle_paths.descriptor_sidecar_path.read_text(encoding="utf-8"))
+            fine_operator_payload = _read_npz(bundle_paths.fine_operator_path)
+
+            self.assertEqual(descriptor_payload["representations"]["raw_mesh"]["face_count"], 9)
+            self.assertEqual(descriptor_payload["representations"]["simplified_mesh"]["face_count"], 8)
+            self.assertEqual(descriptor_payload["mesh_cleanup"]["removed_face_count"], 1)
+            self.assertEqual(descriptor_payload["mesh_cleanup"]["removed_repeated_vertex_face_count"], 1)
+            self.assertEqual(descriptor_payload["mesh_cleanup"]["removed_zero_area_face_count"], 0)
+            self.assertEqual(outputs["bundle_metadata"]["mesh_cleanup"]["removed_face_count"], 1)
+            self.assertEqual(fine_operator_payload["faces"].shape[0], 8)
+            self.assertIn(outputs["qa_summary"]["overall_status"], {"pass", "warn"})
+            self.assertTrue(outputs["qa_summary"]["downstream_usable"])
+
 
 def _bundle_paths(tmp_dir: Path):
     return build_geometry_bundle_paths(
@@ -598,6 +630,42 @@ def _write_octahedron_mesh(path: Path) -> None:
             3 5 3 2
             3 5 4 3
             3 5 1 4
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_octahedron_mesh_with_degenerate_face(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        textwrap.dedent(
+            """
+            ply
+            format ascii 1.0
+            element vertex 6
+            property float x
+            property float y
+            property float z
+            element face 9
+            property list uchar int vertex_indices
+            end_header
+            1 0 0
+            -1 0 0
+            0 1 0
+            0 -1 0
+            0 0 1
+            0 0 -1
+            3 0 2 4
+            3 2 1 4
+            3 1 3 4
+            3 3 0 4
+            3 2 0 5
+            3 1 2 5
+            3 3 1 5
+            3 0 3 5
+            3 0 1 1
             """
         ).strip()
         + "\n",

@@ -52,6 +52,9 @@ from .surface_operators import (
 )
 
 
+_MESH_FACE_AREA_EPSILON = 1.0e-12
+
+
 class RawAssetFetchError(RuntimeError):
     def __init__(
         self,
@@ -99,6 +102,77 @@ def _uniform_laplacian(adj: sp.csr_matrix) -> sp.csr_matrix:
     deg = np.asarray(adj.sum(axis=1)).ravel()
     d = sp.diags(deg)
     return d - adj
+
+
+def _sanitize_mesh_for_operator_pipeline(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict[str, int]]:
+    sanitized = mesh.copy()
+    faces = np.asarray(sanitized.faces, dtype=np.int64)
+    original_face_count = int(faces.shape[0])
+    original_vertex_count = int(np.asarray(sanitized.vertices).shape[0])
+    cleanup = {
+        "original_face_count": original_face_count,
+        "sanitized_face_count": original_face_count,
+        "removed_face_count": 0,
+        "removed_invalid_index_face_count": 0,
+        "removed_repeated_vertex_face_count": 0,
+        "removed_zero_area_face_count": 0,
+        "removed_duplicate_face_count": 0,
+        "original_vertex_count": original_vertex_count,
+        "sanitized_vertex_count": original_vertex_count,
+    }
+    if faces.ndim != 2 or faces.shape[0] == 0 or faces.shape[1] != 3:
+        return sanitized, cleanup
+
+    vertex_count = original_vertex_count
+    valid_index_mask = np.all((faces >= 0) & (faces < vertex_count), axis=1)
+    repeated_vertex_mask = valid_index_mask & (
+        (faces[:, 0] == faces[:, 1]) | (faces[:, 1] == faces[:, 2]) | (faces[:, 0] == faces[:, 2])
+    )
+    area_candidate_mask = valid_index_mask & ~repeated_vertex_mask
+    positive_area_mask = np.zeros(faces.shape[0], dtype=bool)
+    if np.any(area_candidate_mask):
+        area_faces = faces[area_candidate_mask]
+        vertices = np.asarray(sanitized.vertices, dtype=np.float64)
+        areas = np.linalg.norm(
+            np.cross(
+                vertices[area_faces[:, 1]] - vertices[area_faces[:, 0]],
+                vertices[area_faces[:, 2]] - vertices[area_faces[:, 0]],
+            ),
+            axis=1,
+        ) / 2.0
+        positive_area_mask[area_candidate_mask] = areas > _MESH_FACE_AREA_EPSILON
+    zero_area_mask = area_candidate_mask & ~positive_area_mask
+
+    duplicate_face_mask = np.zeros(faces.shape[0], dtype=bool)
+    unique_candidate_mask = valid_index_mask & ~repeated_vertex_mask & positive_area_mask
+    if np.any(unique_candidate_mask):
+        canonical_faces = np.sort(faces[unique_candidate_mask], axis=1)
+        _, unique_indices = np.unique(canonical_faces, axis=0, return_index=True)
+        keep_unique_mask = np.zeros(canonical_faces.shape[0], dtype=bool)
+        keep_unique_mask[np.sort(unique_indices)] = True
+        duplicate_face_mask[np.flatnonzero(unique_candidate_mask)] = ~keep_unique_mask
+
+    keep_face_mask = valid_index_mask & ~repeated_vertex_mask & positive_area_mask & ~duplicate_face_mask
+    if not np.any(keep_face_mask):
+        raise ValueError("Mesh sanitization removed all faces; cannot build wave assets.")
+
+    cleanup.update(
+        {
+            "sanitized_face_count": int(np.count_nonzero(keep_face_mask)),
+            "removed_face_count": int(np.count_nonzero(~keep_face_mask)),
+            "removed_invalid_index_face_count": int(np.count_nonzero(~valid_index_mask)),
+            "removed_repeated_vertex_face_count": int(np.count_nonzero(repeated_vertex_mask)),
+            "removed_zero_area_face_count": int(np.count_nonzero(zero_area_mask)),
+            "removed_duplicate_face_count": int(np.count_nonzero(duplicate_face_mask)),
+        }
+    )
+
+    if not np.all(keep_face_mask):
+        sanitized.update_faces(keep_face_mask)
+        sanitized.remove_unreferenced_vertices()
+        cleanup["sanitized_vertex_count"] = int(np.asarray(sanitized.vertices).shape[0])
+
+    return sanitized, cleanup
 
 
 def _collect_patch_vertices(
@@ -591,6 +665,8 @@ def process_mesh_into_wave_assets(
             # Fallback: keep original mesh if local environment lacks simplification backend.
             pass
 
+    mesh, mesh_cleanup = _sanitize_mesh_for_operator_pipeline(mesh)
+
     vertices = np.asarray(mesh.vertices, dtype=np.float32)
     faces = np.asarray(mesh.faces, dtype=np.int32)
     adj = faces_to_adjacency(faces, vertices.shape[0])
@@ -705,6 +781,7 @@ def process_mesh_into_wave_assets(
         surface_graph_path=bundle_paths.surface_graph_path,
         patch_graph_path=bundle_paths.patch_graph_path,
         registry_metadata=registry_metadata,
+        mesh_cleanup=mesh_cleanup,
     )
     write_json(descriptor_payload, bundle_paths.descriptor_sidecar_path)
 
@@ -759,6 +836,7 @@ def process_mesh_into_wave_assets(
         "boundary_condition_mode": str(normalized_operator_assembly["boundary_condition"]["mode"]),
         "anisotropy_model": str(normalized_operator_assembly["anisotropy"]["model"]),
         "coarse_mass_total": float(multiresolution_bundle.coarse_payload["coarse_mass_total"]),
+        "mesh_cleanup": mesh_cleanup,
         "qa_overall_status": str(qa_payload["summary"]["overall_status"]),
         "qa_warning_count": int(qa_payload["summary"]["warning_count"]),
         "qa_failure_count": int(qa_payload["summary"]["failure_count"]),

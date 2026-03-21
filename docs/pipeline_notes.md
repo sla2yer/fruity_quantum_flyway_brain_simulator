@@ -97,5 +97,13 @@ operator bundles:
   reconstruction error
 - the report summary includes pass / warn / fail checks plus a Milestone 10
   gate of `go`, `review`, or `hold`
+- `scripts/07_milestone6_readiness.py` layers a fixture-suite check plus a
+  manifest/operator-contract audit on top of the operator QA bundle and writes
+  `milestone_6_readiness.md` plus `milestone_6_readiness.json` into the same
+  deterministic report directory
+- `make milestone6-readiness` is the one-command entrypoint for the shipped
+  offline verification pass; it uses `config/milestone_6_verification.yaml`
+  so the local build can run entirely from the cached bundle without touching
+  user-specific `config/local.yaml`
 
 See `docs/operator_qa.md` for the full reviewer checklist and gate semantics.

@@ -4,8 +4,9 @@ CONFIG ?= config/local.yaml
 MANIFEST ?= manifests/examples/milestone_1_demo.yaml
 SCHEMA ?= schemas/milestone_1_experiment_manifest.schema.json
 DESIGN_LOCK ?= config/milestone_1_design_lock.yaml
+M6_CONFIG ?= config/milestone_6_verification.yaml
 
-.PHONY: help bootstrap verify registry select meshes assets preview operator-qa validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview operator-qa milestone6-readiness validate-manifest test smoke all
 
 help:
 	@printf '%s\n' \
@@ -19,6 +20,7 @@ help:
 		'assets             Build processed mesh/graph assets' \
 		'preview            Build static offline geometry preview report(s)' \
 		'operator-qa        Build static offline operator QA report(s)' \
+		'milestone6-readiness Run the Milestone 6 verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -47,6 +49,9 @@ preview:
 
 operator-qa:
 	$(PYTHON) scripts/06_operator_qa.py --config $(CONFIG)
+
+milestone6-readiness:
+	$(PYTHON) scripts/07_milestone6_readiness.py --config $(M6_CONFIG)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

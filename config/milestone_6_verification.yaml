@@ -1,0 +1,30 @@
+dataset:
+  datastack_name: flywire_fafb_public
+  materialization_version: 783
+  flywire_dataset: public
+
+paths:
+  neuron_registry_csv: data/interim/registry/neuron_registry.csv
+  connectivity_registry_csv: data/interim/registry/connectivity_registry.csv
+  selected_root_ids: config/milestone_6_verification_root_ids.txt
+  meshes_raw_dir: data/interim/meshes_raw
+  skeletons_raw_dir: data/interim/skeletons_raw
+  processed_mesh_dir: data/processed/milestone_6_verification/meshes
+  processed_graph_dir: data/processed/milestone_6_verification/graphs
+  operator_qa_dir: data/processed/milestone_6_verification/operator_qa
+  manifest_json: data/processed/milestone_6_verification/asset_manifest.json
+
+meshing:
+  fetch_skeletons: true
+  refetch_meshes: false
+  refetch_skeletons: false
+  require_skeletons: false
+  simplify_target_faces: 15000
+  patch_hops: 6
+  patch_vertex_cap: 2500
+  operator_assembly:
+    version: operator_assembly.v1
+    boundary_condition:
+      mode: closed_surface_zero_flux
+    anisotropy:
+      model: isotropic

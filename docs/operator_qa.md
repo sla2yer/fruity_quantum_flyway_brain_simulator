@@ -44,6 +44,17 @@ Equivalent Make target:
 make operator-qa CONFIG=config/local.yaml
 ```
 
+Run the full Milestone 6 readiness pass against the tracked offline verification
+bundle:
+
+```bash
+make milestone6-readiness
+```
+
+That target uses `config/milestone_6_verification.yaml`, which points at the
+cached local mesh bundle under `data/interim/meshes_raw/` and writes isolated
+outputs under `data/processed/milestone_6_verification/`.
+
 Optional smoke depth override:
 
 ```bash
@@ -72,6 +83,14 @@ data/processed/operator_qa/root-ids-101/101_fine_pulse_final.svg
 data/processed/operator_qa/root-ids-101/101_coarse_pulse_final.svg
 data/processed/operator_qa/root-ids-101/101_coarse_reconstruction.svg
 data/processed/operator_qa/root-ids-101/101_reconstruction_error.svg
+```
+
+The Milestone 6 readiness pass writes two more deterministic artifacts into the
+same directory:
+
+```text
+.../milestone_6_readiness.md
+.../milestone_6_readiness.json
 ```
 
 That path stability is deliberate so the report can be referenced from run logs,

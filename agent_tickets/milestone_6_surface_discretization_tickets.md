@@ -163,3 +163,39 @@ Perform a senior-level verification pass over the completed Milestone 6 implemen
 
 ### Notes
 This ticket should run after the earlier Milestone 6 tickets are complete. The main deliverable is confidence: one place where a reviewer can see that the milestone is integrated, documented, and ready for downstream simulator work.
+
+## FW-M6-007 - Refresh the tracked local Milestone 6 verification bundle so it includes at least one surface-simulated root
+
+- Status: open
+- Priority: medium
+- Source: Milestone 6 readiness pass 2026-03-21
+- Area: local sample data / release engineering
+
+Problem:
+The offline verification flow now has a stable tracked config and deterministic
+report path, but the cached local mesh bundle currently covers only
+`project_role=context_only` roots. That is sufficient to validate the operator
+pipeline on real morphology, yet it does not exercise the exact
+`surface_simulated` role that Milestone 10 engine work will use first.
+
+Requested Change:
+Refresh the tracked local verification cache so the repo ships at least one
+realistic `surface_simulated` root with matching raw mesh, optional skeleton,
+and registry membership. Keep the verification config deterministic and make
+sure the refreshed bundle still works without FlyWire access once cached.
+
+Acceptance Criteria:
+- `config/milestone_6_verification.yaml` points at a cached local bundle that
+  includes at least one `project_role=surface_simulated` root.
+- `make milestone6-readiness` still runs offline end-to-end and the readiness
+  report records the refreshed bundle composition.
+- The new cached sample either reuses the current output locations or documents
+  any migration clearly.
+
+Verification:
+- `make milestone6-readiness`
+
+Notes:
+Reproduction for the current gap: run `make milestone6-readiness` and inspect
+the generated `milestone_6_readiness.md`; the report currently shows 0 cached
+verification roots with `project_role=surface_simulated`.

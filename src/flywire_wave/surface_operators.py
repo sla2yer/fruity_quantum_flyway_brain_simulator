@@ -50,6 +50,8 @@ def faces_to_adjacency(faces: np.ndarray, n_vertices: int) -> sp.csr_matrix:
     edges = set()
     for tri in np.asarray(faces, dtype=np.int32):
         a, b, c = (int(tri[0]), int(tri[1]), int(tri[2]))
+        if a == b or b == c or a == c:
+            continue
         edges.add(tuple(sorted((a, b))))
         edges.add(tuple(sorted((b, c))))
         edges.add(tuple(sorted((a, c))))
@@ -526,10 +528,65 @@ def _compute_face_and_vertex_geometry(
         mass_diagonal[j] += shared_mass
         mass_diagonal[k] += shared_mass
 
+    near_zero_vertex_indices = np.flatnonzero(
+        np.linalg.norm(vertex_normal_accumulator, axis=1) <= _GEOMETRY_EPSILON
+    )
+    if near_zero_vertex_indices.size > 0:
+        vertex_normal_accumulator[near_zero_vertex_indices] = _estimate_fallback_vertex_normals(
+            vertices=vertices,
+            faces=faces,
+            face_normals=face_normals,
+            vertex_indices=near_zero_vertex_indices,
+        )
+
     vertex_normals = _normalize_vectors(vertex_normal_accumulator, label="vertex normals")
     if np.any(mass_diagonal <= _GEOMETRY_EPSILON):
         raise FineSurfaceOperatorAssemblyError("Lumped mass assembly produced a non-positive vertex mass.")
     return face_areas, face_normals, vertex_normals, mass_diagonal
+
+
+def _estimate_fallback_vertex_normals(
+    *,
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    face_normals: np.ndarray,
+    vertex_indices: np.ndarray,
+) -> np.ndarray:
+    fallback_normals = np.zeros((int(vertex_indices.size), 3), dtype=np.float64)
+    for output_index, vertex_index in enumerate(np.asarray(vertex_indices, dtype=np.int32)):
+        incident_face_indices = np.flatnonzero(np.any(faces == int(vertex_index), axis=1))
+        if incident_face_indices.size == 0:
+            raise FineSurfaceOperatorAssemblyError(
+                f"Could not estimate a fallback normal for isolated vertex index {int(vertex_index)}."
+            )
+
+        incident_faces = faces[incident_face_indices]
+        neighbor_indices = np.unique(incident_faces.reshape(-1))
+        sample_points = np.asarray(vertices[neighbor_indices], dtype=np.float64)
+        reference_normal = np.asarray(face_normals[int(incident_face_indices[0])], dtype=np.float64)
+
+        normal = reference_normal
+        if sample_points.shape[0] >= 3:
+            centered = sample_points - sample_points.mean(axis=0, keepdims=True)
+            try:
+                _, _, vh = np.linalg.svd(centered, full_matrices=False)
+            except np.linalg.LinAlgError as exc:
+                raise FineSurfaceOperatorAssemblyError(
+                    f"Fallback normal estimation failed at vertex index {int(vertex_index)}."
+                ) from exc
+            candidate = np.asarray(vh[-1], dtype=np.float64)
+            if np.linalg.norm(candidate) > _GEOMETRY_EPSILON:
+                normal = candidate
+
+        if float(np.dot(normal, reference_normal)) < 0.0:
+            normal = -normal
+        normal_norm = float(np.linalg.norm(normal))
+        if normal_norm <= _GEOMETRY_EPSILON:
+            raise FineSurfaceOperatorAssemblyError(
+                f"Could not estimate a stable fallback normal at vertex index {int(vertex_index)}."
+            )
+        fallback_normals[output_index] = normal / normal_norm
+    return fallback_normals
 
 
 def _build_edge_bundle(vertices: np.ndarray, faces: np.ndarray) -> dict[str, np.ndarray]:

@@ -1,0 +1,134 @@
+[
+  {
+    "ticket_id": "FW-M6-001",
+    "title": "Freeze a versioned operator bundle contract and discretization design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-001_Freeze_a_versioned_operator_bundle_contract_and_discretization_design_note/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-001_Freeze_a_versioned_operator_bundle_contract_and_discretization_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-001_Freeze_a_versioned_operator_bundle_contract_and_discretization_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-001_Freeze_a_versioned_operator_bundle_contract_and_discretization_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-001_Freeze_a_versioned_operator_bundle_contract_and_discretization_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-001_Freeze_a_versioned_operator_bundle_contract_and_discretization_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M6-002",
+    "title": "Assemble fine-surface operators with geodesic neighborhoods, tangent frames, and boundary masks",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-002_Assemble_fine-surface_operators_with_geodesic_neighborhoods_tangent_frames_and_boundary_masks/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-002_Assemble_fine-surface_operators_with_geodesic_neighborhoods_tangent_frames_and_boundary_masks",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-002_Assemble_fine-surface_operators_with_geodesic_neighborhoods_tangent_frames_and_boundary_masks/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-002_Assemble_fine-surface_operators_with_geodesic_neighborhoods_tangent_frames_and_boundary_masks/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-002_Assemble_fine-surface_operators_with_geodesic_neighborhoods_tangent_frames_and_boundary_masks/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-002_Assemble_fine-surface_operators_with_geodesic_neighborhoods_tangent_frames_and_boundary_masks/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M6-003",
+    "title": "Construct coarse patch operators and fine-to-coarse transfer operators that stay consistent with the fine surface",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-003_Construct_coarse_patch_operators_and_fine-to-coarse_transfer_operators_that_stay_consistent_with_the_fine_surface/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-003_Construct_coarse_patch_operators_and_fine-to-coarse_transfer_operators_that_stay_consistent_with_the_fine_surface",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-003_Construct_coarse_patch_operators_and_fine-to-coarse_transfer_operators_that_stay_consistent_with_the_fine_surface/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-003_Construct_coarse_patch_operators_and_fine-to-coarse_transfer_operators_that_stay_consistent_with_the_fine_surface/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-003_Construct_coarse_patch_operators_and_fine-to-coarse_transfer_operators_that_stay_consistent_with_the_fine_surface/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-003_Construct_coarse_patch_operators_and_fine-to-coarse_transfer_operators_that_stay_consistent_with_the_fine_surface/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M6-004",
+    "title": "Add configurable boundary-condition and anisotropy plumbing to operator assembly",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-004_Add_configurable_boundary-condition_and_anisotropy_plumbing_to_operator_assembly/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-004_Add_configurable_boundary-condition_and_anisotropy_plumbing_to_operator_assembly",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-004_Add_configurable_boundary-condition_and_anisotropy_plumbing_to_operator_assembly/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-004_Add_configurable_boundary-condition_and_anisotropy_plumbing_to_operator_assembly/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-004_Add_configurable_boundary-condition_and_anisotropy_plumbing_to_operator_assembly/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-004_Add_configurable_boundary-condition_and_anisotropy_plumbing_to_operator_assembly/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M6-005",
+    "title": "Ship operator quality metrics, pulse-propagation smoke tests, and offline inspection tooling",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-005_Ship_operator_quality_metrics_pulse-propagation_smoke_tests_and_offline_inspection_tooling/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-005_Ship_operator_quality_metrics_pulse-propagation_smoke_tests_and_offline_inspection_tooling",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-005_Ship_operator_quality_metrics_pulse-propagation_smoke_tests_and_offline_inspection_tooling/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-005_Ship_operator_quality_metrics_pulse-propagation_smoke_tests_and_offline_inspection_tooling/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-005_Ship_operator_quality_metrics_pulse-propagation_smoke_tests_and_offline_inspection_tooling/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-005_Ship_operator_quality_metrics_pulse-propagation_smoke_tests_and_offline_inspection_tooling/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M6-006",
+    "title": "Run a Milestone 6 implementation verification pass and publish a readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-006_Run_a_Milestone_6_implementation_verification_pass_and_publish_a_readiness_report/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-006_Run_a_Milestone_6_implementation_verification_pass_and_publish_a_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-006_Run_a_Milestone_6_implementation_verification_pass_and_publish_a_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-006_Run_a_Milestone_6_implementation_verification_pass_and_publish_a_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-006_Run_a_Milestone_6_implementation_verification_pass_and_publish_a_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T185349Z/FW-M6-006_Run_a_Milestone_6_implementation_verification_pass_and_publish_a_readiness_report/last_message.md"
+  }
+]

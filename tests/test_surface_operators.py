@@ -98,6 +98,36 @@ class FineSurfaceOperatorTest(unittest.TestCase):
         self.assertEqual(metadata["counts"]["anisotropy_nontrivial_vertex_count"], 0)
         self.assertEqual(metadata["counts"]["anisotropy_nontrivial_edge_count"], 0)
 
+    def test_inconsistent_face_orientation_uses_fallback_vertex_normals(self) -> None:
+        vertices = np.asarray(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        faces = np.asarray(
+            [
+                [0, 1, 2],
+                [0, 3, 2],
+            ],
+            dtype=np.int32,
+        )
+
+        bundle = assemble_fine_surface_operator(
+            root_id=203,
+            vertices=vertices,
+            faces=faces,
+            geodesic_hops=2,
+            geodesic_vertex_cap=4,
+        )
+
+        self.assertEqual(int(bundle.payload["root_id"]), 203)
+        self.assertTrue(np.all(np.isfinite(bundle.payload["vertex_normals"])))
+        self.assertTrue(np.allclose(np.linalg.norm(bundle.payload["vertex_normals"], axis=1), 1.0, atol=1e-5))
+
 
 def _load_csr(payload: dict[str, np.ndarray], *, prefix: str) -> sp.csr_matrix:
     shape = tuple(int(value) for value in payload[f"{prefix}_shape"])

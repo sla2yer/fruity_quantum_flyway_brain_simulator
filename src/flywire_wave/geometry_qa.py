@@ -254,6 +254,7 @@ def build_descriptor_payload(
     surface_graph_path: str | Path,
     patch_graph_path: str | Path,
     registry_metadata: dict[str, Any] | None = None,
+    mesh_cleanup: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     face_ratio = _safe_ratio(
         float(simplified_mesh_summary["face_count"]),
@@ -291,6 +292,7 @@ def build_descriptor_payload(
             "simplified_to_raw_vertex_ratio": vertex_ratio,
         },
         "registry_metadata": dict(registry_metadata or {}),
+        "mesh_cleanup": dict(mesh_cleanup or {}),
         "n_vertices": int(simplified_mesh_summary["vertex_count"]),
         "n_faces": int(simplified_mesh_summary["face_count"]),
         "surface_graph_edge_count": int(simplified_mesh_summary["edge_count"]),
