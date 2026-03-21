@@ -14,7 +14,23 @@ The female whole brain is the structural scaffold, but the final simulation shou
 - selected circuit meshed,
 - only active patches numerically updated.
 
-## Output asset contract
+## Artifact contracts
+
+### Subset-selection contract
+
+Milestone 4 subset generation writes one artifact bundle per named preset under
+`data/interim/subsets/<preset>/`:
+
+- `root_ids.txt`: simulator-facing root-id list
+- `selected_neurons.csv`: filtered registry rows for the preset
+- `subset_stats.json`: graph counts, role counts, and boundary summaries
+- `subset_manifest.json`: resolved selection rules plus the selected neuron roster
+- `preview.md`: lightweight Markdown/Mermaid preview for quick inspection
+
+The active preset also refreshes the path named by `config.paths.selected_root_ids`
+so downstream pipeline steps can switch subsets without code changes.
+
+### Geometry handoff contract
 
 Per neuron, the processed output includes:
 

@@ -10,6 +10,7 @@ paths:
   connectivity_registry_csv: data/interim/registry/connectivity_registry.csv
   registry_provenance_json: data/interim/registry/registry_provenance.json
   selected_root_ids: data/interim/root_ids_visual_sample.txt
+  subset_output_dir: data/interim/subsets
   meshes_raw_dir: data/interim/meshes_raw
   skeletons_raw_dir: data/interim/skeletons_raw
   processed_mesh_dir: data/processed/meshes
@@ -34,11 +35,88 @@ registry:
     skeleton_simulated: []
 
 selection:
-  super_classes:
-    - optic
-    - visual_projection
-  limit: 12
+  active_preset: motion_minimal
   sort_by: root_id
+  preview_edge_limit: 20
+  presets:
+    motion_minimal:
+      description: >
+        Milestone 2 locked core motion patch centered on T4a/T5a and their direct
+        ON/OFF feedforward partners.
+      include:
+        super_classes:
+          - optic
+          - visual_projection
+        cell_types:
+          - T4a
+          - T5a
+          - Mi1
+          - Tm3
+          - Mi4
+          - Mi9
+          - Tm1
+          - Tm2
+          - Tm4
+          - Tm9
+      exclude:
+        cell_types:
+          - R7
+          - R8
+
+    motion_medium:
+      extends: motion_minimal
+      description: >
+        Add one-hop local context and direct downstream readout candidates while
+        keeping the active motion channel easy to inspect.
+      relations:
+        - name: direct_motion_inputs
+          direction: upstream
+          seed:
+            cell_types:
+              - T4a
+              - T5a
+          include:
+            super_classes:
+              - optic
+              - visual_projection
+            neuropils:
+              - ME_R
+              - LO_R
+          min_syn_count: 5
+          max_added: 48
+        - name: direct_motion_outputs
+          direction: downstream
+          seed:
+            cell_types:
+              - T4a
+              - T5a
+          include:
+            super_classes:
+              - optic
+              - visual_projection
+            neuropils:
+              - LOP_R
+          min_syn_count: 5
+          max_added: 24
+
+    motion_dense:
+      extends: motion_medium
+      description: >
+        Add a denser local halo around the same motion patch for boundary checks,
+        ablations, and later promotion decisions.
+      relations:
+        - name: local_halo_context
+          direction: upstream
+          seed_from: current
+          include:
+            super_classes:
+              - optic
+              - visual_projection
+            neuropils:
+              - ME_R
+              - LO_R
+          min_syn_count: 3
+          max_added: 96
 
 meshing:
   fetch_skeletons: true

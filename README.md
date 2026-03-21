@@ -69,7 +69,8 @@ flywire_wave_repo/
 │   └── visual_subset.example.yaml
 ├── docs/
 │   ├── milestones.md
-│   └── pipeline_notes.md
+│   ├── pipeline_notes.md
+│   └── subset_presets.md
 ├── manifests/
 │   └── examples/
 │       └── milestone_1_demo.yaml
@@ -227,19 +228,44 @@ data/interim/registry/registry_provenance.json
 
 ### 7) Select a subset to mesh
 
-Default example: select a small optic-lobe subset from the canonical neuron
-registry. The sample config accepts either `optic` or `visual_projection`
-super-classes and carries milestone-2 role defaults for `T4a/T5a` and their
-direct reduced partners.
+The Milestone 4 selector is now preset-driven. The sample config defines three
+named presets:
+
+- `motion_minimal`
+- `motion_medium`
+- `motion_dense`
+
+Each run writes a root-id list, selected-neuron CSV, stats JSON, manifest JSON,
+and a lightweight Markdown/Mermaid preview under `data/interim/subsets/<preset>/`.
+The active preset also refreshes `paths.selected_root_ids` so downstream mesh and
+asset steps can switch inputs by config alone.
 
 ```bash
 python scripts/01_select_subset.py --config config/local.yaml
 ```
 
-This writes a root-id list to something like:
+Select a specific preset:
+
+```bash
+python scripts/01_select_subset.py --config config/local.yaml --preset motion_dense
+```
+
+Generate every preset declared in the config:
+
+```bash
+python scripts/01_select_subset.py --config config/local.yaml --all-presets
+```
+
+This writes the active root-id list to something like:
 
 ```text
 data/interim/root_ids_visual_sample.txt
+```
+
+And writes per-preset reports to:
+
+```text
+data/interim/subsets/
 ```
 
 ### 8) Fetch meshes + skeletons
