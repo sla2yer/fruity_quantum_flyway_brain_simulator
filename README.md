@@ -156,10 +156,11 @@ This keeps the auth split explicit: **FlyWire Codex** handles website browsing/d
 ### 1) Create environment
 
 ```bash
+git submodule update --init --recursive
 make bootstrap
 ```
 
-`make bootstrap` creates `.venv/` if needed, upgrades `pip`, and installs the repo in editable mode via [`pyproject.toml`](pyproject.toml).
+Initialize the pinned `flywire_codex/` submodule once after cloning, then run `make bootstrap` to create `.venv/` if needed, upgrade `pip`, and install the repo in editable mode via [`pyproject.toml`](pyproject.toml).
 
 Manual equivalent:
 

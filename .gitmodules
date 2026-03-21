@@ -1,0 +1,4 @@
+[submodule "flywire_codex"]
+	path = flywire_codex
+	url = https://github.com/murthylab/codex.git
+	branch = main

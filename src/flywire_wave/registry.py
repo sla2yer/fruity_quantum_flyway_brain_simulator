@@ -13,7 +13,7 @@ from .io_utils import ensure_dir, write_json
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VENDORED_CODEX_ROOT = REPO_ROOT / "flywire_codex" / "codex"
+VENDORED_CODEX_ROOT = REPO_ROOT / "flywire_codex"
 if VENDORED_CODEX_ROOT.exists() and str(VENDORED_CODEX_ROOT) not in sys.path:
     sys.path.insert(0, str(VENDORED_CODEX_ROOT))
 

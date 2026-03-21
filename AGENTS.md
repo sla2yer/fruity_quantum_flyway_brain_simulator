@@ -23,7 +23,7 @@ This repo preprocesses FlyWire metadata and meshes into wave-ready assets for a 
 - `docs/pipeline_notes.md`: concise pipeline/output contract notes
 - `data/raw/codex/`: manually downloaded Codex CSV inputs
 - `data/interim/`, `data/processed/`: generated outputs, ignored by git
-- `flywire_codex/`: vendored upstream reference snapshot; avoid editing unless the task explicitly calls for it
+- `flywire_codex/`: upstream Codex git submodule; avoid editing unless the task explicitly calls for it
 
 ## Safe Validation Loop
 
