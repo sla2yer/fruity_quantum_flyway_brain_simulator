@@ -1,0 +1,112 @@
+[
+  {
+    "ticket_id": "FW-M5-001",
+    "title": "Define a versioned geometry asset contract for multiresolution morphology bundles",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-001_Define_a_versioned_geometry_asset_contract_for_multiresolution_morphology_bundles/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-001_Define_a_versioned_geometry_asset_contract_for_multiresolution_morphology_bundles",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-001_Define_a_versioned_geometry_asset_contract_for_multiresolution_morphology_bundles/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-001_Define_a_versioned_geometry_asset_contract_for_multiresolution_morphology_bundles/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-001_Define_a_versioned_geometry_asset_contract_for_multiresolution_morphology_bundles/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-001_Define_a_versioned_geometry_asset_contract_for_multiresolution_morphology_bundles/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M5-002",
+    "title": "Make raw geometry ingestion cache-aware, resumable, and provenance-rich",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-002_Make_raw_geometry_ingestion_cache-aware_resumable_and_provenance-rich/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-002_Make_raw_geometry_ingestion_cache-aware_resumable_and_provenance-rich",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-002_Make_raw_geometry_ingestion_cache-aware_resumable_and_provenance-rich/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-002_Make_raw_geometry_ingestion_cache-aware_resumable_and_provenance-rich/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-002_Make_raw_geometry_ingestion_cache-aware_resumable_and_provenance-rich/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-002_Make_raw_geometry_ingestion_cache-aware_resumable_and_provenance-rich/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M5-003",
+    "title": "Build explicit surface-graph and patch-graph artifacts for the multiresolution morphology bundle",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-003_Build_explicit_surface-graph_and_patch-graph_artifacts_for_the_multiresolution_morphology_bundle/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-003_Build_explicit_surface-graph_and_patch-graph_artifacts_for_the_multiresolution_morphology_bundle",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-003_Build_explicit_surface-graph_and_patch-graph_artifacts_for_the_multiresolution_morphology_bundle/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-003_Build_explicit_surface-graph_and_patch-graph_artifacts_for_the_multiresolution_morphology_bundle/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-003_Build_explicit_surface-graph_and_patch-graph_artifacts_for_the_multiresolution_morphology_bundle/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-003_Build_explicit_surface-graph_and_patch-graph_artifacts_for_the_multiresolution_morphology_bundle/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M5-004",
+    "title": "Add derived geometry descriptors and simplification QA with documented error budgets",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-004_Add_derived_geometry_descriptors_and_simplification_QA_with_documented_error_budgets/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-004_Add_derived_geometry_descriptors_and_simplification_QA_with_documented_error_budgets",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-004_Add_derived_geometry_descriptors_and_simplification_QA_with_documented_error_budgets/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-004_Add_derived_geometry_descriptors_and_simplification_QA_with_documented_error_budgets/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-004_Add_derived_geometry_descriptors_and_simplification_QA_with_documented_error_budgets/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-004_Add_derived_geometry_descriptors_and_simplification_QA_with_documented_error_budgets/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M5-005",
+    "title": "Ship offline geometry preview tooling for raw, simplified, skeleton, and patchified assets",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-005_Ship_offline_geometry_preview_tooling_for_raw_simplified_skeleton_and_patchified_assets/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-005_Ship_offline_geometry_preview_tooling_for_raw_simplified_skeleton_and_patchified_assets",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-005_Ship_offline_geometry_preview_tooling_for_raw_simplified_skeleton_and_patchified_assets/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-005_Ship_offline_geometry_preview_tooling_for_raw_simplified_skeleton_and_patchified_assets/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-005_Ship_offline_geometry_preview_tooling_for_raw_simplified_skeleton_and_patchified_assets/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T170513Z/FW-M5-005_Ship_offline_geometry_preview_tooling_for_raw_simplified_skeleton_and_patchified_assets/last_message.md"
+  }
+]

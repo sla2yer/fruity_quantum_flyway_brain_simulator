@@ -349,6 +349,8 @@ Promote additional circuitry only when it becomes the leading limitation:
 
 ## Milestone 3 — Build the data registry and provenance layer
 
+**Workload split:** Programming-heavy  
+**Suggested lead:** Jack
 
 ### Goal
 
@@ -413,7 +415,7 @@ Make subset design fast, reproducible, and explorable.
   - `motion_medium`  
   - `motion_dense`
 
-### agent responabilities
+### Jack owns
 
 - CLI / config-driven subset generator  
 - filtering logic  
@@ -421,9 +423,11 @@ Make subset design fast, reproducible, and explorable.
 - small preview visualizations  
 - exporting manifests and reports
 
-- defining scientifically meaningful presets  (cleary state all reasoning for presets in a markdown file)
+### Grant owns
+
+- defining scientifically meaningful presets  
 - checking that subset boundaries preserve the intended behavior  
-- suggesting ablation-oriented subsets (cleary state all reasoning for presets in a markdown file)
+- suggesting ablation-oriented subsets
 
 ### Done when
 
@@ -434,9 +438,6 @@ Make subset design fast, reproducible, and explorable.
 ---
 
 ## Milestone 5 — Build the geometry ingestion and multiresolution morphology pipeline
-
-**Workload split:** Programming-heavy with some geometry reasoning  
-**Suggested lead:** Jack
 
 ### Goal
 
@@ -453,7 +454,7 @@ For each active neuron, generate:
 - patch graph  
 - derived geometric descriptors
 
-### Jack owns
+### Agent implements:
 
 - mesh download scripts  
 - caching  
@@ -463,7 +464,7 @@ For each active neuron, generate:
 - geometry QA tools  
 - preview viewers or notebooks
 
-### Grant owns
+### Agent researches, decides (placing all rational in a markdown file), and implements:
 
 - advising on what simplification can preserve wave-relevant geometry  
 - identifying which geometric descriptors matter for propagation  

@@ -3,6 +3,8 @@
 __all__ = [
     "agent_tickets",
     "config",
+    "geometry_contract",
+    "geometry_qa",
     "io_utils",
     "manifests",
     "mesh_pipeline",

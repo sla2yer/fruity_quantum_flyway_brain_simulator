@@ -1,0 +1,9 @@
+**Changed**
+[mesh_pipeline.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/mesh_pipeline.py#L46) and [mesh_pipeline.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/mesh_pipeline.py#L556) now build a deterministic whole-surface patch partition instead of a single example mask. The surface archive writes fine-mesh data plus `surface_to_patch`; the patch archive writes first-class coarse graph data plus `patch_sizes`, `patch_centroids`, `patch_seed_vertices`, and CSR-style membership arrays. No graph logic was pushed into the script; [03_build_wave_assets.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/03_build_wave_assets.py) remains a thin orchestration layer over library code.
+
+[geometry_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_contract.py#L118) now adds `artifact_sources` to each manifest record so processed artifacts explicitly point back to the raw mesh and skeleton inputs. [test_mesh_pipeline_build.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_mesh_pipeline_build.py#L21) adds the fixture-driven regression for filenames, key arrays, graph shapes, mapping coverage, and deterministic rebuilds, and [pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md#L33) documents the new bundle contents.
+
+**Verified**
+`./.venv/bin/python -m unittest tests.test_mesh_pipeline_build tests.test_geometry_contract tests.test_config_paths -v`
+
+`make test`

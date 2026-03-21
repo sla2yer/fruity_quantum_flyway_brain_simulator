@@ -14,7 +14,15 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from flywire_wave.config import load_config
-from flywire_wave.io_utils import read_root_ids, write_json
+from flywire_wave.geometry_contract import (
+    build_geometry_bundle_paths,
+    build_geometry_manifest_record,
+    default_asset_statuses,
+    load_geometry_manifest_records,
+    merge_geometry_manifest_record,
+    write_geometry_manifest,
+)
+from flywire_wave.io_utils import read_root_ids
 from flywire_wave.mesh_pipeline import process_mesh_into_wave_assets
 from flywire_wave.registry import load_neuron_registry, validate_selected_root_ids
 
@@ -42,6 +50,8 @@ def main() -> int:
     cfg = load_config(args.config)
     paths = cfg["paths"]
     meshing = cfg["meshing"]
+    dataset = cfg["dataset"].get("flywire_dataset", "public")
+    materialization_version = cfg["dataset"].get("materialization_version")
     registry_path = paths.get("neuron_registry_csv", "data/interim/registry/neuron_registry.csv")
 
     root_ids = read_root_ids(paths["selected_root_ids"])
@@ -52,11 +62,22 @@ def main() -> int:
     validate_selected_root_ids(root_ids, registry_df, registry_path)
 
     registry = registry_df.set_index("root_id", drop=False)
-    manifest: dict[str, dict[str, str]] = {}
+    existing_records = load_geometry_manifest_records(paths["manifest_json"])
+    manifest_records: dict[int, dict[str, object]] = {}
+    qa_warning_details: list[dict[str, object]] = []
+    qa_failure_details: list[dict[str, object]] = []
+    qa_blocking_failure_details: list[dict[str, object]] = []
+    fetch_skeletons = bool(meshing.get("fetch_skeletons", True))
     for root_id in tqdm(root_ids, desc="Building wave assets"):
-        raw_mesh_path = Path(paths["meshes_raw_dir"]) / f"{int(root_id)}.ply"
-        if not raw_mesh_path.exists():
-            raise FileNotFoundError(f"Missing raw mesh for root_id={root_id}: {raw_mesh_path}")
+        bundle_paths = build_geometry_bundle_paths(
+            root_id,
+            meshes_raw_dir=paths["meshes_raw_dir"],
+            skeletons_raw_dir=paths["skeletons_raw_dir"],
+            processed_mesh_dir=paths["processed_mesh_dir"],
+            processed_graph_dir=paths["processed_graph_dir"],
+        )
+        if not bundle_paths.raw_mesh_path.exists():
+            raise FileNotFoundError(f"Missing raw mesh for root_id={root_id}: {bundle_paths.raw_mesh_path}")
 
         registry_metadata: dict[str, object] = {}
         if int(root_id) in registry.index:
@@ -71,33 +92,90 @@ def main() -> int:
 
         outputs = process_mesh_into_wave_assets(
             root_id=root_id,
-            raw_mesh_path=raw_mesh_path,
-            processed_mesh_dir=paths["processed_mesh_dir"],
-            processed_graph_dir=paths["processed_graph_dir"],
+            bundle_paths=bundle_paths,
             simplify_target_faces=int(meshing.get("simplify_target_faces", 15000)),
             patch_hops=int(meshing.get("patch_hops", 6)),
             patch_vertex_cap=int(meshing.get("patch_vertex_cap", 2500)),
             registry_metadata=registry_metadata,
+            qa_thresholds=meshing.get("qa_thresholds"),
         )
-        manifest[str(root_id)] = {
-            **outputs,
-            "cell_type": str(registry_metadata.get("cell_type", "")),
-            "project_role": str(registry_metadata.get("project_role", "")),
-            "snapshot_version": str(registry_metadata.get("snapshot_version", "")),
-            "materialization_version": str(registry_metadata.get("materialization_version", "")),
-        }
+        qa_summary = outputs["qa_summary"]
+        if qa_summary["warning_count"]:
+            qa_warning_details.append(
+                {
+                    "root_id": int(root_id),
+                    "checks": list(qa_summary["warning_checks"]),
+                }
+            )
+        if qa_summary["failure_count"]:
+            qa_failure_details.append(
+                {
+                    "root_id": int(root_id),
+                    "checks": list(qa_summary["failure_checks"]),
+                    "blocking": bool(qa_summary["blocking_failure_count"]),
+                }
+            )
+        if qa_summary["blocking_failure_count"]:
+            qa_blocking_failure_details.append(
+                {
+                    "root_id": int(root_id),
+                    "checks": list(qa_summary["blocking_failure_checks"]),
+                }
+            )
+        asset_statuses = default_asset_statuses(fetch_skeletons=fetch_skeletons)
+        asset_statuses.update(outputs["asset_statuses"])
+        existing_record = existing_records.get(bundle_paths.root_label, {})
+        manifest_records[root_id] = merge_geometry_manifest_record(
+            existing_record,
+            build_geometry_manifest_record(
+                bundle_paths=bundle_paths,
+                asset_statuses=asset_statuses,
+                dataset_name=str(dataset),
+                materialization_version=materialization_version,
+                meshing_config_snapshot=meshing,
+                registry_metadata=registry_metadata,
+                bundle_metadata=outputs["bundle_metadata"],
+                raw_asset_provenance=existing_record.get("raw_asset_provenance"),
+            ),
+        )
 
-    write_json(manifest, paths["manifest_json"])
+    write_geometry_manifest(
+        manifest_path=paths["manifest_json"],
+        bundle_records=manifest_records,
+        dataset_name=str(dataset),
+        materialization_version=materialization_version,
+        meshing_config_snapshot=meshing,
+    )
+    qa_overall_status = "pass"
+    if qa_failure_details:
+        qa_overall_status = "fail"
+    elif qa_warning_details:
+        qa_overall_status = "warn"
     print(
         json.dumps(
             {
-                "n_assets": len(manifest),
+                "n_assets": len(manifest_records),
                 "manifest": paths["manifest_json"],
                 "registry": registry_path,
+                "qa": {
+                    "overall_status": qa_overall_status,
+                    "downstream_usable": not bool(qa_blocking_failure_details),
+                    "warning_asset_count": len(qa_warning_details),
+                    "failure_asset_count": len(qa_failure_details),
+                    "blocking_failure_asset_count": len(qa_blocking_failure_details),
+                    "warning_root_ids": [item["root_id"] for item in qa_warning_details],
+                    "failure_root_ids": [item["root_id"] for item in qa_failure_details],
+                    "blocking_failure_root_ids": [item["root_id"] for item in qa_blocking_failure_details],
+                    "warning_details": qa_warning_details,
+                    "failure_details": qa_failure_details,
+                    "blocking_failure_details": qa_blocking_failure_details,
+                },
             },
             indent=2,
         )
     )
+    if qa_blocking_failure_details:
+        return 1
     return 0
 
 

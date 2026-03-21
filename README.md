@@ -68,6 +68,7 @@ flywire_wave_repo/
 │   ├── milestone_1_design_lock.yaml
 │   └── visual_subset.example.yaml
 ├── docs/
+│   ├── geometry_preview.md
 │   ├── milestones.md
 │   ├── pipeline_notes.md
 │   └── subset_presets.md
@@ -83,6 +84,7 @@ flywire_wave_repo/
 │   ├── 02_fetch_meshes.py
 │   ├── 03_build_wave_assets.py
 │   ├── 04_validate_manifest.py
+│   ├── 05_preview_geometry.py
 │   └── setup_flywire_token.py
 ├── src/
 │   └── flywire_wave/
@@ -309,6 +311,23 @@ Outputs land in:
 data/processed/
 ```
 
+### 10) Generate an offline geometry preview report
+
+```bash
+python scripts/05_preview_geometry.py --config config/local.yaml --root-id 720575940000000001
+```
+
+If you omit `--root-id`, the preview script reads `paths.selected_root_ids`.
+Reports write to a deterministic directory under:
+
+```text
+data/processed/previews/
+```
+
+Each preview directory contains a static `index.html`, `summary.json`, and the
+exact `root_ids.txt` used for that report. See [`docs/geometry_preview.md`](docs/geometry_preview.md)
+for the reviewer checklist and a few common invocation patterns.
+
 ## What “meshing for the simulation” means here
 
 For each selected root ID, this scaffold does:
@@ -380,6 +399,7 @@ make registry CONFIG=config/local.yaml
 make select CONFIG=config/local.yaml
 make meshes CONFIG=config/local.yaml
 make assets CONFIG=config/local.yaml
+make preview CONFIG=config/local.yaml
 make validate-manifest
 make all CONFIG=config/local.yaml
 ```

@@ -77,18 +77,52 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 root_ids_path = fixture_dir / "out" / "root_ids.txt"
                 raw_mesh_path = fixture_dir / "out" / "meshes_raw" / "101.ply"
                 processed_mesh_path = fixture_dir / "out" / "processed_meshes" / "101.ply"
-                processed_graph_path = fixture_dir / "out" / "processed_graphs" / "101_graph.npz"
+                surface_graph_path = fixture_dir / "out" / "processed_graphs" / "101_graph.npz"
+                patch_graph_path = fixture_dir / "out" / "processed_graphs" / "101_patch_graph.npz"
+                descriptor_path = fixture_dir / "out" / "processed_graphs" / "101_descriptors.json"
+                qa_path = fixture_dir / "out" / "processed_graphs" / "101_qa.json"
+                legacy_meta_path = fixture_dir / "out" / "processed_graphs" / "101_meta.json"
                 manifest_path = fixture_dir / "out" / "asset_manifest.json"
 
                 self.assertEqual(root_ids_path.read_text(encoding="utf-8").strip(), "101")
                 self.assertTrue(raw_mesh_path.exists())
                 self.assertTrue(processed_mesh_path.exists())
-                self.assertTrue(processed_graph_path.exists())
+                self.assertTrue(surface_graph_path.exists())
+                self.assertTrue(patch_graph_path.exists())
+                self.assertTrue(descriptor_path.exists())
+                self.assertTrue(qa_path.exists())
+                self.assertTrue(legacy_meta_path.exists())
 
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                self.assertEqual(manifest["_asset_contract_version"], "geometry_bundle.v1")
+                self.assertEqual(manifest["_dataset"]["flywire_dataset"], "public")
+                self.assertEqual(manifest["_dataset"]["materialization_version"], 783)
+                self.assertEqual(manifest["_meshing_config_snapshot"]["patch_hops"], 2)
                 self.assertIn("101", manifest)
                 self.assertEqual(manifest["101"]["processed_mesh_path"], str(processed_mesh_path.resolve()))
+                self.assertEqual(manifest["101"]["surface_graph_path"], str(surface_graph_path.resolve()))
+                self.assertEqual(manifest["101"]["patch_graph_path"], str(patch_graph_path.resolve()))
+                self.assertEqual(manifest["101"]["descriptor_sidecar_path"], str(descriptor_path.resolve()))
+                self.assertEqual(manifest["101"]["qa_sidecar_path"], str(qa_path.resolve()))
+                self.assertEqual(manifest["101"]["meta_json_path"], str(legacy_meta_path.resolve()))
                 self.assertEqual(manifest["101"]["project_role"], "surface_simulated")
+                self.assertEqual(manifest["101"]["bundle_version"], "geometry_bundle.v1")
+                self.assertEqual(manifest["101"]["bundle_status"], "ready")
+                self.assertEqual(manifest["101"]["assets"]["raw_mesh"]["status"], "ready")
+                self.assertEqual(manifest["101"]["assets"]["raw_skeleton"]["status"], "skipped")
+                self.assertEqual(manifest["101"]["assets"]["patch_graph"]["status"], "ready")
+                self.assertEqual(manifest["101"]["raw_asset_provenance"]["raw_mesh"]["fetch_status"], "fetched")
+                self.assertEqual(manifest["101"]["raw_asset_provenance"]["raw_skeleton"]["fetch_status"], "skipped")
+                self.assertEqual(
+                    manifest["101"]["artifact_sources"]["patch_graph"]["raw_mesh_path"],
+                    str(raw_mesh_path.resolve()),
+                )
+                self.assertEqual(
+                    manifest["101"]["artifact_sources"]["patch_graph"]["raw_skeleton_status"],
+                    "skipped",
+                )
+                self.assertEqual(manifest["101"]["build"]["materialization_version"], 783)
+                self.assertEqual(manifest["101"]["build"]["meshing_config_snapshot"]["simplify_target_faces"], 8)
 
     def test_build_wave_assets_rejects_selected_root_ids_missing_from_registry(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as fixture_dir_str:
@@ -132,6 +166,94 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 self.assertIn(str(fixture_dir / "out" / "registry" / "neuron_registry.csv"), combined_output)
                 self.assertFalse((fixture_dir / "out" / "asset_manifest.json").exists())
 
+    def test_build_wave_assets_surfaces_qa_warning_without_failing(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as fixture_dir_str:
+            fixture_dir = Path(fixture_dir_str)
+            fixture_rel = fixture_dir.relative_to(ROOT)
+            with tempfile.TemporaryDirectory() as outside_dir_str:
+                outside_dir = Path(outside_dir_str)
+                config_path = _write_pipeline_fixture(
+                    fixture_dir,
+                    fixture_rel,
+                    patch_hops=1,
+                    patch_vertex_cap=2,
+                    meshing_extra_yaml="""
+                    qa_thresholds:
+                      coarse_max_patch_vertex_fraction:
+                        warn: 0.4
+                        fail: 0.6
+                        blocking: false
+                    """,
+                )
+                stub_dir = _write_stub_dependencies(fixture_dir)
+                env = os.environ.copy()
+                env["FLYWIRE_TOKEN"] = ""
+                existing_pythonpath = env.get("PYTHONPATH", "")
+                env["PYTHONPATH"] = (
+                    str(stub_dir)
+                    if not existing_pythonpath
+                    else os.pathsep.join([str(stub_dir), existing_pythonpath])
+                )
+
+                self._run_script("build_registry.py", config_path, outside_dir, env)
+                self._run_script("01_select_subset.py", config_path, outside_dir, env)
+                self._run_script("02_fetch_meshes.py", config_path, outside_dir, env)
+                result = self._run_script("03_build_wave_assets.py", config_path, outside_dir, env)
+
+                summary = json.loads(result.stdout)
+                self.assertEqual(summary["qa"]["overall_status"], "warn")
+                self.assertTrue(summary["qa"]["downstream_usable"])
+                self.assertEqual(summary["qa"]["warning_root_ids"], [101])
+                self.assertEqual(summary["qa"]["blocking_failure_root_ids"], [])
+                self.assertIn("coarse_max_patch_vertex_fraction", summary["qa"]["warning_details"][0]["checks"])
+
+    def test_build_wave_assets_fails_on_blocking_qa_violation(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as fixture_dir_str:
+            fixture_dir = Path(fixture_dir_str)
+            fixture_rel = fixture_dir.relative_to(ROOT)
+            with tempfile.TemporaryDirectory() as outside_dir_str:
+                outside_dir = Path(outside_dir_str)
+                config_path = _write_pipeline_fixture(
+                    fixture_dir,
+                    fixture_rel,
+                    patch_hops=1,
+                    patch_vertex_cap=2,
+                    meshing_extra_yaml="""
+                    qa_thresholds:
+                      coarse_max_patch_vertex_fraction:
+                        warn: 0.3
+                        fail: 0.4
+                        blocking: true
+                    """,
+                )
+                stub_dir = _write_stub_dependencies(fixture_dir)
+                env = os.environ.copy()
+                env["FLYWIRE_TOKEN"] = ""
+                existing_pythonpath = env.get("PYTHONPATH", "")
+                env["PYTHONPATH"] = (
+                    str(stub_dir)
+                    if not existing_pythonpath
+                    else os.pathsep.join([str(stub_dir), existing_pythonpath])
+                )
+
+                self._run_script("build_registry.py", config_path, outside_dir, env)
+                self._run_script("01_select_subset.py", config_path, outside_dir, env)
+                self._run_script("02_fetch_meshes.py", config_path, outside_dir, env)
+                result = self._run_script(
+                    "03_build_wave_assets.py",
+                    config_path,
+                    outside_dir,
+                    env,
+                    expect_success=False,
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                summary = json.loads(result.stdout)
+                self.assertEqual(summary["qa"]["overall_status"], "fail")
+                self.assertFalse(summary["qa"]["downstream_usable"])
+                self.assertEqual(summary["qa"]["blocking_failure_root_ids"], [101])
+                self.assertIn("coarse_max_patch_vertex_fraction", summary["qa"]["blocking_failure_details"][0]["checks"])
+
     def _run_script(
         self,
         script_name: str,
@@ -158,7 +280,14 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
         return result
 
 
-def _write_pipeline_fixture(fixture_dir: Path, fixture_rel: Path) -> Path:
+def _write_pipeline_fixture(
+    fixture_dir: Path,
+    fixture_rel: Path,
+    *,
+    patch_hops: int = 2,
+    patch_vertex_cap: int = 8,
+    meshing_extra_yaml: str = "",
+) -> Path:
     raw_dir = fixture_dir / "raw" / "codex"
     raw_dir.mkdir(parents=True)
 
@@ -208,6 +337,9 @@ def _write_pipeline_fixture(fixture_dir: Path, fixture_rel: Path) -> Path:
 
     rel_prefix = fixture_rel.as_posix()
     config_path = fixture_dir / "config.yaml"
+    meshing_extra_block = ""
+    if meshing_extra_yaml.strip():
+        meshing_extra_block = "\n" + textwrap.indent(textwrap.dedent(meshing_extra_yaml).strip(), "              ")
     config_path.write_text(
         textwrap.dedent(
             f"""
@@ -245,9 +377,12 @@ def _write_pipeline_fixture(fixture_dir: Path, fixture_rel: Path) -> Path:
 
             meshing:
               fetch_skeletons: false
+              refetch_meshes: false
+              refetch_skeletons: false
+              require_skeletons: false
               simplify_target_faces: 8
-              patch_hops: 2
-              patch_vertex_cap: 8
+              patch_hops: {patch_hops}
+              patch_vertex_cap: {patch_vertex_cap}{meshing_extra_block}
             """
         ).strip()
         + "\n",

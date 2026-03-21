@@ -120,6 +120,46 @@ selection:
 
 meshing:
   fetch_skeletons: true
+  refetch_meshes: false
+  refetch_skeletons: false
+  require_skeletons: false
   simplify_target_faces: 15000
   patch_hops: 6
   patch_vertex_cap: 2500
+  qa_thresholds:
+    simplified_component_count_delta:
+      warn: null
+      fail: 0.0
+      blocking: true
+    simplified_surface_area_rel_error:
+      warn: 0.15
+      fail: 0.3
+      blocking: true
+    simplified_extent_rel_error_max:
+      warn: 0.1
+      fail: 0.2
+      blocking: true
+    simplified_centroid_shift_fraction_of_diagonal:
+      warn: 0.05
+      fail: 0.1
+      blocking: false
+    simplified_volume_rel_error:
+      warn: 0.2
+      fail: 0.4
+      blocking: false
+    coarse_component_count_delta:
+      warn: null
+      fail: 0.0
+      blocking: true
+    coarse_surface_vertex_coverage_gap:
+      warn: null
+      fail: 0.0
+      blocking: true
+    coarse_max_patch_vertex_fraction:
+      warn: 0.6
+      fail: 0.8
+      blocking: false
+    coarse_singleton_patch_fraction:
+      warn: 0.25
+      fail: 0.5
+      blocking: false

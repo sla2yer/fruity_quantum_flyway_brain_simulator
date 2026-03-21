@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,8 +17,19 @@ sys.path.insert(0, str(SRC))
 
 from flywire_wave.auth import ensure_flywire_secret
 from flywire_wave.config import load_config
+from flywire_wave.geometry_contract import (
+    FETCH_STATUS_FAILED,
+    build_geometry_bundle_paths,
+    build_geometry_manifest_record,
+    default_asset_statuses,
+    load_geometry_manifest_records,
+    merge_geometry_manifest_record,
+    RAW_MESH_KEY,
+    RAW_SKELETON_KEY,
+    write_geometry_manifest,
+)
 from flywire_wave.io_utils import read_root_ids
-from flywire_wave.mesh_pipeline import fetch_mesh_and_optional_skeleton
+from flywire_wave.mesh_pipeline import RawAssetFetchError, fetch_mesh_and_optional_skeleton
 from flywire_wave.registry import load_neuron_registry, validate_selected_root_ids
 
 
@@ -27,6 +40,21 @@ def main() -> int:
         required=True,
         help="Path to the YAML config file. Relative paths inside config.paths resolve from the repository root.",
     )
+    parser.add_argument(
+        "--refetch-meshes",
+        action="store_true",
+        help="Ignore healthy cached raw meshes and fetch them again.",
+    )
+    parser.add_argument(
+        "--refetch-skeletons",
+        action="store_true",
+        help="Ignore healthy cached skeletons and fetch them again.",
+    )
+    parser.add_argument(
+        "--require-skeletons",
+        action="store_true",
+        help="Treat skeleton download failures as fatal for this run.",
+    )
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -34,9 +62,23 @@ def main() -> int:
 
     cfg = load_config(args.config)
     paths = cfg["paths"]
-    meshing = cfg["meshing"]
+    meshing = dict(cfg["meshing"])
+    if args.refetch_meshes:
+        meshing["refetch_meshes"] = True
+    if args.refetch_skeletons:
+        meshing["refetch_skeletons"] = True
+    if args.require_skeletons:
+        meshing["require_skeletons"] = True
     dataset = cfg["dataset"].get("flywire_dataset", "public")
+    materialization_version = cfg["dataset"].get("materialization_version")
     registry_path = paths.get("neuron_registry_csv", "data/interim/registry/neuron_registry.csv")
+    fetch_skeletons = bool(meshing.get("fetch_skeletons", True))
+    refetch_meshes = bool(meshing.get("refetch_meshes", False))
+    refetch_skeletons = bool(meshing.get("refetch_skeletons", False))
+    require_skeletons = bool(meshing.get("require_skeletons", False))
+
+    if require_skeletons and not fetch_skeletons:
+        raise ValueError("meshing.require_skeletons cannot be true when meshing.fetch_skeletons is false.")
 
     if token:
         try:
@@ -55,16 +97,80 @@ def main() -> int:
 
     print(f"Fetching {len(root_ids)} neurons validated against {registry_path}.")
 
+    existing_records = load_geometry_manifest_records(paths["manifest_json"])
+    manifest_records: dict[int, dict[str, object]] = {}
+    failures: list[str] = []
+    fetch_status_counts = {
+        RAW_MESH_KEY: Counter(),
+        RAW_SKELETON_KEY: Counter(),
+    }
     for root_id in tqdm(root_ids, desc="Fetching meshes"):
-        fetch_mesh_and_optional_skeleton(
-            root_id=root_id,
-            raw_mesh_dir=paths["meshes_raw_dir"],
-            raw_skeleton_dir=paths["skeletons_raw_dir"],
-            flywire_dataset=dataset,
-            fetch_skeletons=bool(meshing.get("fetch_skeletons", True)),
+        bundle_paths = build_geometry_bundle_paths(
+            root_id,
+            meshes_raw_dir=paths["meshes_raw_dir"],
+            skeletons_raw_dir=paths["skeletons_raw_dir"],
+            processed_mesh_dir=paths["processed_mesh_dir"],
+            processed_graph_dir=paths["processed_graph_dir"],
+        )
+        asset_statuses = default_asset_statuses(fetch_skeletons=fetch_skeletons)
+        raw_asset_provenance: dict[str, object] = {}
+        try:
+            fetch_outputs = fetch_mesh_and_optional_skeleton(
+                root_id=root_id,
+                bundle_paths=bundle_paths,
+                flywire_dataset=dataset,
+                fetch_skeletons=fetch_skeletons,
+                refetch_mesh=refetch_meshes,
+                refetch_skeleton=refetch_skeletons,
+                require_skeletons=require_skeletons,
+            )
+            asset_statuses.update(fetch_outputs["asset_statuses"])
+            raw_asset_provenance = dict(fetch_outputs["raw_asset_provenance"])
+        except RawAssetFetchError as exc:
+            asset_statuses.update(exc.asset_statuses)
+            raw_asset_provenance = dict(exc.raw_asset_provenance)
+            failures.append(str(exc))
+
+        new_record = build_geometry_manifest_record(
+            bundle_paths=bundle_paths,
+            asset_statuses=asset_statuses,
+            dataset_name=str(dataset),
+            materialization_version=materialization_version,
+            meshing_config_snapshot=meshing,
+            raw_asset_provenance=raw_asset_provenance,
+        )
+        manifest_records[root_id] = merge_geometry_manifest_record(
+            existing_records.get(bundle_paths.root_label),
+            new_record,
         )
 
-    print("Finished downloading raw assets.")
+        for asset_key in (RAW_MESH_KEY, RAW_SKELETON_KEY):
+            asset_provenance = raw_asset_provenance.get(asset_key, {})
+            fetch_status = str(asset_provenance.get("fetch_status", FETCH_STATUS_FAILED))
+            fetch_status_counts[asset_key][fetch_status] += 1
+
+    write_geometry_manifest(
+        manifest_path=paths["manifest_json"],
+        bundle_records=manifest_records,
+        dataset_name=str(dataset),
+        materialization_version=materialization_version,
+        meshing_config_snapshot=meshing,
+    )
+    print(
+        json.dumps(
+            {
+                "n_assets": len(manifest_records),
+                "manifest": paths["manifest_json"],
+                "mesh_fetch_status_counts": dict(fetch_status_counts[RAW_MESH_KEY]),
+                "skeleton_fetch_status_counts": dict(fetch_status_counts[RAW_SKELETON_KEY]),
+                "failure_count": len(failures),
+            },
+            indent=2,
+        )
+    )
+    if failures:
+        print("\n".join(failures), file=sys.stderr)
+        return 1
     return 0
 
 

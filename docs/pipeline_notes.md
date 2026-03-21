@@ -32,10 +32,43 @@ so downstream pipeline steps can switch subsets without code changes.
 
 ### Geometry handoff contract
 
-Per neuron, the processed output includes:
+Milestone 5 uses the versioned geometry bundle contract
+`geometry_bundle.v1`. One canonical library path builder owns the
+filenames below, and both `scripts/02_fetch_meshes.py` plus
+`scripts/03_build_wave_assets.py` use it directly.
 
-- `root_id.ply` simplified mesh
-- `root_id_graph.npz` adjacency + Laplacian + patch mask
-- `root_id_meta.json` counts and preprocessing metadata
+Per neuron, the bundle layout is:
 
-Those files are the handoff point into a later simulator.
+- `config.paths.meshes_raw_dir/<root_id>.ply`: raw mesh
+- `config.paths.skeletons_raw_dir/<root_id>.swc`: raw skeleton
+- `config.paths.processed_mesh_dir/<root_id>.ply`: simplified mesh
+- `config.paths.processed_graph_dir/<root_id>_graph.npz`: surface graph
+- `config.paths.processed_graph_dir/<root_id>_patch_graph.npz`: patch graph
+- `config.paths.processed_graph_dir/<root_id>_descriptors.json`: derived descriptor sidecar
+- `config.paths.processed_graph_dir/<root_id>_qa.json`: QA sidecar
+
+The processed graph archives intentionally separate fine and coarse data:
+
+- the surface graph stores the simplified mesh vertices/faces, sparse surface adjacency/Laplacian arrays, and `surface_to_patch` so every surface vertex has an explicit coarse patch assignment
+- the patch graph stores sparse coarse adjacency/Laplacian arrays plus `patch_sizes`, `patch_centroids`, `patch_seed_vertices`, and CSR-style `member_vertex_indices` / `member_vertex_indptr` arrays for reconstructing patch membership deterministically
+
+`config.paths.manifest_json` records the bundle contract version, dataset,
+materialization version, meshing-config snapshot, and per-root asset
+statuses/paths. Raw fetch runs also record `raw_asset_provenance` per
+root ID so cache hits, refetches, skips, validation failures, and
+optional skeleton fetch errors can be audited without reading console
+logs. Processed bundle records also expose `artifact_sources` so each
+simplified mesh, surface graph, patch graph, and sidecar points back to
+the raw mesh and skeleton inputs it was built against.
+
+Descriptor and QA rationale:
+
+- `docs/geometry_descriptor_qa.md` documents the default `meshing.qa_thresholds`
+  profile, what each descriptor bucket is meant to capture, and which failed
+  checks should block downstream use by default.
+
+Compatibility shim:
+
+- `config.paths.processed_graph_dir/<root_id>_meta.json` is still written as
+  a legacy metadata pointer so older consumers can keep reading the prior
+  sidecar name during migration.

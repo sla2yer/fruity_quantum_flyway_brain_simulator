@@ -1,24 +1,65 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.csgraph import shortest_path
 import trimesh
 
+from .geometry_contract import (
+    ASSET_STATUS_MISSING,
+    ASSET_STATUS_READY,
+    ASSET_STATUS_SKIPPED,
+    FETCH_STATUS_CACHE_HIT,
+    FETCH_STATUS_FAILED,
+    FETCH_STATUS_FETCHED,
+    FETCH_STATUS_SKIPPED,
+    GeometryBundlePaths,
+    PATCH_GRAPH_KEY,
+    QA_SIDECAR_KEY,
+    RAW_MESH_KEY,
+    RAW_SKELETON_KEY,
+    SIMPLIFIED_MESH_KEY,
+    SURFACE_GRAPH_KEY,
+    DESCRIPTOR_SIDECAR_KEY,
+)
+from .geometry_qa import (
+    build_descriptor_payload,
+    describe_mesh,
+    describe_patch_decomposition,
+    describe_skeleton,
+    evaluate_geometry_qa,
+)
 from .io_utils import ensure_dir, write_json
 
 
-@dataclass
-class MeshAssetPaths:
-    raw_mesh_path: Path
-    raw_skeleton_path: Path | None
-    processed_mesh_path: Path
-    processed_graph_path: Path
-    meta_json_path: Path
+class RawAssetFetchError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        asset_statuses: dict[str, str],
+        raw_asset_provenance: dict[str, dict[str, Any]],
+    ) -> None:
+        super().__init__(message)
+        self.asset_statuses = asset_statuses
+        self.raw_asset_provenance = raw_asset_provenance
+
+
+@dataclass(frozen=True)
+class PatchDecomposition:
+    surface_to_patch: np.ndarray
+    patch_seed_vertices: np.ndarray
+    patch_sizes: np.ndarray
+    patch_centroids: np.ndarray
+    member_vertex_indices: np.ndarray
+    member_vertex_indptr: np.ndarray
+    patch_adj: sp.csr_matrix
+    patch_lap: sp.csr_matrix
 
 
 def _optional_imports() -> tuple[Any, Any]:
@@ -52,13 +93,14 @@ def _faces_to_adjacency(faces: np.ndarray, n_vertices: int) -> sp.csr_matrix:
 
     rows = []
     cols = []
-    for i, j in edges:
+    for i, j in sorted(edges):
         rows.extend([i, j])
         cols.extend([j, i])
 
     data = np.ones(len(rows), dtype=np.float32)
     adj = sp.csr_matrix((data, (rows, cols)), shape=(n_vertices, n_vertices))
     adj.eliminate_zeros()
+    adj.sort_indices()
     return adj
 
 
@@ -68,70 +110,481 @@ def _uniform_laplacian(adj: sp.csr_matrix) -> sp.csr_matrix:
     return d - adj
 
 
-def _choose_patch_vertices(adj: sp.csr_matrix, patch_hops: int, cap: int) -> np.ndarray:
-    n_vertices = adj.shape[0]
-    seed = n_vertices // 2
-    dist = shortest_path(adj, directed=False, indices=seed, unweighted=True)
-    patch = np.where(np.isfinite(dist) & (dist <= patch_hops))[0]
-    if patch.size > cap:
-        order = np.argsort(dist[patch])
-        patch = patch[order[:cap]]
-    return patch.astype(np.int32)
+def _serialize_sparse_matrix(matrix: sp.csr_matrix) -> dict[str, np.ndarray]:
+    matrix = matrix.tocsr().astype(np.float32)
+    matrix.sort_indices()
+    return {
+        "data": matrix.data.astype(np.float32, copy=False),
+        "indices": matrix.indices.astype(np.int32, copy=False),
+        "indptr": matrix.indptr.astype(np.int32, copy=False),
+        "shape": np.asarray(matrix.shape, dtype=np.int32),
+    }
+
+
+def _collect_patch_vertices(
+    adj: sp.csr_matrix,
+    *,
+    seed: int,
+    unassigned: np.ndarray,
+    patch_hops: int,
+    cap: int,
+) -> np.ndarray:
+    queue: deque[tuple[int, int]] = deque([(int(seed), 0)])
+    visited = {int(seed)}
+    patch_vertices: list[int] = []
+
+    while queue and len(patch_vertices) < cap:
+        vertex, distance = queue.popleft()
+        if not bool(unassigned[vertex]):
+            continue
+
+        patch_vertices.append(vertex)
+        if distance >= patch_hops:
+            continue
+
+        start = int(adj.indptr[vertex])
+        end = int(adj.indptr[vertex + 1])
+        for neighbor in adj.indices[start:end]:
+            neighbor_idx = int(neighbor)
+            if neighbor_idx in visited or not bool(unassigned[neighbor_idx]):
+                continue
+            visited.add(neighbor_idx)
+            queue.append((neighbor_idx, distance + 1))
+
+    return np.asarray(patch_vertices, dtype=np.int32)
+
+
+def _build_patch_membership_arrays(patches: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    member_vertex_indptr = np.zeros(len(patches) + 1, dtype=np.int32)
+    if not patches:
+        return np.empty(0, dtype=np.int32), member_vertex_indptr
+
+    counts = np.asarray([int(patch.size) for patch in patches], dtype=np.int32)
+    member_vertex_indptr[1:] = np.cumsum(counts, dtype=np.int32)
+    member_vertex_indices = np.concatenate(patches).astype(np.int32, copy=False)
+    return member_vertex_indices, member_vertex_indptr
+
+
+def _build_patch_adjacency(
+    adj: sp.csr_matrix,
+    surface_to_patch: np.ndarray,
+    *,
+    patch_count: int,
+) -> sp.csr_matrix:
+    if patch_count <= 0:
+        return sp.csr_matrix((0, 0), dtype=np.float32)
+
+    upper_edges = sp.triu(adj, k=1).tocoo()
+    edge_weights: dict[tuple[int, int], float] = {}
+    for row, col, weight in zip(upper_edges.row, upper_edges.col, upper_edges.data):
+        patch_u = int(surface_to_patch[int(row)])
+        patch_v = int(surface_to_patch[int(col)])
+        if patch_u == patch_v:
+            continue
+        if patch_u > patch_v:
+            patch_u, patch_v = patch_v, patch_u
+        edge_weights[(patch_u, patch_v)] = edge_weights.get((patch_u, patch_v), 0.0) + float(weight)
+
+    if not edge_weights:
+        return sp.csr_matrix((patch_count, patch_count), dtype=np.float32)
+
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+    for (patch_u, patch_v), weight in sorted(edge_weights.items()):
+        rows.extend([patch_u, patch_v])
+        cols.extend([patch_v, patch_u])
+        data.extend([weight, weight])
+
+    patch_adj = sp.csr_matrix(
+        (np.asarray(data, dtype=np.float32), (rows, cols)),
+        shape=(patch_count, patch_count),
+    )
+    patch_adj.eliminate_zeros()
+    patch_adj.sort_indices()
+    return patch_adj
+
+
+def _partition_surface_into_patches(
+    adj: sp.csr_matrix,
+    vertices: np.ndarray,
+    *,
+    patch_hops: int,
+    patch_vertex_cap: int,
+) -> PatchDecomposition:
+    n_vertices = int(adj.shape[0])
+    if patch_hops < 0:
+        raise ValueError("patch_hops must be non-negative.")
+    if patch_vertex_cap <= 0:
+        raise ValueError("patch_vertex_cap must be positive.")
+    if n_vertices != int(vertices.shape[0]):
+        raise ValueError("Surface graph vertex count does not match vertex coordinates.")
+
+    unassigned = np.ones(n_vertices, dtype=bool)
+    surface_to_patch = np.full(n_vertices, -1, dtype=np.int32)
+    patches: list[np.ndarray] = []
+    patch_seed_vertices: list[int] = []
+    patch_centroids: list[np.ndarray] = []
+
+    while bool(np.any(unassigned)):
+        seed = int(np.flatnonzero(unassigned)[0])
+        patch_vertices = _collect_patch_vertices(
+            adj,
+            seed=seed,
+            unassigned=unassigned,
+            patch_hops=patch_hops,
+            cap=patch_vertex_cap,
+        )
+        if patch_vertices.size == 0:
+            patch_vertices = np.asarray([seed], dtype=np.int32)
+
+        patch_id = len(patches)
+        patches.append(patch_vertices)
+        patch_seed_vertices.append(seed)
+        surface_to_patch[patch_vertices] = patch_id
+        unassigned[patch_vertices] = False
+        patch_centroids.append(vertices[patch_vertices].mean(axis=0).astype(np.float32))
+
+    if np.any(surface_to_patch < 0):
+        raise RuntimeError("Patch generation did not cover the full surface graph.")
+
+    member_vertex_indices, member_vertex_indptr = _build_patch_membership_arrays(patches)
+    patch_adj = _build_patch_adjacency(adj, surface_to_patch, patch_count=len(patches))
+    patch_lap = _uniform_laplacian(patch_adj)
+
+    return PatchDecomposition(
+        surface_to_patch=surface_to_patch,
+        patch_seed_vertices=np.asarray(patch_seed_vertices, dtype=np.int32),
+        patch_sizes=np.asarray([int(patch.size) for patch in patches], dtype=np.int32),
+        patch_centroids=np.asarray(patch_centroids, dtype=np.float32),
+        member_vertex_indices=member_vertex_indices,
+        member_vertex_indptr=member_vertex_indptr,
+        patch_adj=patch_adj,
+        patch_lap=patch_lap,
+    )
 
 
 def fetch_mesh_and_optional_skeleton(
     *,
     root_id: int,
-    raw_mesh_dir: str | Path,
-    raw_skeleton_dir: str | Path,
+    bundle_paths: GeometryBundlePaths,
     flywire_dataset: str = "public",
     fetch_skeletons: bool = True,
-) -> tuple[Path, Path | None]:
-    flywire, navis = _optional_imports()
+    refetch_mesh: bool = False,
+    refetch_skeleton: bool = False,
+    require_skeletons: bool = False,
+    set_default_dataset: Callable[[str], None] | None = None,
+    mesh_fetcher: Callable[[int], Any] | None = None,
+    skeleton_fetcher: Callable[[int], Any] | None = None,
+    skeleton_writer: Callable[[Any, str | Path], None] | None = None,
+) -> dict[str, Any]:
+    needs_default_clients = (
+        set_default_dataset is None
+        or mesh_fetcher is None
+        or (fetch_skeletons and (skeleton_fetcher is None or skeleton_writer is None))
+    )
+    if needs_default_clients:
+        flywire, navis = _optional_imports()
+        set_default_dataset = flywire.set_default_dataset
+        mesh_fetcher = flywire.get_mesh_neuron
+        skeleton_fetcher = flywire.get_skeletons
+        skeleton_writer = navis.write_swc
 
-    raw_mesh_dir = ensure_dir(raw_mesh_dir)
-    raw_skeleton_dir = ensure_dir(raw_skeleton_dir)
+    if require_skeletons and not fetch_skeletons:
+        raise ValueError("Skeletons cannot be required when meshing.fetch_skeletons is disabled.")
 
-    flywire.set_default_dataset(flywire_dataset)
+    ensure_dir(bundle_paths.raw_mesh_path.parent)
+    ensure_dir(bundle_paths.raw_skeleton_path.parent)
 
-    neuron = flywire.get_mesh_neuron(int(root_id))
-    mesh = trimesh.Trimesh(vertices=np.asarray(neuron.vertices), faces=np.asarray(neuron.faces), process=False)
-    raw_mesh_path = raw_mesh_dir / f"{int(root_id)}.ply"
-    mesh.export(raw_mesh_path)
+    set_default_dataset(flywire_dataset)
 
-    raw_skeleton_path: Path | None = None
-    if fetch_skeletons:
-        try:
-            sk = flywire.get_skeletons(int(root_id))
-            raw_skeleton_path = raw_skeleton_dir / f"{int(root_id)}.swc"
-            navis.write_swc(sk, raw_skeleton_path)
-        except Exception:
-            raw_skeleton_path = None
+    mesh_provenance = _materialize_raw_mesh(
+        root_id=root_id,
+        asset_path=bundle_paths.raw_mesh_path,
+        refetch=refetch_mesh,
+        mesh_fetcher=mesh_fetcher,
+    )
+    skeleton_provenance = _materialize_raw_skeleton(
+        root_id=root_id,
+        asset_path=bundle_paths.raw_skeleton_path,
+        fetch_skeletons=fetch_skeletons,
+        refetch=refetch_skeleton,
+        skeleton_fetcher=skeleton_fetcher,
+        skeleton_writer=skeleton_writer,
+    )
 
-    return raw_mesh_path, raw_skeleton_path
+    asset_statuses = {
+        RAW_MESH_KEY: str(mesh_provenance["asset_status"]),
+        RAW_SKELETON_KEY: str(skeleton_provenance["asset_status"]),
+    }
+    raw_asset_provenance = {
+        RAW_MESH_KEY: mesh_provenance,
+        RAW_SKELETON_KEY: skeleton_provenance,
+    }
+
+    if mesh_provenance["fetch_status"] == FETCH_STATUS_FAILED:
+        raise RawAssetFetchError(
+            f"Mesh fetch failed for root_id={root_id}: {mesh_provenance.get('error', 'unknown error')}",
+            asset_statuses=asset_statuses,
+            raw_asset_provenance=raw_asset_provenance,
+        )
+    if require_skeletons and skeleton_provenance["fetch_status"] == FETCH_STATUS_FAILED:
+        raise RawAssetFetchError(
+            f"Skeleton fetch failed for root_id={root_id}: {skeleton_provenance.get('error', 'unknown error')}",
+            asset_statuses=asset_statuses,
+            raw_asset_provenance=raw_asset_provenance,
+        )
+
+    return {
+        "asset_statuses": asset_statuses,
+        "raw_asset_provenance": raw_asset_provenance,
+    }
+
+
+def _materialize_raw_mesh(
+    *,
+    root_id: int,
+    asset_path: Path,
+    refetch: bool,
+    mesh_fetcher: Callable[[int], Any],
+) -> dict[str, Any]:
+    def fetch_and_write() -> None:
+        neuron = mesh_fetcher(int(root_id))
+        mesh = trimesh.Trimesh(vertices=np.asarray(neuron.vertices), faces=np.asarray(neuron.faces), process=False)
+        _write_mesh_atomically(mesh, asset_path)
+
+    return _materialize_raw_asset(
+        asset_key=RAW_MESH_KEY,
+        asset_path=asset_path,
+        fetch_enabled=True,
+        refetch=refetch,
+        required=True,
+        validator=_validate_cached_mesh,
+        fetch_and_write=fetch_and_write,
+    )
+
+
+def _materialize_raw_skeleton(
+    *,
+    root_id: int,
+    asset_path: Path,
+    fetch_skeletons: bool,
+    refetch: bool,
+    skeleton_fetcher: Callable[[int], Any] | None,
+    skeleton_writer: Callable[[Any, str | Path], None] | None,
+) -> dict[str, Any]:
+    def fetch_and_write() -> None:
+        assert skeleton_fetcher is not None
+        assert skeleton_writer is not None
+        skeleton = skeleton_fetcher(int(root_id))
+        _write_skeleton_atomically(skeleton, asset_path, skeleton_writer)
+
+    return _materialize_raw_asset(
+        asset_key=RAW_SKELETON_KEY,
+        asset_path=asset_path,
+        fetch_enabled=fetch_skeletons,
+        refetch=refetch,
+        required=False,
+        validator=_validate_cached_skeleton,
+        fetch_and_write=fetch_and_write if fetch_skeletons else None,
+    )
+
+
+def _materialize_raw_asset(
+    *,
+    asset_key: str,
+    asset_path: Path,
+    fetch_enabled: bool,
+    refetch: bool,
+    required: bool,
+    validator: Callable[[Path], tuple[bool, str]],
+    fetch_and_write: Callable[[], None] | None,
+) -> dict[str, Any]:
+    cache_before = _cache_snapshot(asset_path, validator)
+    provenance = {
+        "path": str(asset_path),
+        "required": required,
+        "fetch_requested": fetch_enabled,
+        "refetch_requested": refetch,
+        "checked_at_utc": _utc_now(),
+        "cache_before": cache_before,
+        "cache_after": dict(cache_before),
+        "asset_status": ASSET_STATUS_MISSING,
+        "fetch_status": FETCH_STATUS_FAILED,
+        "fetch_reason": "",
+        "size_bytes": None,
+        "mtime_utc": None,
+        "error": None,
+    }
+
+    if not fetch_enabled:
+        provenance["fetch_status"] = FETCH_STATUS_SKIPPED
+        provenance["fetch_reason"] = "fetch_disabled"
+        provenance["asset_status"] = ASSET_STATUS_SKIPPED
+        if cache_before["state"] == "valid":
+            provenance["size_bytes"], provenance["mtime_utc"] = _file_metadata(asset_path)
+        return provenance
+
+    if cache_before["state"] == "valid" and not refetch:
+        provenance["fetch_status"] = FETCH_STATUS_CACHE_HIT
+        provenance["fetch_reason"] = "existing_valid_cache"
+        provenance["asset_status"] = ASSET_STATUS_READY
+        provenance["size_bytes"], provenance["mtime_utc"] = _file_metadata(asset_path)
+        return provenance
+
+    provenance["fetch_reason"] = "forced_refetch" if refetch else f"{cache_before['state']}_cache"
+    try:
+        if fetch_and_write is None:
+            raise RuntimeError(f"No fetch handler configured for {asset_key}.")
+        fetch_and_write()
+        cache_after = _cache_snapshot(asset_path, validator)
+        provenance["cache_after"] = cache_after
+        if cache_after["state"] != "valid":
+            raise RuntimeError(f"Fetched {asset_key} did not validate: {cache_after['reason']}")
+        provenance["fetch_status"] = FETCH_STATUS_FETCHED
+        provenance["asset_status"] = ASSET_STATUS_READY
+        provenance["size_bytes"], provenance["mtime_utc"] = _file_metadata(asset_path)
+        return provenance
+    except Exception as exc:
+        cache_after = _cache_snapshot(asset_path, validator)
+        provenance["cache_after"] = cache_after
+        provenance["error"] = f"{type(exc).__name__}: {exc}"
+        if cache_after["state"] == "valid":
+            provenance["asset_status"] = ASSET_STATUS_READY
+            provenance["size_bytes"], provenance["mtime_utc"] = _file_metadata(asset_path)
+        elif not fetch_enabled:
+            provenance["asset_status"] = ASSET_STATUS_SKIPPED
+        else:
+            provenance["asset_status"] = ASSET_STATUS_MISSING
+        return provenance
+
+
+def _cache_snapshot(path: Path, validator: Callable[[Path], tuple[bool, str]]) -> dict[str, str]:
+    valid, reason = validator(path)
+    if valid:
+        state = "valid"
+    elif path.exists():
+        state = "invalid"
+    else:
+        state = "missing"
+    return {
+        "state": state,
+        "reason": reason,
+    }
+
+
+def _validate_cached_mesh(path: Path) -> tuple[bool, str]:
+    if not path.exists():
+        return False, "missing_file"
+    if path.stat().st_size <= 0:
+        return False, "empty_file"
+    try:
+        mesh = trimesh.load_mesh(path, process=False)
+    except Exception as exc:
+        return False, f"load_failed:{type(exc).__name__}"
+    if not isinstance(mesh, trimesh.Trimesh):
+        return False, f"unexpected_type:{type(mesh).__name__}"
+    vertices = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.faces)
+    if vertices.ndim != 2 or vertices.shape[0] == 0 or vertices.shape[1] != 3:
+        return False, "invalid_vertices"
+    if faces.ndim != 2 or faces.shape[0] == 0 or faces.shape[1] < 3:
+        return False, "invalid_faces"
+    return True, "validated_trimesh"
+
+
+def _validate_cached_skeleton(path: Path) -> tuple[bool, str]:
+    if not path.exists():
+        return False, "missing_file"
+    if path.stat().st_size <= 0:
+        return False, "empty_file"
+
+    data_lines = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) != 7:
+                return False, "invalid_swc_columns"
+            try:
+                int(parts[0])
+                int(parts[1])
+                float(parts[2])
+                float(parts[3])
+                float(parts[4])
+                float(parts[5])
+                int(parts[6])
+            except ValueError:
+                return False, "invalid_swc_values"
+            data_lines += 1
+    if data_lines == 0:
+        return False, "missing_swc_nodes"
+    return True, "validated_swc"
+
+
+def _write_mesh_atomically(mesh: trimesh.Trimesh, path: Path) -> None:
+    tmp_path = path.with_suffix(f".tmp{path.suffix}")
+    try:
+        mesh.export(tmp_path)
+        tmp_path.replace(path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+
+
+def _write_skeleton_atomically(
+    skeleton: Any,
+    path: Path,
+    skeleton_writer: Callable[[Any, str | Path], None],
+) -> None:
+    tmp_path = path.with_suffix(f".tmp{path.suffix}")
+    try:
+        skeleton_writer(skeleton, tmp_path)
+        tmp_path.replace(path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+
+
+def _file_metadata(path: Path) -> tuple[int | None, str | None]:
+    if not path.exists():
+        return None, None
+    stat = path.stat()
+    mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).replace(microsecond=0).isoformat()
+    return int(stat.st_size), mtime
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def process_mesh_into_wave_assets(
     *,
     root_id: int,
-    raw_mesh_path: str | Path,
-    processed_mesh_dir: str | Path,
-    processed_graph_dir: str | Path,
+    bundle_paths: GeometryBundlePaths,
     simplify_target_faces: int = 15000,
     patch_hops: int = 6,
     patch_vertex_cap: int = 2500,
     registry_metadata: dict[str, Any] | None = None,
-) -> dict[str, str]:
-    processed_mesh_dir = ensure_dir(processed_mesh_dir)
-    processed_graph_dir = ensure_dir(processed_graph_dir)
+    qa_thresholds: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    ensure_dir(bundle_paths.simplified_mesh_path.parent)
+    ensure_dir(bundle_paths.surface_graph_path.parent)
 
-    raw_mesh = trimesh.load_mesh(raw_mesh_path, process=False)
+    raw_mesh = trimesh.load_mesh(bundle_paths.raw_mesh_path, process=False)
     if not isinstance(raw_mesh, trimesh.Trimesh):
-        raise TypeError(f"Expected a Trimesh at {raw_mesh_path}, got {type(raw_mesh)!r}")
+        raise TypeError(f"Expected a Trimesh at {bundle_paths.raw_mesh_path}, got {type(raw_mesh)!r}")
+    raw_vertices = np.asarray(raw_mesh.vertices, dtype=np.float32)
+    raw_faces = np.asarray(raw_mesh.faces, dtype=np.int32)
+    raw_adj = _faces_to_adjacency(raw_faces, raw_vertices.shape[0])
+    raw_mesh_summary = describe_mesh(raw_mesh, adj=raw_adj)
 
     mesh = raw_mesh.copy()
+    original_face_count = int(len(mesh.faces))
     target_faces = min(int(simplify_target_faces), int(len(mesh.faces)))
-    if target_faces >= 4:
+    if 4 <= target_faces < original_face_count:
         try:
             mesh = mesh.simplify_quadric_decimation(target_faces)
         except Exception:
@@ -142,50 +595,154 @@ def process_mesh_into_wave_assets(
     faces = np.asarray(mesh.faces, dtype=np.int32)
     adj = _faces_to_adjacency(faces, vertices.shape[0])
     lap = _uniform_laplacian(adj)
-    patch_vertices = _choose_patch_vertices(adj, patch_hops, patch_vertex_cap)
-    patch_mask = np.zeros(vertices.shape[0], dtype=np.uint8)
-    patch_mask[patch_vertices] = 1
-
-    processed_mesh_path = processed_mesh_dir / f"{int(root_id)}.ply"
-    graph_path = processed_graph_dir / f"{int(root_id)}_graph.npz"
-    meta_json_path = processed_graph_dir / f"{int(root_id)}_meta.json"
-
-    mesh.export(processed_mesh_path)
-
-    np.savez_compressed(
-        graph_path,
-        vertices=vertices,
-        faces=faces,
-        adj_data=adj.data,
-        adj_indices=adj.indices,
-        adj_indptr=adj.indptr,
-        adj_shape=np.asarray(adj.shape, dtype=np.int32),
-        lap_data=lap.data,
-        lap_indices=lap.indices,
-        lap_indptr=lap.indptr,
-        lap_shape=np.asarray(lap.shape, dtype=np.int32),
-        patch_vertices=patch_vertices,
-        patch_mask=patch_mask,
+    patch_decomposition = _partition_surface_into_patches(
+        adj,
+        vertices,
+        patch_hops=patch_hops,
+        patch_vertex_cap=patch_vertex_cap,
     )
+    surface_graph_payload = {
+        "root_id": np.asarray(int(root_id), dtype=np.int64),
+        "patch_count": np.asarray(int(patch_decomposition.patch_sizes.size), dtype=np.int32),
+        "vertices": vertices,
+        "faces": faces,
+        "surface_to_patch": patch_decomposition.surface_to_patch,
+    }
+    surface_graph_payload.update(
+        {
+            f"adj_{key}": value
+            for key, value in _serialize_sparse_matrix(adj).items()
+        }
+    )
+    surface_graph_payload.update(
+        {
+            f"lap_{key}": value
+            for key, value in _serialize_sparse_matrix(lap).items()
+        }
+    )
+
+    patch_graph_payload = {
+        "root_id": np.asarray(int(root_id), dtype=np.int64),
+        "patch_count": np.asarray(int(patch_decomposition.patch_sizes.size), dtype=np.int32),
+        "surface_vertex_count": np.asarray(int(vertices.shape[0]), dtype=np.int32),
+        "surface_to_patch": patch_decomposition.surface_to_patch,
+        "patch_seed_vertices": patch_decomposition.patch_seed_vertices,
+        "patch_sizes": patch_decomposition.patch_sizes,
+        "patch_centroids": patch_decomposition.patch_centroids,
+        "member_vertex_indices": patch_decomposition.member_vertex_indices,
+        "member_vertex_indptr": patch_decomposition.member_vertex_indptr,
+    }
+    patch_graph_payload.update(
+        {
+            f"adj_{key}": value
+            for key, value in _serialize_sparse_matrix(patch_decomposition.patch_adj).items()
+        }
+    )
+    patch_graph_payload.update(
+        {
+            f"lap_{key}": value
+            for key, value in _serialize_sparse_matrix(patch_decomposition.patch_lap).items()
+        }
+    )
+
+    mesh.export(bundle_paths.simplified_mesh_path)
+
+    np.savez_compressed(bundle_paths.surface_graph_path, **surface_graph_payload)
+    np.savez_compressed(bundle_paths.patch_graph_path, **patch_graph_payload)
+
+    simplified_mesh_summary = describe_mesh(mesh, adj=adj)
+    coarse_summary = describe_patch_decomposition(
+        surface_vertex_count=int(vertices.shape[0]),
+        surface_extent=np.asarray(simplified_mesh_summary["extent"], dtype=np.float64),
+        surface_component_count=int(simplified_mesh_summary["component_count"]),
+        patch_sizes=patch_decomposition.patch_sizes,
+        patch_centroids=patch_decomposition.patch_centroids,
+        surface_to_patch=patch_decomposition.surface_to_patch,
+        member_vertex_indices=patch_decomposition.member_vertex_indices,
+        patch_adj=patch_decomposition.patch_adj,
+    )
+    skeleton_summary = describe_skeleton(bundle_paths.raw_skeleton_path)
+    descriptor_payload = build_descriptor_payload(
+        root_id=root_id,
+        raw_mesh_summary=raw_mesh_summary,
+        simplified_mesh_summary=simplified_mesh_summary,
+        coarse_summary=coarse_summary,
+        skeleton_summary=skeleton_summary,
+        simplify_target_faces=int(simplify_target_faces),
+        patch_hops=int(patch_hops),
+        patch_vertex_cap=int(patch_vertex_cap),
+        raw_mesh_path=bundle_paths.raw_mesh_path,
+        raw_skeleton_path=bundle_paths.raw_skeleton_path,
+        processed_mesh_path=bundle_paths.simplified_mesh_path,
+        surface_graph_path=bundle_paths.surface_graph_path,
+        patch_graph_path=bundle_paths.patch_graph_path,
+        registry_metadata=registry_metadata,
+    )
+    write_json(descriptor_payload, bundle_paths.descriptor_sidecar_path)
+
+    vertex_count_matches_surface_graph = int(vertices.shape[0]) == int(adj.shape[0])
+    surface_to_patch_is_complete = bool(np.all(patch_decomposition.surface_to_patch >= 0))
+    patch_membership_covers_surface = bool(
+        patch_decomposition.member_vertex_indices.size == vertices.shape[0]
+        and np.array_equal(
+            np.sort(patch_decomposition.member_vertex_indices),
+            np.arange(vertices.shape[0], dtype=np.int32),
+        )
+    )
+    patch_graph_node_count_matches_mapping = int(patch_decomposition.patch_adj.shape[0]) == int(
+        patch_decomposition.patch_sizes.size
+    )
+    qa_payload = evaluate_geometry_qa(
+        descriptor_payload,
+        thresholds=qa_thresholds,
+        surface_to_patch_is_complete=surface_to_patch_is_complete,
+        patch_membership_covers_surface=patch_membership_covers_surface,
+        patch_graph_node_count_matches_mapping=patch_graph_node_count_matches_mapping,
+        vertex_count_matches_surface_graph=vertex_count_matches_surface_graph,
+    )
+    write_json(qa_payload, bundle_paths.qa_sidecar_path)
 
     write_json(
         {
-            "root_id": int(root_id),
-            "n_vertices": int(vertices.shape[0]),
-            "n_faces": int(faces.shape[0]),
-            "patch_hops": int(patch_hops),
-            "patch_vertex_count": int(patch_vertices.size),
-            "simplify_target_faces": int(simplify_target_faces),
-            "raw_mesh_path": str(raw_mesh_path),
-            "processed_mesh_path": str(processed_mesh_path),
-            "processed_graph_path": str(graph_path),
-            "registry_metadata": registry_metadata or {},
+            **descriptor_payload,
+            "descriptor_sidecar_path": str(bundle_paths.descriptor_sidecar_path),
+            "qa_sidecar_path": str(bundle_paths.qa_sidecar_path),
+            "qa_summary": qa_payload["summary"],
         },
-        meta_json_path,
+        bundle_paths.legacy_meta_json_path,
     )
 
+    asset_statuses = {
+        RAW_MESH_KEY: ASSET_STATUS_READY if bundle_paths.raw_mesh_path.exists() else ASSET_STATUS_MISSING,
+        SIMPLIFIED_MESH_KEY: ASSET_STATUS_READY,
+        SURFACE_GRAPH_KEY: ASSET_STATUS_READY,
+        PATCH_GRAPH_KEY: ASSET_STATUS_READY,
+        DESCRIPTOR_SIDECAR_KEY: ASSET_STATUS_READY,
+        QA_SIDECAR_KEY: ASSET_STATUS_READY,
+    }
+    if bundle_paths.raw_skeleton_path.exists():
+        asset_statuses[RAW_SKELETON_KEY] = ASSET_STATUS_READY
+
     return {
-        "processed_mesh_path": str(processed_mesh_path),
-        "processed_graph_path": str(graph_path),
-        "meta_json_path": str(meta_json_path),
+        "asset_statuses": asset_statuses,
+        "descriptor_payload": descriptor_payload,
+        "qa_payload": qa_payload,
+        "qa_summary": dict(qa_payload["summary"]),
+        "bundle_metadata": {
+            "n_vertices": int(descriptor_payload["n_vertices"]),
+            "n_faces": int(descriptor_payload["n_faces"]),
+            "surface_graph_edge_count": int(descriptor_payload["surface_graph_edge_count"]),
+            "patch_count": int(descriptor_payload["patch_count"]),
+            "patch_graph_vertex_count": int(descriptor_payload["patch_graph_vertex_count"]),
+            "patch_graph_edge_count": int(descriptor_payload["patch_graph_edge_count"]),
+            "surface_to_patch_count": int(descriptor_payload["surface_to_patch_count"]),
+            "patch_generation_method": "deterministic_bfs_partition",
+            "simplify_target_faces": int(simplify_target_faces),
+            "raw_mesh_face_count": original_face_count,
+            "qa_overall_status": str(qa_payload["summary"]["overall_status"]),
+            "qa_warning_count": int(qa_payload["summary"]["warning_count"]),
+            "qa_failure_count": int(qa_payload["summary"]["failure_count"]),
+            "qa_blocking_failure_count": int(qa_payload["summary"]["blocking_failure_count"]),
+            "qa_downstream_usable": bool(qa_payload["summary"]["downstream_usable"]),
+        },
     }

@@ -5,7 +5,7 @@ MANIFEST ?= manifests/examples/milestone_1_demo.yaml
 SCHEMA ?= schemas/milestone_1_experiment_manifest.schema.json
 DESIGN_LOCK ?= config/milestone_1_design_lock.yaml
 
-.PHONY: help bootstrap verify registry select meshes assets validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview validate-manifest test smoke all
 
 help:
 	@printf '%s\n' \
@@ -17,6 +17,7 @@ help:
 		'select             Build the selected root-id subset' \
 		'meshes             Fetch raw meshes and optional skeletons' \
 		'assets             Build processed mesh/graph assets' \
+		'preview            Build static offline geometry preview report(s)' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -39,6 +40,9 @@ meshes:
 
 assets:
 	$(PYTHON) scripts/03_build_wave_assets.py --config $(CONFIG)
+
+preview:
+	$(PYTHON) scripts/05_preview_geometry.py --config $(CONFIG)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)
