@@ -43,3 +43,8 @@ Thumbs.db
 *.log
 *.swp
 *.swo
+data/raw/codex/cell_types.csv
+data/raw/codex/connections_filtered.csv
+data/raw/codex/neurotransmitter_type_predictions.csv
+data/raw/codex/visual _neuron_annotations.csv
+data/raw/codex/visual_neuron_columns.csv
