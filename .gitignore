@@ -1,0 +1,45 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Test and coverage output
+.coverage
+.coverage.*
+htmlcov/
+
+# Local environment and machine-specific config
+.env
+.env.*
+!.env.example
+config/local.yaml
+config/*.local.yaml
+
+# Generated pipeline outputs
+data/interim/
+data/processed/
+
+# Editor and OS clutter
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+*.swp
+*.swo

@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+from tqdm import tqdm
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+sys.path.insert(0, str(SRC))
+
+from flywire_wave.config import load_config
+from flywire_wave.io_utils import read_root_ids
+from flywire_wave.mesh_pipeline import fetch_mesh_and_optional_skeleton
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Fetch per-neuron FlyWire meshes/skeletons.")
+    parser.add_argument("--config", required=True)
+    args = parser.parse_args()
+
+    load_dotenv(ROOT / ".env")
+    token = os.getenv("FLYWIRE_TOKEN", "").strip()
+
+    cfg = load_config(args.config)
+    paths = cfg["paths"]
+    meshing = cfg["meshing"]
+    dataset = cfg["dataset"].get("flywire_dataset", "public")
+
+    if token:
+        try:
+            from fafbseg import flywire
+
+            flywire.set_chunkedgraph_secret(token)
+        except Exception as exc:
+            raise RuntimeError("Could not set FlyWire token for fafbseg.") from exc
+
+    root_ids = read_root_ids(paths["selected_root_ids"])
+    if not root_ids:
+        raise RuntimeError("No root IDs found. Run scripts/01_select_subset.py first.")
+
+    for root_id in tqdm(root_ids, desc="Fetching meshes"):
+        fetch_mesh_and_optional_skeleton(
+            root_id=root_id,
+            raw_mesh_dir=paths["meshes_raw_dir"],
+            raw_skeleton_dir=paths["skeletons_raw_dir"],
+            flywire_dataset=dataset,
+            fetch_skeletons=bool(meshing.get("fetch_skeletons", True)),
+        )
+
+    print("Finished downloading raw assets.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

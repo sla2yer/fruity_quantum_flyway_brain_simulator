@@ -1,0 +1,24 @@
+dataset:
+  datastack_name: flywire_fafb_public
+  materialization_version: 783
+  flywire_dataset: public
+
+paths:
+  classification_csv: data/raw/codex/classification.csv
+  selected_root_ids: data/interim/root_ids_visual_sample.txt
+  meshes_raw_dir: data/interim/meshes_raw
+  skeletons_raw_dir: data/interim/skeletons_raw
+  processed_mesh_dir: data/processed/meshes
+  processed_graph_dir: data/processed/graphs
+  manifest_json: data/processed/asset_manifest.json
+
+selection:
+  super_class: visual
+  limit: 12
+  sort_by: root_id
+
+meshing:
+  fetch_skeletons: true
+  simplify_target_faces: 15000
+  patch_hops: 6
+  patch_vertex_cap: 2500
