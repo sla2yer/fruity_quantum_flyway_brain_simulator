@@ -10,7 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from flywire_wave.agent_tickets import build_ticket_prompt, filter_tickets, parse_ticket_markdown, select_cli_runner
+from flywire_wave.agent_tickets import (
+    _progress_label,
+    build_ticket_prompt,
+    filter_tickets,
+    parse_ticket_markdown,
+    select_cli_runner,
+)
 
 
 class AgentTicketParsingTest(unittest.TestCase):
@@ -84,6 +90,46 @@ class AgentTicketParsingTest(unittest.TestCase):
 
             with mock.patch.dict("os.environ", {"CODEL_CLI_BIN": "/custom/codel-cli"}, clear=False):
                 self.assertEqual(select_cli_runner(), "/custom/codel-cli")
+
+    def test_progress_label_formats_agent_messages(self) -> None:
+        label = _progress_label(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "Listing the repository root with a shell command so I can report the top-level files precisely.",
+                },
+            }
+        )
+
+        self.assertEqual(
+            label,
+            "thought: Listing the repository root with a shell command so I can report the top-level files precisely.",
+        )
+
+    def test_progress_label_formats_command_state(self) -> None:
+        started = _progress_label(
+            {
+                "type": "item.started",
+                "item": {
+                    "type": "command_execution",
+                    "command": "/bin/bash -lc 'pwd'",
+                },
+            }
+        )
+        completed = _progress_label(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "command": "/bin/bash -lc 'pwd'",
+                    "exit_code": 0,
+                },
+            }
+        )
+
+        self.assertIn("working: running command", started)
+        self.assertEqual(completed, "working: command finished (ok)")
 
 
 if __name__ == "__main__":

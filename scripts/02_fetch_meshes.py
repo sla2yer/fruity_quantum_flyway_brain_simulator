@@ -22,7 +22,11 @@ from flywire_wave.registry import load_neuron_registry
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch per-neuron FlyWire meshes/skeletons.")
-    parser.add_argument("--config", required=True)
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Path to the YAML config file. Relative paths inside config.paths resolve from the repository root.",
+    )
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env")

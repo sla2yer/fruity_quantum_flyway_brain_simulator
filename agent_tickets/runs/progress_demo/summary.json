@@ -1,0 +1,24 @@
+[
+  {
+    "ticket_id": "FW-001",
+    "title": "Resolve config path handling so pipeline commands work outside the repo root",
+    "status": "open",
+    "command": [
+      "/tmp/tmp.tB2LPbBFV4",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/progress_demo/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/progress_demo/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/progress_demo/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/progress_demo/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/progress_demo/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/progress_demo/FW-001_Resolve_config_path_handling_so_pipeline_commands_work_outside_the_repo_root/last_message.md"
+  }
+]

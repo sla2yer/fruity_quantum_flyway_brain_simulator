@@ -283,10 +283,14 @@ def _resolve_optional_path(
     override_key: str,
     candidate_names: list[str],
 ) -> Path | None:
-    override = paths_cfg.get(override_key)
-    if override:
+    if override_key in paths_cfg:
+        override = paths_cfg[override_key]
         candidate = Path(override)
-        return candidate if candidate.exists() else None
+        if candidate.exists():
+            return candidate
+        raise FileNotFoundError(
+            f"Config override paths.{override_key} points to a missing file: {candidate}"
+        )
 
     for name in candidate_names:
         candidate = raw_dir / name

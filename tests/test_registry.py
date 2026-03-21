@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -10,11 +11,80 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from flywire_wave.registry import build_registry, load_connectivity_registry, load_neuron_registry
+from flywire_wave.registry import (
+    build_registry,
+    load_connectivity_registry,
+    load_neuron_registry,
+    resolve_registry_source_paths,
+)
 from flywire_wave.selection import extract_root_ids, select_visual_subset
 
 
 class RegistryBuildTest(unittest.TestCase):
+    def test_resolve_registry_source_paths_rejects_missing_optional_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            raw_dir = tmp_dir / "raw"
+            raw_dir.mkdir()
+
+            self._write_classification_csv(raw_dir / "classification.csv")
+            (raw_dir / "connections_filtered.csv").write_text(
+                "\n".join(
+                    [
+                        "pre_root_id,post_root_id,neuropil,syn_count,nt_type",
+                        "101,102,LOP_R,12,ACH",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            missing_override = raw_dir / "missing_connections.csv"
+            cfg = {
+                "paths": {
+                    "codex_raw_dir": str(raw_dir),
+                    "classification_csv": str(raw_dir / "classification.csv"),
+                    "connections_csv": str(missing_override),
+                },
+            }
+
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                rf"paths\.connections_csv.*{re.escape(str(missing_override))}",
+            ):
+                resolve_registry_source_paths(cfg)
+
+    def test_resolve_registry_source_paths_autodiscovers_optional_sources_without_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            raw_dir = tmp_dir / "raw"
+            raw_dir.mkdir()
+
+            classification_path = raw_dir / "classification.csv"
+            connections_path = raw_dir / "connections_filtered.csv"
+            self._write_classification_csv(classification_path)
+            connections_path.write_text(
+                "\n".join(
+                    [
+                        "pre_root_id,post_root_id,neuropil,syn_count,nt_type",
+                        "101,102,LOP_R,12,ACH",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cfg = {
+                "paths": {
+                    "codex_raw_dir": str(raw_dir),
+                    "classification_csv": str(classification_path),
+                },
+            }
+
+            source_paths = resolve_registry_source_paths(cfg)
+
+            self.assertEqual(source_paths.connections, connections_path)
+
     def test_build_registry_joins_sources_and_writes_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
@@ -169,6 +239,19 @@ class RegistryBuildTest(unittest.TestCase):
             )
 
             self.assertEqual(extract_root_ids(subset), [101, 102])
+
+    def _write_classification_csv(self, path: Path) -> None:
+        path.write_text(
+            "\n".join(
+                [
+                    "root_id,flow,super_class,class,sub_class,hemilineage,side,nerve",
+                    "101,intrinsic,optic,optic_lobe_intrinsic,t5_neuron,,right,",
+                    "102,intrinsic,optic,optic_lobe_intrinsic,transmedullary,,right,",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":

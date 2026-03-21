@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -77,6 +78,12 @@ def parse_args() -> argparse.Namespace:
         help="Keep running later tickets even if one ticket fails.",
     )
     parser.add_argument(
+        "--heartbeat-seconds",
+        type=float,
+        default=20.0,
+        help="How often to print a keep-alive message if the child runner stays quiet.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Parse and print the execution plan without launching the CLI runner.",
@@ -115,7 +122,14 @@ def main() -> int:
         return 0
 
     results = []
-    for ticket in selected:
+    total = len(selected)
+    for index, ticket in enumerate(selected, start=1):
+        print(f"[{index}/{total}] Starting {ticket.ticket_id} - {ticket.title}")
+        started_at = time.monotonic()
+
+        def progress_callback(message: str, *, prefix: str = f"[{index}/{total}] {ticket.ticket_id}") -> None:
+            print(f"{prefix} {message}", flush=True)
+
         result = run_ticket(
             ticket,
             repo_root=ROOT / args.repo_root if not Path(args.repo_root).is_absolute() else Path(args.repo_root),
@@ -124,8 +138,16 @@ def main() -> int:
             sandbox=args.sandbox,
             model=args.model,
             extra_args=args.extra_args,
+            progress_callback=progress_callback,
+            heartbeat_seconds=args.heartbeat_seconds,
         )
         results.append(result)
+        elapsed_seconds = time.monotonic() - started_at
+        status_text = "ok" if result["returncode"] == 0 else f"failed ({result['returncode']})"
+        print(
+            f"[{index}/{total}] Finished {ticket.ticket_id} in {elapsed_seconds:.1f}s: {status_text}",
+            flush=True,
+        )
         if result["returncode"] != 0 and not args.continue_on_error:
             break
 

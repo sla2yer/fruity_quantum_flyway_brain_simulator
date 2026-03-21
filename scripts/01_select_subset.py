@@ -10,13 +10,17 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from flywire_wave.config import load_config
+from flywire_wave.config import get_config_path, load_config
 from flywire_wave.selection import generate_subsets_from_config
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate reproducible FlyWire subset selections from config presets.")
-    parser.add_argument("--config", required=True, help="Path to the YAML config file.")
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Path to the YAML config file. Relative paths inside config.paths resolve from the repository root.",
+    )
     parser.add_argument("--preset", help="Generate only this named preset.")
     parser.add_argument(
         "--all-presets",
@@ -28,7 +32,7 @@ def main() -> int:
     cfg = load_config(args.config)
     summary = generate_subsets_from_config(
         cfg,
-        config_path=ROOT / args.config,
+        config_path=get_config_path(cfg),
         preset_name=args.preset,
         generate_all=args.all_presets,
     )

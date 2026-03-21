@@ -32,7 +32,11 @@ def _json_safe(value: object) -> object:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build simplified mesh + graph assets for wave simulation.")
-    parser.add_argument("--config", required=True)
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Path to the YAML config file. Relative paths inside config.paths resolve from the repository root.",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)

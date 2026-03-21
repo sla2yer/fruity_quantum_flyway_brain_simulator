@@ -5,9 +5,10 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 TICKET_HEADING_RE = re.compile(r"^##\s+([A-Za-z0-9._-]+)\s+-\s+(.+?)\s*$")
@@ -169,6 +170,103 @@ def _safe_ticket_name(ticket: AgentTicket) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("_") or ticket.ticket_id
 
 
+def _compact_text(text: str, *, max_len: int = 240) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_len:
+        return normalized
+    return normalized[: max_len - 3].rstrip() + "..."
+
+
+def _progress_label(event: dict[str, Any]) -> str | None:
+    event_type = event.get("type")
+    if event_type == "turn.started":
+        return "thinking"
+    if event_type != "item.completed" and event_type != "item.started":
+        return None
+
+    item = event.get("item", {})
+    item_type = item.get("type")
+
+    if item_type == "agent_message" and event_type == "item.completed":
+        text = str(item.get("text", "")).strip()
+        if not text:
+            return None
+        return f"thought: {_compact_text(text)}"
+
+    if item_type == "command_execution":
+        command = _compact_text(str(item.get("command", "")).strip(), max_len=160)
+        if event_type == "item.started":
+            return f"working: running command {command}"
+        exit_code = item.get("exit_code")
+        status = "ok" if exit_code == 0 else f"exit {exit_code}"
+        return f"working: command finished ({status})"
+
+    return None
+
+
+def _stream_ticket_process(
+    process: subprocess.Popen[str],
+    *,
+    raw_output_path: Path,
+    progress_callback: Callable[[str], None] | None,
+    heartbeat_seconds: float,
+    heartbeat_label: str,
+) -> int:
+    assert process.stdout is not None
+
+    last_progress_at = time.monotonic()
+    with raw_output_path.open("w", encoding="utf-8") as raw_output:
+        while True:
+            line = process.stdout.readline()
+            if line:
+                raw_output.write(line)
+                raw_output.flush()
+
+                stripped = line.strip()
+                progress_line: str | None = None
+                if stripped.startswith("{") and stripped.endswith("}"):
+                    try:
+                        event = json.loads(stripped)
+                    except json.JSONDecodeError:
+                        event = None
+                    if isinstance(event, dict):
+                        progress_line = _progress_label(event)
+                elif " WARN " in stripped:
+                    progress_line = None
+                elif stripped:
+                    progress_line = f"runner: {_compact_text(stripped)}"
+
+                if progress_line and progress_callback is not None:
+                    progress_callback(progress_line)
+                    last_progress_at = time.monotonic()
+                continue
+
+            return_code = process.poll()
+            if return_code is not None:
+                break
+
+            if progress_callback is not None and (time.monotonic() - last_progress_at) >= heartbeat_seconds:
+                progress_callback(f"still working: {heartbeat_label}")
+                last_progress_at = time.monotonic()
+            time.sleep(0.5)
+
+        # Drain any remaining buffered lines after process exit.
+        for line in process.stdout:
+            raw_output.write(line)
+            raw_output.flush()
+            stripped = line.strip()
+            if stripped.startswith("{") and stripped.endswith("}"):
+                try:
+                    event = json.loads(stripped)
+                except json.JSONDecodeError:
+                    event = None
+                progress_line = _progress_label(event) if isinstance(event, dict) else None
+                if progress_line and progress_callback is not None:
+                    progress_callback(progress_line)
+
+    return int(process.wait())
+
+
 def run_ticket(
     ticket: AgentTicket,
     *,
@@ -178,6 +276,8 @@ def run_ticket(
     sandbox: str,
     model: str | None = None,
     extra_args: list[str] | None = None,
+    progress_callback: Callable[[str], None] | None = None,
+    heartbeat_seconds: float = 20.0,
 ) -> dict[str, Any]:
     repo_root = Path(repo_root)
     output_dir = Path(output_dir)
@@ -186,7 +286,7 @@ def run_ticket(
 
     prompt = build_ticket_prompt(ticket, repo_root=repo_root)
     prompt_path = ticket_dir / "prompt.md"
-    stdout_path = ticket_dir / "stdout.log"
+    stdout_path = ticket_dir / "stdout.jsonl"
     stderr_path = ticket_dir / "stderr.log"
     last_message_path = ticket_dir / "last_message.md"
 
@@ -195,6 +295,7 @@ def run_ticket(
     cmd = [
         runner,
         "exec",
+        "--json",
         "--cd",
         str(repo_root),
         "--sandbox",
@@ -207,23 +308,36 @@ def run_ticket(
     if extra_args:
         cmd.extend(extra_args)
 
-    result = subprocess.run(
+    process = subprocess.Popen(
         cmd,
-        input=prompt,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
-        capture_output=True,
-        check=False,
+    )
+    assert process.stdin is not None
+    process.stdin.write(prompt)
+    process.stdin.close()
+
+    return_code = _stream_ticket_process(
+        process,
+        raw_output_path=stdout_path,
+        progress_callback=progress_callback,
+        heartbeat_seconds=heartbeat_seconds,
+        heartbeat_label=f"{ticket.ticket_id} ({ticket.title})",
     )
 
-    stdout_path.write_text(result.stdout, encoding="utf-8")
-    stderr_path.write_text(result.stderr, encoding="utf-8")
+    # stderr is merged into stdout for streaming simplicity; keep a placeholder file
+    # so callers still have a stable artifact path.
+    if not stderr_path.exists():
+        stderr_path.write_text("", encoding="utf-8")
 
     return {
         "ticket_id": ticket.ticket_id,
         "title": ticket.title,
         "status": ticket.status,
         "command": cmd,
-        "returncode": int(result.returncode),
+        "returncode": int(return_code),
         "output_dir": str(ticket_dir),
         "prompt_path": str(prompt_path),
         "stdout_path": str(stdout_path),

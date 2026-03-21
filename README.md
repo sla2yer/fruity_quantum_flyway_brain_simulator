@@ -203,6 +203,15 @@ data/raw/codex/neurotransmitter_type_predictions.csv
 cp config/visual_subset.example.yaml config/local.yaml
 ```
 
+All entries under `config.paths` resolve from the repository root, not from
+the caller's current working directory. You can run the pipeline from another
+directory as long as `--config` points to the right file, for example:
+
+```bash
+python /abs/path/to/flywire_wave_repo/scripts/build_registry.py \
+  --config /abs/path/to/flywire_wave_repo/config/local.yaml
+```
+
 ### 5) Verify access
 
 ```bash
