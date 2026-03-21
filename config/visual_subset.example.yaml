@@ -126,6 +126,12 @@ meshing:
   simplify_target_faces: 15000
   patch_hops: 6
   patch_vertex_cap: 2500
+  operator_assembly:
+    version: operator_assembly.v1
+    boundary_condition:
+      mode: closed_surface_zero_flux
+    anisotropy:
+      model: isotropic
   qa_thresholds:
     simplified_component_count_delta:
       warn: null

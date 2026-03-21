@@ -1,12 +1,41 @@
 {
-  "contract_version": "operator_bundle.v1",
+  "contract_version": "operator_bundle.v2",
   "status": "ready",
   "realization_mode": "graph_laplacian_fallback",
+  "operator_assembly": {
+    "version": "operator_assembly.v1",
+    "boundary_condition": {
+      "version": "boundary_condition.v1",
+      "mode": "closed_surface_zero_flux"
+    },
+    "anisotropy": {
+      "version": "anisotropy.v1",
+      "model": "isotropic"
+    }
+  },
   "preferred_discretization_family": "triangle_mesh_cotangent_fem",
   "discretization_family": "surface_graph_uniform_laplacian",
   "mass_treatment": "uniform_vertex_measure",
   "normalization": "symmetric_combinatorial",
   "boundary_condition_mode": "closed_surface_zero_flux",
+  "boundary_condition": {
+    "version": "boundary_condition.v1",
+    "mode": "closed_surface_zero_flux",
+    "uses_boundary_masks": false,
+    "serialized_payload_keys": [],
+    "assembly_rule": "natural_open_boundary_terms",
+    "status": "config_reserved_only"
+  },
+  "anisotropy_model": "isotropic",
+  "anisotropy": {
+    "version": "anisotropy.v1",
+    "model": "isotropic",
+    "tensor_basis": "local_vertex_tangent_uv",
+    "coefficient_layout": "implicit_identity",
+    "serialized_payload_keys": [],
+    "status": "config_reserved_only",
+    "identity_reproduction_operator_atol": 1e-10
+  },
   "fallback_policy": {
     "allowed": true,
     "reason": "cotangent_operators_not_serialized_in_milestone5_bundle",

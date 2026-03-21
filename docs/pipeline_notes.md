@@ -52,14 +52,15 @@ Per neuron, the bundle layout is:
 The processed graph archives intentionally separate fine and coarse data:
 
 - the surface graph stores the simplified mesh vertices/faces, sparse surface adjacency/Laplacian arrays, and `surface_to_patch` so every surface vertex has an explicit coarse patch assignment
-- the fine operator archive stores cotangent stiffness and mass-normalized operator matrices plus explicit supporting geometry including edge lengths/weights, lumped mass, normals, tangent frames, boundary masks, and capped edge-geodesic neighborhoods
+- the fine operator archive stores cotangent stiffness and mass-normalized operator matrices plus explicit supporting geometry including edge lengths/weights, lumped mass, normals, tangent frames, boundary masks, anisotropy coefficients (`anisotropy_vertex_tensor_diagonal`, `anisotropy_edge_direction_uv`, `anisotropy_edge_multiplier`, `effective_cotangent_weights`), and capped edge-geodesic neighborhoods
 - the patch graph stores sparse coarse adjacency/Laplacian arrays plus `patch_sizes`, `patch_centroids`, `patch_seed_vertices`, and CSR-style `member_vertex_indices` / `member_vertex_indptr` arrays for reconstructing patch membership deterministically
 - the coarse operator archive stores patch mass / area, Galerkin-projected stiffness, the mass-normalized coarse operator, and the quality metrics used to compare coarse and fine application
 - `config.paths.processed_graph_dir/<root_id>_transfer_operators.npz` stores explicit fine/coarse transfer structure, physical-field restriction / prolongation matrices, normalized-state transfer operators, and transfer-quality metrics
-- `config.paths.processed_graph_dir/<root_id>_operator_metadata.json` records the realized discretization family, fallback mode, boundary mode, geodesic-neighborhood settings, transfer availability, coarse assembly rule, and coarse-versus-fine quality metrics for downstream discovery
+- `config.paths.processed_graph_dir/<root_id>_operator_metadata.json` records the realized discretization family, fallback mode, versioned `operator_assembly` config, boundary mode, anisotropy model, geodesic-neighborhood settings, transfer availability, coarse assembly rule, and coarse-versus-fine quality metrics for downstream discovery
 
 `config.paths.manifest_json` records the bundle contract version, dataset,
-materialization version, meshing-config snapshot, and per-root asset
+materialization version, an explicit meshing-config snapshot including
+`meshing.operator_assembly`, and per-root asset
 statuses/paths. Raw fetch runs also record `raw_asset_provenance` per
 root ID so cache hits, refetches, skips, validation failures, and
 optional skeleton fetch errors can be audited without reading console
@@ -81,3 +82,20 @@ Compatibility shim:
 - `docs/operator_bundle_design.md` is the authoritative Milestone 6 operator
   decision note; later tickets should cite it instead of re-litigating the
   default discretization family.
+
+### Offline operator QA contract
+
+Milestone 6 also now defines one deterministic offline inspection workflow for
+operator bundles:
+
+- `scripts/06_operator_qa.py` reads the local fine operator, coarse operator,
+  transfer bundle, patch graph, and operator metadata for one or more root IDs
+- output goes to `config.paths.operator_qa_dir/root-ids-<sorted-root-ids>/`
+- the report is static: `index.html`, `report.md`, `summary.json`,
+  per-root detail JSON, and SVG panels for pulse initialization, boundary-mask
+  inspection, patch decomposition, smoke-evolved fine/coarse fields, and coarse
+  reconstruction error
+- the report summary includes pass / warn / fail checks plus a Milestone 10
+  gate of `go`, `review`, or `hold`
+
+See `docs/operator_qa.md` for the full reviewer checklist and gate semantics.

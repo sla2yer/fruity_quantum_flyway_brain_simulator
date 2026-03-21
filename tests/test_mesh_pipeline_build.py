@@ -109,6 +109,10 @@ class MeshBuildPipelineTest(unittest.TestCase):
                 "edge_vectors",
                 "edge_face_counts",
                 "cotangent_weights",
+                "effective_cotangent_weights",
+                "anisotropy_vertex_tensor_diagonal",
+                "anisotropy_edge_direction_uv",
+                "anisotropy_edge_multiplier",
                 "boundary_vertex_mask",
                 "boundary_edge_mask",
                 "boundary_face_mask",
@@ -128,6 +132,10 @@ class MeshBuildPipelineTest(unittest.TestCase):
                 "cotangent_weight_indices",
                 "cotangent_weight_indptr",
                 "cotangent_weight_shape",
+                "effective_cotangent_weight_data",
+                "effective_cotangent_weight_indices",
+                "effective_cotangent_weight_indptr",
+                "effective_cotangent_weight_shape",
                 "stiffness_data",
                 "stiffness_indices",
                 "stiffness_indptr",
@@ -243,6 +251,7 @@ class MeshBuildPipelineTest(unittest.TestCase):
             fine_adj = _load_csr(fine_operator_a, prefix="adj")
             edge_length_matrix = _load_csr(fine_operator_a, prefix="edge_length")
             cotangent_weight_matrix = _load_csr(fine_operator_a, prefix="cotangent_weight")
+            effective_cotangent_weight_matrix = _load_csr(fine_operator_a, prefix="effective_cotangent_weight")
             stiffness = _load_csr(fine_operator_a, prefix="stiffness")
             operator = _load_csr(fine_operator_a, prefix="operator")
             coarse_stiffness = _load_csr(coarse_operator_a, prefix="stiffness")
@@ -259,6 +268,7 @@ class MeshBuildPipelineTest(unittest.TestCase):
             self.assertEqual(fine_adj.shape, (n_vertices, n_vertices))
             self.assertEqual(edge_length_matrix.shape, (n_vertices, n_vertices))
             self.assertEqual(cotangent_weight_matrix.shape, (n_vertices, n_vertices))
+            self.assertEqual(effective_cotangent_weight_matrix.shape, (n_vertices, n_vertices))
             self.assertEqual(stiffness.shape, (n_vertices, n_vertices))
             self.assertEqual(operator.shape, (n_vertices, n_vertices))
             self.assertEqual(coarse_stiffness.shape, (patch_count, patch_count))
@@ -303,6 +313,10 @@ class MeshBuildPipelineTest(unittest.TestCase):
             self.assertEqual(fine_operator_a["edge_vertex_indices"].shape[0], surface_adj.nnz // 2)
             self.assertTrue(np.all(fine_operator_a["edge_lengths"] > 0.0))
             self.assertTrue(np.all(fine_operator_a["edge_face_counts"] == 2))
+            self.assertTrue(np.allclose(fine_operator_a["effective_cotangent_weights"], fine_operator_a["cotangent_weights"]))
+            self.assertTrue(np.allclose(fine_operator_a["anisotropy_vertex_tensor_diagonal"], 1.0))
+            self.assertTrue(np.allclose(fine_operator_a["anisotropy_edge_multiplier"], 1.0))
+            self.assertTrue(np.allclose(cotangent_weight_matrix.toarray(), effective_cotangent_weight_matrix.toarray()))
             geodesic_indptr = fine_operator_a["geodesic_neighbor_indptr"]
             geodesic_indices = fine_operator_a["geodesic_neighbor_indices"]
             geodesic_distances = fine_operator_a["geodesic_neighbor_distances"]
@@ -378,11 +392,15 @@ class MeshBuildPipelineTest(unittest.TestCase):
             self.assertTrue(qa_payload["summary"]["downstream_usable"])
             self.assertEqual(qa_payload["checks"]["simplified_surface_area_rel_error"]["status"], "pass")
             self.assertEqual(qa_payload["checks"]["coarse_component_count_delta"]["status"], "pass")
-            self.assertEqual(operator_metadata["contract_version"], "operator_bundle.v1")
+            self.assertEqual(operator_metadata["contract_version"], "operator_bundle.v2")
             self.assertEqual(operator_metadata["realization_mode"], "cotangent_fem_galerkin_patch_multiresolution")
+            self.assertEqual(operator_metadata["operator_assembly"]["version"], "operator_assembly.v1")
             self.assertEqual(operator_metadata["discretization_family"], "triangle_mesh_cotangent_fem")
             self.assertEqual(operator_metadata["mass_treatment"], "lumped_mass")
             self.assertEqual(operator_metadata["normalization"], "mass_normalized")
+            self.assertEqual(operator_metadata["boundary_condition"]["assembly_rule"], "natural_open_boundary_terms")
+            self.assertEqual(operator_metadata["anisotropy_model"], "isotropic")
+            self.assertEqual(operator_metadata["anisotropy"]["coefficient_layout"], "implicit_identity")
             self.assertEqual(operator_metadata["weighting_scheme"], "cotangent_half_weight")
             self.assertEqual(
                 operator_metadata["coarse_discretization_family"],
@@ -435,6 +453,9 @@ class MeshBuildPipelineTest(unittest.TestCase):
             self.assertEqual(outputs_a["bundle_metadata"]["patch_generation_method"], "deterministic_bfs_partition")
             self.assertEqual(outputs_a["bundle_metadata"]["fine_geodesic_hops"], 2)
             self.assertEqual(outputs_a["bundle_metadata"]["fine_geodesic_vertex_cap"], 32)
+            self.assertEqual(outputs_a["bundle_metadata"]["operator_assembly_version"], "operator_assembly.v1")
+            self.assertEqual(outputs_a["bundle_metadata"]["boundary_condition_mode"], "closed_surface_zero_flux")
+            self.assertEqual(outputs_a["bundle_metadata"]["anisotropy_model"], "isotropic")
             self.assertAlmostEqual(
                 float(outputs_a["bundle_metadata"]["coarse_mass_total"]),
                 float(coarse_operator_a["coarse_mass_total"]),

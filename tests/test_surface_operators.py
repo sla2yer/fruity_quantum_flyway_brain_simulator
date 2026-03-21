@@ -56,6 +56,9 @@ class FineSurfaceOperatorTest(unittest.TestCase):
         self.assertEqual(int(np.count_nonzero(payload["boundary_edge_mask"])), 4)
         self.assertEqual(int(np.count_nonzero(payload["boundary_face_mask"])), 2)
         self.assertEqual(int(np.count_nonzero(payload["edge_face_counts"] == 2)), 1)
+        self.assertTrue(np.allclose(payload["effective_cotangent_weights"], payload["cotangent_weights"]))
+        self.assertTrue(np.allclose(payload["anisotropy_vertex_tensor_diagonal"], 1.0))
+        self.assertTrue(np.allclose(payload["anisotropy_edge_multiplier"], 1.0))
         self.assertTrue(np.all(payload["mass_diagonal"] > 0.0))
         self.assertTrue(np.allclose(stiffness.toarray(), stiffness.toarray().T, atol=1e-6))
         self.assertTrue(np.allclose(operator.toarray(), operator.toarray().T, atol=1e-6))
@@ -85,9 +88,15 @@ class FineSurfaceOperatorTest(unittest.TestCase):
         self.assertEqual(metadata["mass_treatment"], "lumped_mass")
         self.assertEqual(metadata["normalization"], "mass_normalized")
         self.assertEqual(metadata["boundary_condition_mode"], "closed_surface_zero_flux")
+        self.assertEqual(metadata["operator_assembly"]["version"], "operator_assembly.v1")
+        self.assertEqual(metadata["boundary_condition"]["assembly_rule"], "natural_open_boundary_terms")
+        self.assertEqual(metadata["anisotropy_model"], "isotropic")
+        self.assertEqual(metadata["anisotropy"]["coefficient_layout"], "implicit_identity")
         self.assertEqual(metadata["geodesic_neighborhood"]["mode"], "edge_path_dijkstra_hop_capped")
         self.assertEqual(metadata["counts"]["boundary_edge_count"], 4)
         self.assertEqual(metadata["counts"]["boundary_vertex_count"], 4)
+        self.assertEqual(metadata["counts"]["anisotropy_nontrivial_vertex_count"], 0)
+        self.assertEqual(metadata["counts"]["anisotropy_nontrivial_edge_count"], 0)
 
 
 def _load_csr(payload: dict[str, np.ndarray], *, prefix: str) -> sp.csr_matrix:

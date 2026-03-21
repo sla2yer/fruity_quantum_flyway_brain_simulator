@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +12,7 @@ from .io_utils import write_json
 
 
 GEOMETRY_ASSET_CONTRACT_VERSION = "geometry_bundle.v1"
-OPERATOR_BUNDLE_CONTRACT_VERSION = "operator_bundle.v1"
+OPERATOR_BUNDLE_CONTRACT_VERSION = "operator_bundle.v2"
 OPERATOR_BUNDLE_DESIGN_NOTE = "docs/operator_bundle_design.md"
 
 ASSET_STATUS_READY = "ready"
@@ -51,7 +52,23 @@ PROCESSED_ASSET_KEYS = GEOMETRY_PROCESSED_ASSET_KEYS + (
 DEFAULT_FINE_DISCRETIZATION_FAMILY = "triangle_mesh_cotangent_fem"
 DEFAULT_MASS_TREATMENT = "lumped_mass"
 DEFAULT_NORMALIZATION = "mass_normalized"
+OPERATOR_ASSEMBLY_CONFIG_VERSION = "operator_assembly.v1"
+BOUNDARY_CONDITION_CONFIG_VERSION = "boundary_condition.v1"
+ANISOTROPY_CONFIG_VERSION = "anisotropy.v1"
 DEFAULT_BOUNDARY_CONDITION_MODE = "closed_surface_zero_flux"
+CLAMPED_BOUNDARY_CONDITION_MODE = "boundary_vertices_clamped_zero"
+SUPPORTED_BOUNDARY_CONDITION_MODES = (
+    DEFAULT_BOUNDARY_CONDITION_MODE,
+    CLAMPED_BOUNDARY_CONDITION_MODE,
+)
+DEFAULT_ANISOTROPY_MODEL = "isotropic"
+TANGENT_DIAGONAL_ANISOTROPY_MODEL = "local_tangent_diagonal"
+SUPPORTED_ANISOTROPY_MODELS = (
+    DEFAULT_ANISOTROPY_MODEL,
+    TANGENT_DIAGONAL_ANISOTROPY_MODEL,
+)
+DEFAULT_ANISOTROPY_TENSOR_BASIS = "local_vertex_tangent_uv"
+IDENTITY_ANISOTROPY_EQUIVALENCE_ATOL = 1.0e-10
 
 FALLBACK_FINE_DISCRETIZATION_FAMILY = "surface_graph_uniform_laplacian"
 FALLBACK_MASS_TREATMENT = "uniform_vertex_measure"
@@ -147,6 +164,95 @@ def default_asset_statuses(*, fetch_skeletons: bool) -> dict[str, str]:
     }
 
 
+def default_operator_assembly_config() -> dict[str, Any]:
+    return {
+        "version": OPERATOR_ASSEMBLY_CONFIG_VERSION,
+        "boundary_condition": {
+            "version": BOUNDARY_CONDITION_CONFIG_VERSION,
+            "mode": DEFAULT_BOUNDARY_CONDITION_MODE,
+        },
+        "anisotropy": {
+            "version": ANISOTROPY_CONFIG_VERSION,
+            "model": DEFAULT_ANISOTROPY_MODEL,
+        },
+    }
+
+
+def normalize_operator_assembly_config(payload: Mapping[str, Any] | None) -> dict[str, Any]:
+    normalized = default_operator_assembly_config()
+    if payload is None:
+        return normalized
+    if not isinstance(payload, Mapping):
+        raise ValueError("operator_assembly must be a mapping when provided.")
+
+    version = str(payload.get("version", OPERATOR_ASSEMBLY_CONFIG_VERSION))
+    if version != OPERATOR_ASSEMBLY_CONFIG_VERSION:
+        raise ValueError(
+            f"operator_assembly.version must be {OPERATOR_ASSEMBLY_CONFIG_VERSION!r}, got {version!r}."
+        )
+    normalized["version"] = version
+
+    boundary_condition = payload.get("boundary_condition", {})
+    if boundary_condition is None:
+        boundary_condition = {}
+    if not isinstance(boundary_condition, Mapping):
+        raise ValueError("operator_assembly.boundary_condition must be a mapping when provided.")
+    boundary_condition_version = str(
+        boundary_condition.get("version", BOUNDARY_CONDITION_CONFIG_VERSION)
+    )
+    if boundary_condition_version != BOUNDARY_CONDITION_CONFIG_VERSION:
+        raise ValueError(
+            "operator_assembly.boundary_condition.version must be "
+            f"{BOUNDARY_CONDITION_CONFIG_VERSION!r}."
+        )
+    boundary_condition_mode = str(
+        boundary_condition.get("mode", DEFAULT_BOUNDARY_CONDITION_MODE)
+    )
+    if boundary_condition_mode not in SUPPORTED_BOUNDARY_CONDITION_MODES:
+        raise ValueError(
+            "Unsupported operator_assembly.boundary_condition.mode "
+            f"{boundary_condition_mode!r}. Supported modes: {list(SUPPORTED_BOUNDARY_CONDITION_MODES)!r}."
+        )
+    normalized["boundary_condition"] = {
+        "version": boundary_condition_version,
+        "mode": boundary_condition_mode,
+    }
+
+    anisotropy = payload.get("anisotropy", {})
+    if anisotropy is None:
+        anisotropy = {}
+    if not isinstance(anisotropy, Mapping):
+        raise ValueError("operator_assembly.anisotropy must be a mapping when provided.")
+    anisotropy_version = str(anisotropy.get("version", ANISOTROPY_CONFIG_VERSION))
+    if anisotropy_version != ANISOTROPY_CONFIG_VERSION:
+        raise ValueError(
+            f"operator_assembly.anisotropy.version must be {ANISOTROPY_CONFIG_VERSION!r}."
+        )
+    anisotropy_model = str(anisotropy.get("model", DEFAULT_ANISOTROPY_MODEL))
+    if anisotropy_model not in SUPPORTED_ANISOTROPY_MODELS:
+        raise ValueError(
+            "Unsupported operator_assembly.anisotropy.model "
+            f"{anisotropy_model!r}. Supported models: {list(SUPPORTED_ANISOTROPY_MODELS)!r}."
+        )
+    normalized["anisotropy"] = {
+        "version": anisotropy_version,
+        "model": anisotropy_model,
+    }
+    if "default_tensor" in anisotropy:
+        default_tensor = _normalize_diagonal_tensor_pair(
+            anisotropy["default_tensor"],
+            field_name="operator_assembly.anisotropy.default_tensor",
+        )
+        if anisotropy_model == DEFAULT_ANISOTROPY_MODEL and default_tensor != [1.0, 1.0]:
+            raise ValueError(
+                "operator_assembly.anisotropy.default_tensor may only differ from [1.0, 1.0] when "
+                f"operator_assembly.anisotropy.model is {TANGENT_DIAGONAL_ANISOTROPY_MODEL!r}."
+            )
+        if anisotropy_model == TANGENT_DIAGONAL_ANISOTROPY_MODEL:
+            normalized["anisotropy"]["default_tensor"] = default_tensor
+    return normalized
+
+
 def manifest_asset_records(
     bundle_paths: GeometryBundlePaths,
     *,
@@ -185,10 +291,15 @@ def build_operator_bundle_manifest_metadata() -> dict[str, Any]:
     return {
         "version": OPERATOR_BUNDLE_CONTRACT_VERSION,
         "design_note": OPERATOR_BUNDLE_DESIGN_NOTE,
+        "operator_assembly_config_version": OPERATOR_ASSEMBLY_CONFIG_VERSION,
+        "preferred_operator_assembly": default_operator_assembly_config(),
         "preferred_discretization_family": DEFAULT_FINE_DISCRETIZATION_FAMILY,
         "preferred_mass_treatment": DEFAULT_MASS_TREATMENT,
         "preferred_normalization": DEFAULT_NORMALIZATION,
         "preferred_boundary_condition_mode": DEFAULT_BOUNDARY_CONDITION_MODE,
+        "preferred_anisotropy_model": DEFAULT_ANISOTROPY_MODEL,
+        "supported_boundary_condition_modes": list(SUPPORTED_BOUNDARY_CONDITION_MODES),
+        "supported_anisotropy_models": list(SUPPORTED_ANISOTROPY_MODELS),
         "fallback_discretization_family": FALLBACK_FINE_DISCRETIZATION_FAMILY,
         "fallback_mass_treatment": FALLBACK_MASS_TREATMENT,
         "fallback_normalization": FALLBACK_NORMALIZATION,
@@ -206,6 +317,8 @@ def build_operator_bundle_metadata(
     operator_asset_statuses = _operator_asset_statuses(asset_statuses)
     bundle_metadata = dict(bundle_metadata or {})
     realized_operator_metadata = dict(realized_operator_metadata or {})
+    meshing_config_snapshot = _normalize_meshing_config_snapshot(meshing_config_snapshot)
+    operator_assembly = normalize_operator_assembly_config(meshing_config_snapshot.get("operator_assembly"))
 
     patch_hops = meshing_config_snapshot.get("patch_hops")
     patch_vertex_cap = meshing_config_snapshot.get("patch_vertex_cap")
@@ -262,10 +375,25 @@ def build_operator_bundle_metadata(
         geodesic_neighborhood["patch_generation_method"] = (
             str(patch_generation_method) if patch_generation_method is not None else ""
         )
+        boundary_condition_mode = str(
+            realized_operator_metadata.get(
+                "boundary_condition_mode",
+                operator_assembly["boundary_condition"]["mode"],
+            )
+        )
+        anisotropy_model = str(
+            realized_operator_metadata.get(
+                "anisotropy_model",
+                operator_assembly["anisotropy"]["model"],
+            )
+        )
         metadata = {
             "contract_version": OPERATOR_BUNDLE_CONTRACT_VERSION,
             "status": _bundle_status(operator_asset_statuses),
             "realization_mode": str(realized_operator_metadata["realization_mode"]),
+            "operator_assembly": copy.deepcopy(
+                dict(realized_operator_metadata.get("operator_assembly", operator_assembly))
+            ),
             "preferred_discretization_family": str(
                 realized_operator_metadata.get("preferred_discretization_family", DEFAULT_FINE_DISCRETIZATION_FAMILY)
             ),
@@ -274,8 +402,26 @@ def build_operator_bundle_metadata(
             ),
             "mass_treatment": str(realized_operator_metadata.get("mass_treatment", DEFAULT_MASS_TREATMENT)),
             "normalization": str(realized_operator_metadata.get("normalization", DEFAULT_NORMALIZATION)),
-            "boundary_condition_mode": str(
-                realized_operator_metadata.get("boundary_condition_mode", DEFAULT_BOUNDARY_CONDITION_MODE)
+            "boundary_condition_mode": boundary_condition_mode,
+            "boundary_condition": copy.deepcopy(
+                dict(
+                    realized_operator_metadata.get(
+                        "boundary_condition",
+                        _default_boundary_condition_metadata(boundary_condition_mode),
+                    )
+                )
+            ),
+            "anisotropy_model": anisotropy_model,
+            "anisotropy": copy.deepcopy(
+                dict(
+                    realized_operator_metadata.get(
+                        "anisotropy",
+                        _default_anisotropy_metadata(
+                            model=anisotropy_model,
+                            operator_assembly=operator_assembly,
+                        ),
+                    )
+                )
             ),
             "fallback_policy": copy.deepcopy(
                 dict(
@@ -358,11 +504,20 @@ def build_operator_bundle_metadata(
         "contract_version": OPERATOR_BUNDLE_CONTRACT_VERSION,
         "status": _bundle_status(operator_asset_statuses),
         "realization_mode": "graph_laplacian_fallback",
+        "operator_assembly": copy.deepcopy(operator_assembly),
         "preferred_discretization_family": DEFAULT_FINE_DISCRETIZATION_FAMILY,
         "discretization_family": FALLBACK_FINE_DISCRETIZATION_FAMILY,
         "mass_treatment": FALLBACK_MASS_TREATMENT,
         "normalization": FALLBACK_NORMALIZATION,
-        "boundary_condition_mode": DEFAULT_BOUNDARY_CONDITION_MODE,
+        "boundary_condition_mode": str(operator_assembly["boundary_condition"]["mode"]),
+        "boundary_condition": _default_boundary_condition_metadata(
+            str(operator_assembly["boundary_condition"]["mode"])
+        ),
+        "anisotropy_model": str(operator_assembly["anisotropy"]["model"]),
+        "anisotropy": _default_anisotropy_metadata(
+            model=str(operator_assembly["anisotropy"]["model"]),
+            operator_assembly=operator_assembly,
+        ),
         "fallback_policy": {
             "allowed": True,
             "reason": "cotangent_operators_not_serialized_in_milestone5_bundle",
@@ -421,11 +576,15 @@ def parse_operator_bundle_metadata(payload: Mapping[str, Any]) -> dict[str, Any]
         "contract_version",
         "status",
         "realization_mode",
+        "operator_assembly",
         "preferred_discretization_family",
         "discretization_family",
         "mass_treatment",
         "normalization",
         "boundary_condition_mode",
+        "boundary_condition",
+        "anisotropy_model",
+        "anisotropy",
         "fallback_policy",
         "geodesic_neighborhood",
         "transfer_operators",
@@ -439,7 +598,15 @@ def parse_operator_bundle_metadata(payload: Mapping[str, Any]) -> dict[str, Any]
             "Operator bundle metadata contract_version does not match "
             f"{OPERATOR_BUNDLE_CONTRACT_VERSION!r}."
         )
-    for field in ("fallback_policy", "geodesic_neighborhood", "transfer_operators", "assets"):
+    for field in (
+        "operator_assembly",
+        "boundary_condition",
+        "anisotropy",
+        "fallback_policy",
+        "geodesic_neighborhood",
+        "transfer_operators",
+        "assets",
+    ):
         if not isinstance(normalized[field], dict):
             raise ValueError(f"Operator bundle field {field!r} must be a mapping.")
     return normalized
@@ -485,6 +652,7 @@ def build_geometry_manifest_record(
     operator_bundle_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     registry_metadata = dict(registry_metadata or {})
+    meshing_config_snapshot = _normalize_meshing_config_snapshot(meshing_config_snapshot)
     record: dict[str, Any] = {
         "root_id": int(bundle_paths.root_id),
         "bundle_version": GEOMETRY_ASSET_CONTRACT_VERSION,
@@ -537,6 +705,7 @@ def build_geometry_manifest(
     materialization_version: int | str | None,
     meshing_config_snapshot: dict[str, Any],
 ) -> dict[str, Any]:
+    meshing_config_snapshot = _normalize_meshing_config_snapshot(meshing_config_snapshot)
     manifest: dict[str, Any] = {
         "_asset_contract_version": GEOMETRY_ASSET_CONTRACT_VERSION,
         "_dataset": {
@@ -636,6 +805,66 @@ def _operator_asset_alias(asset_key: str) -> dict[str, str]:
     if asset_key == COARSE_OPERATOR_KEY:
         return {"legacy_alias": PATCH_GRAPH_KEY}
     return {}
+
+
+def _normalize_meshing_config_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = copy.deepcopy(dict(snapshot))
+    normalized["operator_assembly"] = normalize_operator_assembly_config(snapshot.get("operator_assembly"))
+    return normalized
+
+
+def _normalize_diagonal_tensor_pair(value: Any, *, field_name: str) -> list[float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ValueError(f"{field_name} must be a length-2 list or tuple of positive numbers.")
+    pair = [float(value[0]), float(value[1])]
+    if any(not math.isfinite(item) or item <= 0.0 for item in pair):
+        raise ValueError(f"{field_name} entries must be finite and strictly positive.")
+    return pair
+
+
+def _default_boundary_condition_metadata(mode: str) -> dict[str, Any]:
+    assembly_rule = (
+        "natural_open_boundary_terms"
+        if mode == DEFAULT_BOUNDARY_CONDITION_MODE
+        else "boundary_vertices_identity_pinned_after_lumped_mass_normalization"
+    )
+    return {
+        "version": BOUNDARY_CONDITION_CONFIG_VERSION,
+        "mode": str(mode),
+        "uses_boundary_masks": False,
+        "serialized_payload_keys": [],
+        "assembly_rule": assembly_rule,
+        "status": "config_reserved_only",
+    }
+
+
+def _default_anisotropy_metadata(
+    *,
+    model: str,
+    operator_assembly: Mapping[str, Any],
+) -> dict[str, Any]:
+    anisotropy_config = operator_assembly.get("anisotropy", {})
+    if not isinstance(anisotropy_config, Mapping):
+        anisotropy_config = {}
+    coefficient_layout = "implicit_identity"
+    if model == TANGENT_DIAGONAL_ANISOTROPY_MODEL:
+        coefficient_layout = (
+            "global_default_diagonal"
+            if "default_tensor" in anisotropy_config
+            else "identity_diagonal"
+        )
+    metadata: dict[str, Any] = {
+        "version": ANISOTROPY_CONFIG_VERSION,
+        "model": str(model),
+        "tensor_basis": DEFAULT_ANISOTROPY_TENSOR_BASIS,
+        "coefficient_layout": coefficient_layout,
+        "serialized_payload_keys": [],
+        "status": "config_reserved_only",
+        "identity_reproduction_operator_atol": IDENTITY_ANISOTROPY_EQUIVALENCE_ATOL,
+    }
+    if "default_tensor" in anisotropy_config:
+        metadata["default_tensor"] = list(anisotropy_config["default_tensor"])
+    return metadata
 
 
 def _bundle_status(asset_statuses: Mapping[str, str]) -> str:

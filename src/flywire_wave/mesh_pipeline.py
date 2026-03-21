@@ -31,6 +31,7 @@ from .geometry_contract import (
     TRANSFER_OPERATORS_KEY,
     DESCRIPTOR_SIDECAR_KEY,
     build_operator_bundle_metadata,
+    normalize_operator_assembly_config,
 )
 from .geometry_qa import (
     build_descriptor_payload,
@@ -561,9 +562,12 @@ def process_mesh_into_wave_assets(
     patch_vertex_cap: int = 2500,
     fine_geodesic_hops: int = DEFAULT_GEODESIC_NEIGHBORHOOD_HOPS,
     fine_geodesic_vertex_cap: int = DEFAULT_GEODESIC_NEIGHBORHOOD_VERTEX_CAP,
+    operator_assembly: dict[str, Any] | None = None,
     registry_metadata: dict[str, Any] | None = None,
     qa_thresholds: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    normalized_operator_assembly = normalize_operator_assembly_config(operator_assembly)
+
     ensure_dir(bundle_paths.simplified_mesh_path.parent)
     ensure_dir(bundle_paths.surface_graph_path.parent)
     ensure_dir(bundle_paths.fine_operator_path.parent)
@@ -647,6 +651,7 @@ def process_mesh_into_wave_assets(
         faces=faces,
         geodesic_hops=int(fine_geodesic_hops),
         geodesic_vertex_cap=int(fine_geodesic_vertex_cap),
+        operator_assembly=operator_assembly,
     )
     multiresolution_bundle = assemble_patch_multiresolution_operators(
         root_id=root_id,
@@ -750,6 +755,9 @@ def process_mesh_into_wave_assets(
         "raw_mesh_face_count": original_face_count,
         "fine_geodesic_hops": int(fine_geodesic_hops),
         "fine_geodesic_vertex_cap": int(fine_geodesic_vertex_cap),
+        "operator_assembly_version": str(normalized_operator_assembly["version"]),
+        "boundary_condition_mode": str(normalized_operator_assembly["boundary_condition"]["mode"]),
+        "anisotropy_model": str(normalized_operator_assembly["anisotropy"]["model"]),
         "coarse_mass_total": float(multiresolution_bundle.coarse_payload["coarse_mass_total"]),
         "qa_overall_status": str(qa_payload["summary"]["overall_status"]),
         "qa_warning_count": int(qa_payload["summary"]["warning_count"]),
@@ -781,6 +789,7 @@ def process_mesh_into_wave_assets(
             "patch_vertex_cap": int(patch_vertex_cap),
             "fine_geodesic_hops": int(fine_geodesic_hops),
             "fine_geodesic_vertex_cap": int(fine_geodesic_vertex_cap),
+            "operator_assembly": normalized_operator_assembly,
             "transfer_restriction_mode": "lumped_mass_patch_average",
             "transfer_prolongation_mode": "constant_on_patch",
         },

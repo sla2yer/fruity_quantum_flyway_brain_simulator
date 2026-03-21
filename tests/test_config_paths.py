@@ -103,10 +103,14 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
 
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 self.assertEqual(manifest["_asset_contract_version"], "geometry_bundle.v1")
-                self.assertEqual(manifest["_operator_contract_version"], "operator_bundle.v1")
+                self.assertEqual(manifest["_operator_contract_version"], "operator_bundle.v2")
                 self.assertEqual(manifest["_dataset"]["flywire_dataset"], "public")
                 self.assertEqual(manifest["_dataset"]["materialization_version"], 783)
                 self.assertEqual(manifest["_meshing_config_snapshot"]["patch_hops"], 2)
+                self.assertEqual(
+                    manifest["_meshing_config_snapshot"]["operator_assembly"]["boundary_condition"]["mode"],
+                    "closed_surface_zero_flux",
+                )
                 self.assertIn("101", manifest)
                 self.assertEqual(manifest["101"]["processed_mesh_path"], str(processed_mesh_path.resolve()))
                 self.assertEqual(manifest["101"]["surface_graph_path"], str(surface_graph_path.resolve()))
@@ -135,7 +139,8 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 )
                 self.assertEqual(manifest["101"]["build"]["materialization_version"], 783)
                 self.assertEqual(manifest["101"]["build"]["meshing_config_snapshot"]["simplify_target_faces"], 8)
-                self.assertEqual(manifest["101"]["operator_bundle"]["contract_version"], "operator_bundle.v1")
+                self.assertEqual(manifest["101"]["operator_bundle"]["contract_version"], "operator_bundle.v2")
+                self.assertEqual(manifest["101"]["operator_bundle"]["anisotropy_model"], "isotropic")
                 self.assertEqual(
                     manifest["101"]["operator_bundle"]["assets"]["fine_operator"]["path"],
                     str(fine_operator_path.resolve()),
@@ -417,7 +422,13 @@ def _write_pipeline_fixture(
               require_skeletons: false
               simplify_target_faces: 8
               patch_hops: {patch_hops}
-              patch_vertex_cap: {patch_vertex_cap}{meshing_extra_block}
+              patch_vertex_cap: {patch_vertex_cap}
+              operator_assembly:
+                version: operator_assembly.v1
+                boundary_condition:
+                  mode: closed_surface_zero_flux
+                anisotropy:
+                  model: isotropic{meshing_extra_block}
             """
         ).strip()
         + "\n",

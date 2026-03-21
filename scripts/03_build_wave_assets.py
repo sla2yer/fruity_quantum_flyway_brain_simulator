@@ -20,6 +20,7 @@ from flywire_wave.geometry_contract import (
     default_asset_statuses,
     load_geometry_manifest_records,
     merge_geometry_manifest_record,
+    normalize_operator_assembly_config,
     write_geometry_manifest,
 )
 from flywire_wave.io_utils import read_root_ids
@@ -49,7 +50,8 @@ def main() -> int:
 
     cfg = load_config(args.config)
     paths = cfg["paths"]
-    meshing = cfg["meshing"]
+    meshing = dict(cfg["meshing"])
+    meshing["operator_assembly"] = normalize_operator_assembly_config(meshing.get("operator_assembly"))
     dataset = cfg["dataset"].get("flywire_dataset", "public")
     materialization_version = cfg["dataset"].get("materialization_version")
     registry_path = paths.get("neuron_registry_csv", "data/interim/registry/neuron_registry.csv")
@@ -98,6 +100,7 @@ def main() -> int:
             patch_vertex_cap=int(meshing.get("patch_vertex_cap", 2500)),
             fine_geodesic_hops=int(meshing.get("fine_geodesic_hops", 2)),
             fine_geodesic_vertex_cap=int(meshing.get("fine_geodesic_vertex_cap", 32)),
+            operator_assembly=meshing.get("operator_assembly"),
             registry_metadata=registry_metadata,
             qa_thresholds=meshing.get("qa_thresholds"),
         )

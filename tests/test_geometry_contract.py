@@ -118,9 +118,14 @@ class GeometryContractTest(unittest.TestCase):
         self.assertEqual(manifest["_asset_contract_version"], GEOMETRY_ASSET_CONTRACT_VERSION)
         self.assertEqual(manifest["_operator_contract_version"], OPERATOR_BUNDLE_CONTRACT_VERSION)
         self.assertEqual(manifest["_operator_contract"]["design_note"], OPERATOR_BUNDLE_DESIGN_NOTE)
+        self.assertEqual(manifest["_operator_contract"]["operator_assembly_config_version"], "operator_assembly.v1")
         self.assertEqual(manifest["_dataset"]["materialization_version"], 783)
         self.assertEqual(manifest["101"]["bundle_version"], GEOMETRY_ASSET_CONTRACT_VERSION)
         self.assertEqual(manifest["101"]["build"]["meshing_config_snapshot"]["patch_hops"], 2)
+        self.assertEqual(
+            manifest["101"]["build"]["meshing_config_snapshot"]["operator_assembly"]["anisotropy"]["model"],
+            "isotropic",
+        )
         self.assertEqual(manifest["101"]["assets"][RAW_MESH_KEY]["status"], ASSET_STATUS_READY)
         self.assertEqual(manifest["101"]["assets"][RAW_SKELETON_KEY]["status"], ASSET_STATUS_SKIPPED)
         self.assertEqual(manifest["101"]["assets"][TRANSFER_OPERATORS_KEY]["status"], ASSET_STATUS_READY)
@@ -144,6 +149,9 @@ class GeometryContractTest(unittest.TestCase):
             manifest["101"]["operator_bundle"]["boundary_condition_mode"],
             "closed_surface_zero_flux",
         )
+        self.assertEqual(manifest["101"]["operator_bundle"]["operator_assembly"]["version"], "operator_assembly.v1")
+        self.assertEqual(manifest["101"]["operator_bundle"]["anisotropy_model"], "isotropic")
+        self.assertEqual(manifest["101"]["operator_bundle"]["anisotropy"]["status"], "config_reserved_only")
         self.assertEqual(
             manifest["101"]["operator_bundle"]["geodesic_neighborhood"]["patch_hops"],
             2,

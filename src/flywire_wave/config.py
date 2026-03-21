@@ -20,6 +20,7 @@ DEFAULT_PATHS = {
     "processed_mesh_dir": Path("data/processed/meshes"),
     "processed_graph_dir": Path("data/processed/graphs"),
     "geometry_preview_dir": Path("data/processed/previews"),
+    "operator_qa_dir": Path("data/processed/operator_qa"),
     "manifest_json": Path("data/processed/asset_manifest.json"),
 }
 

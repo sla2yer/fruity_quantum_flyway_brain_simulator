@@ -9,10 +9,18 @@ import numpy as np
 import scipy.sparse as sp
 
 from .geometry_contract import (
+    ANISOTROPY_CONFIG_VERSION,
+    BOUNDARY_CONDITION_CONFIG_VERSION,
+    CLAMPED_BOUNDARY_CONDITION_MODE,
+    DEFAULT_ANISOTROPY_MODEL,
+    DEFAULT_ANISOTROPY_TENSOR_BASIS,
     DEFAULT_BOUNDARY_CONDITION_MODE,
     DEFAULT_FINE_DISCRETIZATION_FAMILY,
     DEFAULT_MASS_TREATMENT,
     DEFAULT_NORMALIZATION,
+    IDENTITY_ANISOTROPY_EQUIVALENCE_ATOL,
+    TANGENT_DIAGONAL_ANISOTROPY_MODEL,
+    normalize_operator_assembly_config,
 )
 
 
@@ -102,9 +110,12 @@ def assemble_fine_surface_operator(
     faces: np.ndarray,
     geodesic_hops: int = DEFAULT_GEODESIC_NEIGHBORHOOD_HOPS,
     geodesic_vertex_cap: int = DEFAULT_GEODESIC_NEIGHBORHOOD_VERTEX_CAP,
+    operator_assembly: Mapping[str, Any] | None = None,
 ) -> FineSurfaceOperatorBundle:
     vertices = np.asarray(vertices, dtype=np.float64)
     faces = np.asarray(faces, dtype=np.int32)
+    operator_assembly_config = normalize_operator_assembly_config(operator_assembly)
+    boundary_condition_mode = str(operator_assembly_config["boundary_condition"]["mode"])
 
     if vertices.ndim != 2 or vertices.shape[1] != 3:
         raise FineSurfaceOperatorAssemblyError("Fine operator assembly requires vertices with shape (n, 3).")
@@ -123,6 +134,18 @@ def assemble_fine_surface_operator(
     face_areas, face_normals, vertex_normals, mass_diagonal = _compute_face_and_vertex_geometry(vertices, faces)
     edge_bundle = _build_edge_bundle(vertices, faces)
     tangent_u, tangent_v = _build_tangent_frames(vertex_normals)
+    anisotropy_bundle = _resolve_anisotropy_bundle(
+        operator_assembly=operator_assembly,
+        normalized_operator_assembly=operator_assembly_config,
+        vertex_count=vertex_count,
+        edge_vertex_indices=edge_bundle["edge_vertex_indices"],
+        edge_vectors=edge_bundle["edge_vectors"],
+        edge_lengths=edge_bundle["edge_lengths"],
+        vertex_normals=vertex_normals,
+        tangent_u=tangent_u,
+        tangent_v=tangent_v,
+    )
+    effective_cotangent_weights = edge_bundle["cotangent_weights"] * anisotropy_bundle["edge_multiplier"]
 
     adjacency = faces_to_adjacency(faces, vertex_count)
     edge_length_matrix = _build_symmetric_edge_matrix(
@@ -135,10 +158,21 @@ def assemble_fine_surface_operator(
         edge_vertex_indices=edge_bundle["edge_vertex_indices"],
         edge_values=edge_bundle["cotangent_weights"],
     )
+    effective_cotangent_weight_matrix = _build_symmetric_edge_matrix(
+        vertex_count=vertex_count,
+        edge_vertex_indices=edge_bundle["edge_vertex_indices"],
+        edge_values=effective_cotangent_weights,
+    )
     stiffness = _assemble_stiffness_matrix(
         vertex_count=vertex_count,
         edge_vertex_indices=edge_bundle["edge_vertex_indices"],
-        cotangent_weights=edge_bundle["cotangent_weights"],
+        cotangent_weights=effective_cotangent_weights,
+    )
+    stiffness = _apply_boundary_condition(
+        stiffness=stiffness,
+        mass_diagonal=mass_diagonal,
+        boundary_vertex_mask=edge_bundle["boundary_vertex_mask"],
+        boundary_condition_mode=boundary_condition_mode,
     )
     operator = _assemble_mass_normalized_operator(stiffness=stiffness, mass_diagonal=mass_diagonal)
     geodesic = _assemble_geodesic_neighborhoods(
@@ -163,6 +197,10 @@ def assemble_fine_surface_operator(
         "edge_vectors": edge_bundle["edge_vectors"].astype(np.float32),
         "edge_face_counts": edge_bundle["edge_face_counts"].astype(np.int32),
         "cotangent_weights": edge_bundle["cotangent_weights"].astype(np.float32),
+        "effective_cotangent_weights": effective_cotangent_weights.astype(np.float32),
+        "anisotropy_vertex_tensor_diagonal": anisotropy_bundle["vertex_tensor_diagonal"].astype(np.float32),
+        "anisotropy_edge_direction_uv": anisotropy_bundle["edge_direction_uv"].astype(np.float32),
+        "anisotropy_edge_multiplier": anisotropy_bundle["edge_multiplier"].astype(np.float32),
         "boundary_vertex_mask": edge_bundle["boundary_vertex_mask"].astype(bool),
         "boundary_edge_mask": edge_bundle["boundary_edge_mask"].astype(bool),
         "boundary_face_mask": edge_bundle["boundary_face_mask"].astype(bool),
@@ -175,6 +213,7 @@ def assemble_fine_surface_operator(
         ("adj", adjacency),
         ("edge_length", edge_length_matrix),
         ("cotangent_weight", cotangent_weight_matrix),
+        ("effective_cotangent_weight", effective_cotangent_weight_matrix),
         ("stiffness", stiffness),
         ("operator", operator),
     ):
@@ -182,11 +221,54 @@ def assemble_fine_surface_operator(
 
     metadata = {
         "realization_mode": "cotangent_fem_fine_operator",
+        "operator_assembly": operator_assembly_config,
         "preferred_discretization_family": DEFAULT_FINE_DISCRETIZATION_FAMILY,
         "discretization_family": DEFAULT_FINE_DISCRETIZATION_FAMILY,
         "mass_treatment": DEFAULT_MASS_TREATMENT,
         "normalization": DEFAULT_NORMALIZATION,
-        "boundary_condition_mode": DEFAULT_BOUNDARY_CONDITION_MODE,
+        "boundary_condition_mode": boundary_condition_mode,
+        "boundary_condition": {
+            "version": BOUNDARY_CONDITION_CONFIG_VERSION,
+            "mode": boundary_condition_mode,
+            "uses_boundary_masks": True,
+            "serialized_payload_keys": [
+                "boundary_vertex_mask",
+                "boundary_edge_mask",
+                "boundary_face_mask",
+            ],
+            "assembly_rule": (
+                "natural_open_boundary_terms"
+                if boundary_condition_mode == DEFAULT_BOUNDARY_CONDITION_MODE
+                else "boundary_vertices_identity_pinned_after_lumped_mass_normalization"
+            ),
+            "active_boundary_vertex_count": int(np.count_nonzero(edge_bundle["boundary_vertex_mask"])),
+            "active_boundary_edge_count": int(np.count_nonzero(edge_bundle["boundary_edge_mask"])),
+            "active_boundary_face_count": int(np.count_nonzero(edge_bundle["boundary_face_mask"])),
+            "status": "realized",
+        },
+        "anisotropy_model": anisotropy_bundle["model"],
+        "anisotropy": {
+            "version": ANISOTROPY_CONFIG_VERSION,
+            "model": anisotropy_bundle["model"],
+            "tensor_basis": DEFAULT_ANISOTROPY_TENSOR_BASIS,
+            "coefficient_layout": anisotropy_bundle["coefficient_layout"],
+            "coefficient_source": anisotropy_bundle["coefficient_source"],
+            "serialized_payload_keys": [
+                "anisotropy_vertex_tensor_diagonal",
+                "anisotropy_edge_direction_uv",
+                "anisotropy_edge_multiplier",
+                "effective_cotangent_weights",
+            ],
+            "identity_reproduction_operator_atol": IDENTITY_ANISOTROPY_EQUIVALENCE_ATOL,
+            "nontrivial_vertex_count": int(anisotropy_bundle["nontrivial_vertex_count"]),
+            "nontrivial_edge_count": int(anisotropy_bundle["nontrivial_edge_count"]),
+            "status": "realized",
+            **(
+                {"default_tensor": list(operator_assembly_config["anisotropy"]["default_tensor"])}
+                if "default_tensor" in operator_assembly_config["anisotropy"]
+                else {}
+            ),
+        },
         "weighting_scheme": "cotangent_half_weight",
         "operator_matrix_role": "symmetric_mass_normalized_stiffness",
         "stiffness_matrix_role": "cotangent_stiffness",
@@ -208,7 +290,7 @@ def assemble_fine_surface_operator(
             "stiffness_symmetric": True,
             "operator_symmetric": True,
             "expected_semidefinite": "positive_semidefinite",
-            "constant_nullspace_on_stiffness": True,
+            "constant_nullspace_on_stiffness": boundary_condition_mode == DEFAULT_BOUNDARY_CONDITION_MODE,
         },
         "supporting_geometry": {
             "stores_vertices_and_faces": True,
@@ -216,6 +298,7 @@ def assemble_fine_surface_operator(
             "stores_boundary_masks": True,
             "stores_vertex_normals": True,
             "stores_tangent_frames": True,
+            "stores_anisotropy_coefficients": True,
             "stores_geodesic_neighborhoods": True,
             "stores_mass_diagonal": True,
         },
@@ -226,6 +309,8 @@ def assemble_fine_surface_operator(
             "boundary_vertex_count": int(np.count_nonzero(edge_bundle["boundary_vertex_mask"])),
             "boundary_edge_count": int(np.count_nonzero(edge_bundle["boundary_edge_mask"])),
             "boundary_face_count": int(np.count_nonzero(edge_bundle["boundary_face_mask"])),
+            "anisotropy_nontrivial_vertex_count": int(anisotropy_bundle["nontrivial_vertex_count"]),
+            "anisotropy_nontrivial_edge_count": int(anisotropy_bundle["nontrivial_edge_count"]),
             "geodesic_row_nnz_max": int(geodesic["row_nnz_max"]),
         },
     }
@@ -562,6 +647,172 @@ def _normalize_vectors(vectors: np.ndarray, *, label: str) -> np.ndarray:
     return vectors / norms[:, None]
 
 
+def _resolve_anisotropy_bundle(
+    *,
+    operator_assembly: Mapping[str, Any] | None,
+    normalized_operator_assembly: Mapping[str, Any],
+    vertex_count: int,
+    edge_vertex_indices: np.ndarray,
+    edge_vectors: np.ndarray,
+    edge_lengths: np.ndarray,
+    vertex_normals: np.ndarray,
+    tangent_u: np.ndarray,
+    tangent_v: np.ndarray,
+) -> dict[str, Any]:
+    raw_operator_assembly = operator_assembly if isinstance(operator_assembly, Mapping) else {}
+    raw_anisotropy = raw_operator_assembly.get("anisotropy", {})
+    if not isinstance(raw_anisotropy, Mapping):
+        raw_anisotropy = {}
+
+    normalized_anisotropy = normalized_operator_assembly.get("anisotropy", {})
+    if not isinstance(normalized_anisotropy, Mapping):
+        normalized_anisotropy = {}
+    model = str(normalized_anisotropy.get("model", DEFAULT_ANISOTROPY_MODEL))
+
+    coefficient_source = "implicit_identity"
+    coefficient_layout = "implicit_identity"
+    if model == DEFAULT_ANISOTROPY_MODEL:
+        vertex_tensor_diagonal = np.ones((vertex_count, 2), dtype=np.float64)
+    else:
+        explicit_vertex_diagonal = raw_anisotropy.get("vertex_tensor_diagonal")
+        if explicit_vertex_diagonal is not None:
+            vertex_tensor_diagonal = _validate_vertex_tensor_diagonal(
+                explicit_vertex_diagonal,
+                vertex_count=vertex_count,
+            )
+            coefficient_source = "explicit_per_vertex"
+            coefficient_layout = "per_vertex_diagonal"
+        else:
+            default_tensor = normalized_anisotropy.get("default_tensor", [1.0, 1.0])
+            vertex_tensor_diagonal = np.repeat(
+                np.asarray(default_tensor, dtype=np.float64)[None, :],
+                vertex_count,
+                axis=0,
+            )
+            coefficient_source = "global_default_diagonal"
+            coefficient_layout = "global_default_diagonal"
+
+    edge_direction_uv = _build_edge_tangent_directions(
+        edge_vertex_indices=edge_vertex_indices,
+        edge_vectors=edge_vectors,
+        edge_lengths=edge_lengths,
+        vertex_normals=vertex_normals,
+        tangent_u=tangent_u,
+        tangent_v=tangent_v,
+    )
+    if model == DEFAULT_ANISOTROPY_MODEL:
+        edge_multiplier = np.ones(int(edge_vertex_indices.shape[0]), dtype=np.float64)
+    else:
+        edge_diagonal = 0.5 * (
+            vertex_tensor_diagonal[edge_vertex_indices[:, 0]]
+            + vertex_tensor_diagonal[edge_vertex_indices[:, 1]]
+        )
+        edge_multiplier = np.sum((edge_direction_uv * edge_direction_uv) * edge_diagonal, axis=1)
+        if np.any(edge_multiplier <= _GEOMETRY_EPSILON):
+            raise FineSurfaceOperatorAssemblyError(
+                "Resolved anisotropy produced a non-positive edge conductivity multiplier."
+            )
+
+    return {
+        "model": model,
+        "coefficient_source": coefficient_source,
+        "coefficient_layout": coefficient_layout,
+        "vertex_tensor_diagonal": vertex_tensor_diagonal,
+        "edge_direction_uv": edge_direction_uv,
+        "edge_multiplier": edge_multiplier,
+        "nontrivial_vertex_count": int(
+            np.count_nonzero(np.max(np.abs(vertex_tensor_diagonal - 1.0), axis=1) > IDENTITY_ANISOTROPY_EQUIVALENCE_ATOL)
+        ),
+        "nontrivial_edge_count": int(
+            np.count_nonzero(np.abs(edge_multiplier - 1.0) > IDENTITY_ANISOTROPY_EQUIVALENCE_ATOL)
+        ),
+    }
+
+
+def _validate_vertex_tensor_diagonal(value: Any, *, vertex_count: int) -> np.ndarray:
+    vertex_tensor_diagonal = np.asarray(value, dtype=np.float64)
+    if vertex_tensor_diagonal.shape != (vertex_count, 2):
+        raise FineSurfaceOperatorAssemblyError(
+            "anisotropy.vertex_tensor_diagonal must have shape (vertex_count, 2)."
+        )
+    if not np.all(np.isfinite(vertex_tensor_diagonal)):
+        raise FineSurfaceOperatorAssemblyError("anisotropy.vertex_tensor_diagonal must be finite.")
+    if np.any(vertex_tensor_diagonal <= 0.0):
+        raise FineSurfaceOperatorAssemblyError(
+            "anisotropy.vertex_tensor_diagonal must stay strictly positive."
+        )
+    return vertex_tensor_diagonal
+
+
+def _build_edge_tangent_directions(
+    *,
+    edge_vertex_indices: np.ndarray,
+    edge_vectors: np.ndarray,
+    edge_lengths: np.ndarray,
+    vertex_normals: np.ndarray,
+    tangent_u: np.ndarray,
+    tangent_v: np.ndarray,
+) -> np.ndarray:
+    directions = np.zeros((int(edge_vertex_indices.shape[0]), 2), dtype=np.float64)
+    for edge_index, ((i, j), edge_vector, edge_length) in enumerate(
+        zip(edge_vertex_indices, edge_vectors, edge_lengths)
+    ):
+        i_idx = int(i)
+        j_idx = int(j)
+        direction = np.asarray(edge_vector, dtype=np.float64) / float(edge_length)
+        local_normal, local_u, local_v = _build_edge_local_frame(
+            i_idx=i_idx,
+            j_idx=j_idx,
+            vertex_normals=vertex_normals,
+            tangent_u=tangent_u,
+            tangent_v=tangent_v,
+        )
+        del local_normal
+        uv = np.asarray(
+            [
+                float(np.dot(direction, local_u)),
+                float(np.dot(direction, local_v)),
+            ],
+            dtype=np.float64,
+        )
+        uv_norm = float(np.linalg.norm(uv))
+        if uv_norm <= _GEOMETRY_EPSILON:
+            raise FineSurfaceOperatorAssemblyError(
+                f"Could not project edge {edge_index} into the local tangent basis."
+            )
+        directions[edge_index] = uv / uv_norm
+    return directions
+
+
+def _build_edge_local_frame(
+    *,
+    i_idx: int,
+    j_idx: int,
+    vertex_normals: np.ndarray,
+    tangent_u: np.ndarray,
+    tangent_v: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    local_normal = vertex_normals[i_idx] + vertex_normals[j_idx]
+    if float(np.linalg.norm(local_normal)) <= _GEOMETRY_EPSILON:
+        local_normal = np.asarray(vertex_normals[i_idx], dtype=np.float64)
+    local_normal = local_normal / float(np.linalg.norm(local_normal))
+
+    local_u = tangent_u[i_idx] + tangent_u[j_idx]
+    local_u = local_u - float(np.dot(local_u, local_normal)) * local_normal
+    if float(np.linalg.norm(local_u)) <= _GEOMETRY_EPSILON:
+        local_u = tangent_u[i_idx] - float(np.dot(tangent_u[i_idx], local_normal)) * local_normal
+    if float(np.linalg.norm(local_u)) <= _GEOMETRY_EPSILON:
+        local_u = tangent_v[i_idx] - float(np.dot(tangent_v[i_idx], local_normal)) * local_normal
+    if float(np.linalg.norm(local_u)) <= _GEOMETRY_EPSILON:
+        raise FineSurfaceOperatorAssemblyError(
+            f"Could not construct an edge-local tangent frame for vertices {(i_idx, j_idx)}."
+        )
+    local_u = local_u / float(np.linalg.norm(local_u))
+    local_v = np.cross(local_normal, local_u)
+    local_v = local_v / float(np.linalg.norm(local_v))
+    return local_normal, local_u, local_v
+
+
 def _build_symmetric_edge_matrix(
     *,
     vertex_count: int,
@@ -615,6 +866,37 @@ def _assemble_stiffness_matrix(
     stiffness.eliminate_zeros()
     stiffness.sort_indices()
     return stiffness
+
+
+def _apply_boundary_condition(
+    *,
+    stiffness: sp.csr_matrix,
+    mass_diagonal: np.ndarray,
+    boundary_vertex_mask: np.ndarray,
+    boundary_condition_mode: str,
+) -> sp.csr_matrix:
+    if boundary_condition_mode == DEFAULT_BOUNDARY_CONDITION_MODE:
+        return stiffness
+    if boundary_condition_mode != CLAMPED_BOUNDARY_CONDITION_MODE:
+        raise FineSurfaceOperatorAssemblyError(
+            f"Unsupported boundary_condition_mode {boundary_condition_mode!r}."
+        )
+
+    boundary_indices = np.flatnonzero(np.asarray(boundary_vertex_mask, dtype=bool))
+    if boundary_indices.size == 0:
+        return stiffness
+
+    adjusted = stiffness.tolil(copy=True)
+    adjusted[boundary_indices, :] = 0.0
+    adjusted[:, boundary_indices] = 0.0
+    adjusted[boundary_indices, boundary_indices] = np.asarray(
+        mass_diagonal[boundary_indices],
+        dtype=np.float64,
+    )
+    adjusted = adjusted.tocsr()
+    adjusted.eliminate_zeros()
+    adjusted.sort_indices()
+    return adjusted
 
 
 def _assemble_mass_normalized_operator(
