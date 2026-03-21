@@ -17,6 +17,7 @@ from flywire_wave.auth import ensure_flywire_secret
 from flywire_wave.config import load_config
 from flywire_wave.io_utils import read_root_ids
 from flywire_wave.mesh_pipeline import fetch_mesh_and_optional_skeleton
+from flywire_wave.registry import load_neuron_registry
 
 
 def main() -> int:
@@ -31,6 +32,7 @@ def main() -> int:
     paths = cfg["paths"]
     meshing = cfg["meshing"]
     dataset = cfg["dataset"].get("flywire_dataset", "public")
+    registry_path = paths.get("neuron_registry_csv", "data/interim/registry/neuron_registry.csv")
 
     if token:
         try:
@@ -43,6 +45,17 @@ def main() -> int:
     root_ids = read_root_ids(paths["selected_root_ids"])
     if not root_ids:
         raise RuntimeError("No root IDs found. Run scripts/01_select_subset.py first.")
+
+    registry = load_neuron_registry(registry_path)
+    known_root_ids = {int(root_id) for root_id in registry["root_id"].tolist()}
+    missing_root_ids = sorted(set(root_ids) - known_root_ids)
+    if missing_root_ids:
+        raise RuntimeError(
+            f"{len(missing_root_ids)} selected root IDs were not found in the registry {registry_path}: "
+            f"{missing_root_ids[:10]}"
+        )
+
+    print(f"Fetching {len(root_ids)} neurons validated against {registry_path}.")
 
     for root_id in tqdm(root_ids, desc="Fetching meshes"):
         fetch_mesh_and_optional_skeleton(

@@ -5,5 +5,6 @@ __all__ = [
     "io_utils",
     "manifests",
     "mesh_pipeline",
+    "registry",
     "selection",
 ]

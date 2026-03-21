@@ -4,7 +4,11 @@ dataset:
   flywire_dataset: public
 
 paths:
+  codex_raw_dir: data/raw/codex
   classification_csv: data/raw/codex/classification.csv
+  neuron_registry_csv: data/interim/registry/neuron_registry.csv
+  connectivity_registry_csv: data/interim/registry/connectivity_registry.csv
+  registry_provenance_json: data/interim/registry/registry_provenance.json
   selected_root_ids: data/interim/root_ids_visual_sample.txt
   meshes_raw_dir: data/interim/meshes_raw
   skeletons_raw_dir: data/interim/skeletons_raw
@@ -12,8 +16,27 @@ paths:
   processed_graph_dir: data/processed/graphs
   manifest_json: data/processed/asset_manifest.json
 
+registry:
+  snapshot_version: 783
+  project_roles:
+    surface_simulated:
+      - T4a
+      - T5a
+    point_simulated:
+      - Mi1
+      - Tm3
+      - Mi4
+      - Mi9
+      - Tm1
+      - Tm2
+      - Tm4
+      - Tm9
+    skeleton_simulated: []
+
 selection:
-  super_class: visual_projection
+  super_classes:
+    - optic
+    - visual_projection
   limit: 12
   sort_by: root_id
 

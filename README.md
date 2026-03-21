@@ -29,13 +29,14 @@ Use the FlyWire Codex download portal for the **FAFB** dataset:
 
 Recommended files to place in `data/raw/codex/`:
 - `classification.csv`
-- `consolidated_cell_types.csv`
-- the FlyWire Codex synapse table for FAFB v783
-- the FlyWire Codex neuron / neurotransmitter export for FAFB v783
+- `cell_types.csv` or `consolidated_cell_types.csv`
+- `connections_filtered.csv` or `connections.csv`
+- `neurotransmitter_type_predictions.csv` or `neurons.csv`
+- optional visual annotations such as `visual_neuron_annotations.csv` and `visual_neuron_columns.csv`
 
 Notes:
 - file names have varied a bit across downstream analysis repos, so always trust the portal first;
-- this scaffold is written so that `classification.csv` is the only hard requirement for subset selection.
+- the registry builder will use the extra exports when present, but still tolerates a minimal `classification.csv`-only setup.
 
 ### 2) Public programmatic access
 Use the public CAVE datastack:
@@ -74,6 +75,7 @@ flywire_wave_repo/
 │   └── milestone_1_experiment_manifest.schema.json
 ├── scripts/
 │   ├── 00_verify_access.py
+│   ├── build_registry.py
 │   ├── 01_select_subset.py
 │   ├── 02_fetch_meshes.py
 │   ├── 03_build_wave_assets.py
@@ -86,9 +88,11 @@ flywire_wave_repo/
 │       ├── io_utils.py
 │       ├── manifests.py
 │       ├── mesh_pipeline.py
+│       ├── registry.py
 │       └── selection.py
 ├── tests/
-│   └── test_manifest_validation.py
+│   ├── test_manifest_validation.py
+│   └── test_registry.py
 └── data/
     ├── raw/
     │   └── codex/
@@ -170,10 +174,13 @@ Place the files you downloaded from FlyWire Codex into:
 data/raw/codex/
 ```
 
-At minimum, put:
+Recommended registry inputs:
 
 ```text
 data/raw/codex/classification.csv
+data/raw/codex/cell_types.csv
+data/raw/codex/connections_filtered.csv
+data/raw/codex/neurotransmitter_type_predictions.csv
 ```
 
 ### 4) Copy the example config
@@ -188,11 +195,30 @@ cp config/visual_subset.example.yaml config/local.yaml
 python scripts/00_verify_access.py --config config/local.yaml
 ```
 
-### 6) Select a subset to mesh
+### 6) Build the canonical registry
 
-Default example: select a small visual subset from `classification.csv`.
-The current FlyWire export uses `visual_projection` rather than `visual`, and
-the sample config is set accordingly.
+This normalizes the local Codex exports into one neuron registry, one
+connectivity registry, and a provenance JSON with pinned snapshot/materialization
+metadata plus input file fingerprints.
+
+```bash
+python scripts/build_registry.py --config config/local.yaml
+```
+
+This writes:
+
+```text
+data/interim/registry/neuron_registry.csv
+data/interim/registry/connectivity_registry.csv
+data/interim/registry/registry_provenance.json
+```
+
+### 7) Select a subset to mesh
+
+Default example: select a small optic-lobe subset from the canonical neuron
+registry. The sample config accepts either `optic` or `visual_projection`
+super-classes and carries milestone-2 role defaults for `T4a/T5a` and their
+direct reduced partners.
 
 ```bash
 python scripts/01_select_subset.py --config config/local.yaml
@@ -204,7 +230,7 @@ This writes a root-id list to something like:
 data/interim/root_ids_visual_sample.txt
 ```
 
-### 7) Fetch meshes + skeletons
+### 8) Fetch meshes + skeletons
 
 ```bash
 python scripts/02_fetch_meshes.py --config config/local.yaml
@@ -217,7 +243,7 @@ data/interim/meshes_raw/
 data/interim/skeletons_raw/
 ```
 
-### 8) Build wave-ready mesh assets
+### 9) Build wave-ready mesh assets
 
 ```bash
 python scripts/03_build_wave_assets.py --config config/local.yaml

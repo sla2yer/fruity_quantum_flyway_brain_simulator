@@ -120,6 +120,7 @@ def process_mesh_into_wave_assets(
     simplify_target_faces: int = 15000,
     patch_hops: int = 6,
     patch_vertex_cap: int = 2500,
+    registry_metadata: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     processed_mesh_dir = ensure_dir(processed_mesh_dir)
     processed_graph_dir = ensure_dir(processed_graph_dir)
@@ -178,6 +179,7 @@ def process_mesh_into_wave_assets(
             "raw_mesh_path": str(raw_mesh_path),
             "processed_mesh_path": str(processed_mesh_path),
             "processed_graph_path": str(graph_path),
+            "registry_metadata": registry_metadata or {},
         },
         meta_json_path,
     )

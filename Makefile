@@ -7,6 +7,9 @@ DESIGN_LOCK ?= config/milestone_1_design_lock.yaml
 verify:
 	$(PYTHON) scripts/00_verify_access.py --config $(CONFIG)
 
+registry:
+	$(PYTHON) scripts/build_registry.py --config $(CONFIG)
+
 select:
 	$(PYTHON) scripts/01_select_subset.py --config $(CONFIG)
 
@@ -19,4 +22,4 @@ assets:
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)
 
-all: verify select meshes assets
+all: verify registry select meshes assets
