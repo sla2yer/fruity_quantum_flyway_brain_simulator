@@ -1,7 +1,7 @@
 # Offline Operator QA Workflow
 
-Milestone 6 is not finished when bundles merely serialize. Before Milestone 10
-starts, the team needs one offline workflow that can:
+Milestone 6 is not finished when bundles merely serialize. Before follow-on
+solver work starts, the team needs one offline workflow that can:
 
 - initialize a localized pulse on the fine surface
 - check that a lightweight smoke evolution behaves stably enough for pre-engine work
@@ -23,6 +23,10 @@ The report reads only local bundle artifacts that were already built by
 - optional descriptor / geometry-QA sidecars for extra context
 
 No FlyWire token or network access is required.
+
+If a root is missing required local bundle inputs, the report keeps going and
+marks that root as `blocked` with explicit missing-prerequisite paths instead
+of aborting the whole run with a traceback.
 
 ## Run It
 
@@ -133,7 +137,7 @@ The report also renders:
 ## Gate Semantics
 
 Every metric gets `pass`, `warn`, or `fail`. The aggregate report also emits a
-Milestone 10 gate:
+readiness gate:
 
 - `go`: no warnings or failures
 - `review`: no blocking failures, but at least one warning or non-blocking failure
@@ -141,10 +145,10 @@ Milestone 10 gate:
 
 Use that gate this way:
 
-- `go`: acceptable baseline for downstream engine integration and solver work
-- `review`: engine work can continue only if a reviewer signs off on the
+- `go`: acceptable baseline for downstream solver and integration work
+- `review`: follow-on work can continue only if a reviewer signs off on the
   degraded metrics and the visual overlays still look scientifically plausible
-- `hold`: do not treat the operator bundle as an engine baseline; rebuild or
+- `hold`: do not treat the operator bundle as a downstream baseline; rebuild or
   debug the bundle first
 
 ## Reviewer Checklist
@@ -166,8 +170,8 @@ Reviewers should look for:
 
 When the report fails:
 
-- if symmetry, nullspace, or non-positive-mass checks fail, stop Milestone 10
-  work and inspect the operator build itself
+- if symmetry, nullspace, or non-positive-mass checks fail, stop follow-on work
+  and inspect the operator build itself
 - if pulse mass or energy checks fail, treat the bundle as numerically unstable
   for pre-engine use
 - if only coarse-vs-fine comparison checks warn or fail, inspect the patch

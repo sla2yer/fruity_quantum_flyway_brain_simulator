@@ -294,6 +294,69 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 self.assertEqual(summary["qa"]["blocking_failure_root_ids"], [101])
                 self.assertIn("coarse_max_patch_vertex_fraction", summary["qa"]["blocking_failure_details"][0]["checks"])
 
+    def test_build_wave_assets_reports_missing_raw_meshes_after_processing_remaining_roots(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as fixture_dir_str:
+            fixture_dir = Path(fixture_dir_str)
+            fixture_rel = fixture_dir.relative_to(ROOT)
+            with tempfile.TemporaryDirectory() as outside_dir_str:
+                outside_dir = Path(outside_dir_str)
+                config_path = _write_pipeline_fixture(fixture_dir, fixture_rel)
+                stub_dir = _write_stub_dependencies(fixture_dir)
+                env = os.environ.copy()
+                env["FLYWIRE_TOKEN"] = ""
+                existing_pythonpath = env.get("PYTHONPATH", "")
+                env["PYTHONPATH"] = (
+                    str(stub_dir)
+                    if not existing_pythonpath
+                    else os.pathsep.join([str(stub_dir), existing_pythonpath])
+                )
+
+                self._run_script("build_registry.py", config_path, outside_dir, env)
+
+                root_ids_path = fixture_dir / "out" / "root_ids.txt"
+                root_ids_path.parent.mkdir(parents=True, exist_ok=True)
+                root_ids_path.write_text("101\n102\n", encoding="utf-8")
+
+                meshes_raw_dir = fixture_dir / "out" / "meshes_raw"
+                _write_stub_mesh(meshes_raw_dir / "101.ply")
+
+                result = self._run_script(
+                    "03_build_wave_assets.py",
+                    config_path,
+                    outside_dir,
+                    env,
+                    expect_success=False,
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertIn("Missing raw meshes blocked root_ids=102", result.stderr)
+
+                summary = json.loads(result.stdout)
+                self.assertEqual(summary["build"]["built_root_ids"], [101])
+                self.assertEqual(summary["build"]["skipped_root_ids"], [102])
+                self.assertEqual(summary["build"]["failed_root_ids"], [])
+                self.assertEqual(summary["build"]["missing_raw_mesh_count"], 1)
+                self.assertEqual(summary["build"]["missing_raw_mesh_root_ids"], [102])
+                self.assertEqual(summary["build"]["root_results"]["101"]["status"], "built")
+                self.assertEqual(summary["build"]["root_results"]["102"]["status"], "skipped")
+                self.assertEqual(summary["build"]["root_results"]["102"]["reason"], "missing_raw_mesh")
+                self.assertTrue(summary["build"]["root_results"]["102"]["blocking"])
+                self.assertEqual(summary["exit_code"], 1)
+                self.assertEqual(summary["final_status"], "fail")
+
+                manifest_path = fixture_dir / "out" / "asset_manifest.json"
+                self.assertTrue(manifest_path.exists())
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                self.assertIn("101", manifest)
+                self.assertIn("102", manifest)
+                self.assertEqual(manifest["101"]["bundle_status"], "ready")
+                self.assertEqual(manifest["102"]["assets"]["raw_mesh"]["status"], "missing")
+                self.assertEqual(manifest["102"]["assets"]["patch_graph"]["status"], "missing")
+                self.assertEqual(manifest["102"]["operator_bundle"]["status"], "missing")
+                self.assertEqual(manifest["102"]["build_result"]["status"], "skipped")
+                self.assertEqual(manifest["102"]["build_result"]["reason"], "missing_raw_mesh")
+
     def _run_script(
         self,
         script_name: str,

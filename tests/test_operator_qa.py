@@ -83,11 +83,14 @@ class OperatorQAScriptTest(unittest.TestCase):
             self.assertEqual(summary_payload["markdown_path"], str(markdown_path.resolve()))
             self.assertEqual(summary_payload["root_ids_path"], str(root_ids_path.resolve()))
             self.assertIn(summary_payload["overall_status"], {"pass", "warn"})
-            self.assertIn(summary_payload["milestone10_gate"], {"go", "review"})
+            self.assertIn(summary_payload["operator_readiness_gate"], {"go", "review"})
+            self.assertTrue(summary_payload["operator_bundle_ready"])
+            self.assertNotIn("milestone10_gate", summary_payload)
             root_summary = summary_payload["roots"]["101"]
             self.assertIn(root_summary["overall_status"], {"pass", "warn"})
-            self.assertIn(root_summary["milestone10_gate"], {"go", "review"})
-            self.assertTrue(root_summary["milestone10_engine_ready"])
+            self.assertIn(root_summary["operator_readiness_gate"], {"go", "review"})
+            self.assertTrue(root_summary["operator_bundle_ready"])
+            self.assertNotIn("milestone10_gate", root_summary)
             self.assertEqual(root_summary["pulse_step_count"], 8)
             self.assertEqual(root_summary["boundary_vertex_count"], 0)
             self.assertIn("pulse_fine_energy_increase_relative", root_summary["key_metrics"])
@@ -95,7 +98,10 @@ class OperatorQAScriptTest(unittest.TestCase):
             detail_payload = json.loads(detail_json_path.read_text(encoding="utf-8"))
             self.assertEqual(detail_payload["root_id"], 101)
             self.assertEqual(detail_payload["summary"]["overall_status"], root_summary["overall_status"])
-            self.assertEqual(detail_payload["summary"]["milestone10_gate"], root_summary["milestone10_gate"])
+            self.assertEqual(
+                detail_payload["summary"]["operator_readiness_gate"],
+                root_summary["operator_readiness_gate"],
+            )
             self.assertEqual(detail_payload["pulse"]["seed_patch"], 0)
             self.assertEqual(detail_payload["pulse"]["step_count"], 8)
             self.assertIn("fine_operator_symmetry_residual_inf", detail_payload["metrics"])
@@ -115,6 +121,70 @@ class OperatorQAScriptTest(unittest.TestCase):
 
             self.assertEqual(first_run["output_dir"], second_run["output_dir"])
             self.assertEqual(first_run["report_path"], second_run["report_path"])
+
+    def test_operator_qa_script_reports_missing_prerequisites_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            bundle_paths = build_geometry_bundle_paths(
+                101,
+                meshes_raw_dir=tmp_dir / "out" / "meshes_raw",
+                skeletons_raw_dir=tmp_dir / "out" / "skeletons_raw",
+                processed_mesh_dir=tmp_dir / "out" / "processed_meshes",
+                processed_graph_dir=tmp_dir / "out" / "processed_graphs",
+            )
+            _write_octahedron_mesh(bundle_paths.raw_mesh_path)
+            process_mesh_into_wave_assets(
+                root_id=101,
+                bundle_paths=bundle_paths,
+                simplify_target_faces=8,
+                patch_hops=1,
+                patch_vertex_cap=2,
+                registry_metadata={"cell_type": "T5a", "project_role": "surface_simulated"},
+            )
+
+            config_path = _write_operator_qa_config(tmp_dir, root_ids=[101, 102])
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "06_operator_qa.py"),
+                    "--config",
+                    str(config_path),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if result.returncode != 0:
+                self.fail(
+                    "06_operator_qa.py failed\n"
+                    f"stdout:\n{result.stdout}\n"
+                    f"stderr:\n{result.stderr}"
+                )
+
+            summary_payload = json.loads(result.stdout)
+            self.assertEqual(summary_payload["root_ids"], [101, 102])
+            self.assertEqual(summary_payload["overall_status"], "blocked")
+            self.assertEqual(summary_payload["operator_readiness_gate"], "hold")
+            self.assertEqual(summary_payload["blocked_root_count"], 1)
+            self.assertEqual(summary_payload["missing_prerequisite_root_ids"], [102])
+
+            blocked_summary = summary_payload["roots"]["102"]
+            self.assertEqual(blocked_summary["overall_status"], "blocked")
+            self.assertEqual(blocked_summary["operator_readiness_gate"], "hold")
+            self.assertFalse(blocked_summary["operator_bundle_ready"])
+            self.assertGreater(blocked_summary["missing_prerequisite_count"], 0)
+            self.assertIn("missing_prerequisites", blocked_summary)
+
+            detail_payload = json.loads(
+                Path(blocked_summary["artifacts"]["details_json_path"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(detail_payload["summary"]["overall_status"], "blocked")
+            self.assertEqual(detail_payload["summary"]["operator_readiness_gate"], "hold")
+            self.assertEqual(detail_payload["prerequisite_status"], "missing")
+            self.assertTrue(detail_payload["missing_prerequisites"])
+            self.assertNotIn("Traceback", result.stderr)
 
     def _run_operator_qa(self, config_path: Path) -> dict[str, object]:
         result = subprocess.run(
@@ -140,7 +210,7 @@ class OperatorQAScriptTest(unittest.TestCase):
         return json.loads(result.stdout)
 
 
-def _write_operator_qa_config(tmp_dir: Path) -> Path:
+def _write_operator_qa_config(tmp_dir: Path, *, root_ids: list[int] | None = None) -> Path:
     config_path = tmp_dir / "config.yaml"
     config_path.write_text(
         textwrap.dedent(
@@ -158,7 +228,11 @@ def _write_operator_qa_config(tmp_dir: Path) -> Path:
         encoding="utf-8",
     )
     (tmp_dir / "out").mkdir(exist_ok=True)
-    (tmp_dir / "out" / "root_ids.txt").write_text("101\n", encoding="utf-8")
+    resolved_root_ids = root_ids or [101]
+    (tmp_dir / "out" / "root_ids.txt").write_text(
+        "".join(f"{root_id}\n" for root_id in resolved_root_ids),
+        encoding="utf-8",
+    )
     return config_path
 
 

@@ -95,12 +95,16 @@ operator bundles:
   per-root detail JSON, and SVG panels for pulse initialization, boundary-mask
   inspection, patch decomposition, smoke-evolved fine/coarse fields, and coarse
   reconstruction error
-- the report summary includes pass / warn / fail checks plus a Milestone 10
-  gate of `go`, `review`, or `hold`
+- the report summary includes pass / warn / fail checks plus an
+  `operator_readiness_gate` of `go`, `review`, or `hold`
 - `scripts/07_milestone6_readiness.py` layers a fixture-suite check plus a
   manifest/operator-contract audit on top of the operator QA bundle and writes
   `milestone_6_readiness.md` plus `milestone_6_readiness.json` into the same
   deterministic report directory
+- `scripts/03_build_wave_assets.py` now records missing raw meshes as
+  structured per-root blocked prerequisites, writes the full manifest for all
+  attempted roots, and exits non-zero only after the end-of-run summary is
+  emitted
 - `make milestone6-readiness` is the one-command entrypoint for the shipped
   offline verification pass; it uses `config/milestone_6_verification.yaml`
   so the local build can run entirely from the cached bundle without touching

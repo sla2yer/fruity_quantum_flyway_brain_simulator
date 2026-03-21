@@ -1,119 +1,133 @@
-# FlyWire Female Brain → Selective Meshing Starter Repo
+# FlyWire Female Brain -> Wave Asset Pipeline
 
-This scaffold is for the **adult female Drosophila FlyWire brain** (`FAFB v783`) with a workflow that matches your project constraint:
+This repo preprocesses FlyWire metadata and neuron meshes into wave-ready assets
+for a later simulator. It targets the adult female Drosophila FAFB public
+datastack (`flywire_fafb_public`, materialization `783`) and focuses on:
 
-- keep the **whole brain mapped**,
-- only **simulate a selected subset**,
-- fetch **meshes/skeletons per neuron**,
-- precompute **surface graphs / Laplacians / active patches** for the wave-capable part of the sim.
+- keeping the whole brain as the structural source of truth,
+- selecting only a small active circuit to simulate,
+- fetching meshes and optional skeletons only for that selected subset,
+- building multiresolution geometry and operator bundles offline.
 
-If you're onboarding quickly or using a coding agent, start with [`AGENTS.md`](AGENTS.md).
+This is not the final simulator and it is not a whole-brain local mirror.
 
-## What this repo is for
+If you are onboarding quickly or using a coding agent, start with
+[`AGENTS.md`](AGENTS.md).
 
-This is **not** a whole-brain bulk mirror. The full EM volume and segmentation are too large for conventional downloads. Instead, the intended workflow is:
+## What this repo does
 
-1. download **bulk metadata tables** from FlyWire Codex,
-2. query the **public FlyWire datastack** through CAVE,
-3. fetch **only the neurons you want to simulate** as meshes/skeletons,
-4. simplify those meshes and build graph/Laplacian assets for your wave solver.
+The intended workflow is:
 
-That gives you the best of both worlds:
-- the female whole brain remains the structural source of truth,
-- runtime stays manageable because only chosen neurons are meshed into simulation assets.
+1. download stable FlyWire Codex metadata snapshots,
+2. normalize them into canonical neuron and connectivity registries,
+3. derive a reproducible named subset,
+4. fetch only the selected neurons as raw meshes and optional skeletons,
+5. simplify those meshes and build geometry/operator bundles for later wave
+   simulation,
+6. inspect the result with local HTML/Markdown preview and QA reports.
 
-## Source-of-truth download locations
+That gives you the whole-brain metadata context without trying to mirror the
+full EM segmentation locally.
+
+## Safe validation loop
+
+These checks are local and do not require FlyWire network access:
+
+```bash
+make test
+make validate-manifest
+make smoke
+```
+
+The `Makefile` automatically uses `.venv/bin/python` when that virtualenv
+exists.
+
+## Pipeline at a glance
+
+The main pipeline order is:
+
+1. `scripts/build_registry.py`
+2. `scripts/01_select_subset.py`
+3. `scripts/02_fetch_meshes.py`
+4. `scripts/03_build_wave_assets.py`
+
+Optional offline inspection steps:
+
+5. `scripts/05_preview_geometry.py`
+6. `scripts/06_operator_qa.py`
+7. `scripts/07_milestone6_readiness.py`
+
+## Source-of-truth inputs
 
 ### 1) Bulk tables / annotations
-Use the FlyWire Codex download portal for the **FAFB** dataset:
+
+Use the FlyWire Codex download portal for the FAFB dataset:
 
 - `https://codex.flywire.ai/api/download?dataset=fafb`
 
 Recommended files to place in `data/raw/codex/`:
+
 - `classification.csv`
 - `cell_types.csv` or `consolidated_cell_types.csv`
 - `connections_filtered.csv` or `connections.csv`
 - `neurotransmitter_type_predictions.csv` or `neurons.csv`
-- optional visual annotations such as `visual_neuron_annotations.csv` and `visual_neuron_columns.csv`
+- optional visual annotations such as `visual_neuron_annotations.csv` and
+  `visual_neuron_columns.csv`
 
 Notes:
-- file names have varied a bit across downstream analysis repos, so always trust the portal first;
-- the registry builder will use the extra exports when present, but still tolerates a minimal `classification.csv`-only setup.
+
+- export names can drift a little across FlyWire downstream tooling, so trust
+  the portal first;
+- the registry builder tolerates a minimal `classification.csv`-only setup, but
+  richer exports produce a better canonical registry.
 
 ### 2) Public programmatic access
+
 Use the public CAVE datastack:
 
 - datastack: `flywire_fafb_public`
 - materialization target in this repo: `783`
 
 ### 3) Meshes and skeletons
-Meshes are **not** bulk-downloaded directly from FlyWire Codex. Fetch them per neuron using:
-- `fafbseg` / `cloudvolume` / `meshparty`
-- or the FlyConnectome notebooks as reference
 
-Skeletons for proofread public neurons are also available through the FlyWire annotations repo:
-- `https://github.com/flyconnectome/flywire_annotations`
+Meshes are not bulk-downloaded from Codex. This repo fetches them per neuron
+through the FlyWire/CAVE stack. Skeletons are optional and also fetched
+per-neuron when configured.
 
 ## Repo layout
 
-```text
-flywire_wave_repo/
-├── README.md
-├── AGENTS.md
-├── requirements.txt
-├── pyproject.toml
-├── Makefile
-├── .env.example
-├── config/
-│   ├── milestone_1_design_lock.yaml
-│   └── visual_subset.example.yaml
-├── docs/
-│   ├── geometry_preview.md
-│   ├── milestones.md
-│   ├── pipeline_notes.md
-│   └── subset_presets.md
-├── manifests/
-│   └── examples/
-│       └── milestone_1_demo.yaml
-├── schemas/
-│   └── milestone_1_experiment_manifest.schema.json
-├── scripts/
-│   ├── 00_verify_access.py
-│   ├── build_registry.py
-│   ├── 01_select_subset.py
-│   ├── 02_fetch_meshes.py
-│   ├── 03_build_wave_assets.py
-│   ├── 04_validate_manifest.py
-│   ├── 05_preview_geometry.py
-│   └── setup_flywire_token.py
-├── src/
-│   └── flywire_wave/
-│       ├── __init__.py
-│       ├── config.py
-│       ├── io_utils.py
-│       ├── manifests.py
-│       ├── mesh_pipeline.py
-│       ├── registry.py
-│       └── selection.py
-├── tests/
-│   ├── test_manifest_validation.py
-│   └── test_registry.py
-├── flywire_codex/
-└── data/
-    ├── raw/
-    │   └── codex/
-    ├── interim/
-    └── processed/
-```
+- `src/flywire_wave/`: core library code for config loading, registry building,
+  subset selection, geometry/operator contracts, mesh processing, preview
+  generation, and operator QA
+- `scripts/`: thin CLI entrypoints for the pipeline and offline review tools
+- `tests/`: local unit tests that do not require FlyWire network access
+- `config/`: example runtime config plus the tracked Milestone 1 and Milestone 6
+  verification configs
+- `manifests/`: example experiment manifests
+- `schemas/`: manifest schema files
+- `docs/milestones.md`: consolidated roadmap and milestone planning
+- `docs/pipeline_notes.md`: concise pipeline and artifact contract notes
+- `docs/geometry_descriptor_qa.md`: descriptor and geometry-QA thresholds
+- `docs/operator_bundle_design.md`: authoritative Milestone 6 discretization and
+  operator contract note
+- `docs/operator_qa.md`: reviewer-oriented offline operator QA workflow
+- `data/raw/codex/`: manually downloaded Codex CSV snapshots
+- `data/interim/`, `data/processed/`: generated outputs, ignored by git
+- `flywire_codex/`: upstream Codex submodule; avoid editing unless a task
+  explicitly calls for it
 
-## FlyWire Authentication
+## FlyWire authentication
 
 This repo uses two separate auth contexts:
 
-- **FlyWire Codex** (`codex.flywire.ai`) for browser/UI access and bulk CSV/static downloads
-- **CAVE / FlyWire API** for local programmatic access through `caveclient`, `fafbseg`, and the repo scripts that read `FLYWIRE_TOKEN` from `.env`
+- FlyWire Codex (`codex.flywire.ai`) for browser/UI access and bulk CSV/static
+  downloads
+- CAVE / FlyWire API for local programmatic access through `caveclient`,
+  `fafbseg`, and the repo scripts that read `FLYWIRE_TOKEN` from `.env`
 
-Being signed into **FlyWire Codex** in the browser does **not** automatically configure local Python access. The `FLYWIRE_TOKEN` value in `.env` should be your **FlyWire/CAVE API token**.
+Being signed into FlyWire Codex in the browser does not automatically configure
+local Python access. The `FLYWIRE_TOKEN` value in `.env` should be your
+FlyWire/CAVE API token.
 
 Recommended setup flow:
 
@@ -129,7 +143,7 @@ cp .env.example .env
 python scripts/setup_flywire_token.py
 ```
 
-This opens the existing-token page first. If you specifically need to mint a new token, run:
+If you specifically need to mint a new token, run:
 
 ```bash
 python scripts/setup_flywire_token.py --new-token
@@ -138,31 +152,32 @@ python scripts/setup_flywire_token.py --new-token
 Creating a new token may invalidate the previous one.
 
 3. Copy the token from the browser page.
-4. Paste it into `.env` as `FLYWIRE_TOKEN=...`, or rerun the helper with `--write-env` to update `.env` interactively.
-5. Optional: after installing dependencies, save the same token to local CAVE secret storage with `caveclient` if you want machine-wide auth for `caveclient` / `fafbseg`.
+4. Paste it into `.env` as `FLYWIRE_TOKEN=...`, or rerun the helper with
+   `--write-env` to update `.env` interactively.
+5. Optional: after installing dependencies, save the same token to local CAVE
+   secret storage if you want machine-wide auth for `caveclient` / `fafbseg`.
 6. Rerun access verification:
 
 ```bash
 python scripts/00_verify_access.py --config config/local.yaml
 ```
 
-If FlyWire's materialization service is temporarily down, the verifier will now
-report that as an upstream outage while still confirming whether your token works
-against the global info service. Add `--require-materialize` if you want that
-case to return a non-zero exit code.
-
-This keeps the auth split explicit: **FlyWire Codex** handles website browsing/downloads, while `FLYWIRE_TOKEN` handles local API access.
+If FlyWire's materialization service is temporarily down, the verifier reports
+that as an upstream outage while still checking whether your token works against
+the global info service. Add `--require-materialize` if you want that case to
+return a non-zero exit code.
 
 ## Quick start
 
-### 1) Create environment
+### 1) Create the environment
 
 ```bash
 git submodule update --init --recursive
 make bootstrap
 ```
 
-Initialize the pinned `flywire_codex/` submodule once after cloning, then run `make bootstrap` to create `.venv/` if needed, upgrade `pip`, and install the repo in editable mode via [`pyproject.toml`](pyproject.toml).
+That initializes the pinned `flywire_codex/` submodule, creates `.venv/` if
+needed, upgrades `pip`, and installs the repo in editable mode.
 
 Manual equivalent:
 
@@ -180,7 +195,8 @@ cp .env.example .env
 python scripts/setup_flywire_token.py
 ```
 
-Then copy the token from the browser page into `.env` as `FLYWIRE_TOKEN=...`, or rerun the helper with `--write-env` to update `.env` interactively.
+Then write `FLYWIRE_TOKEN=...` into `.env`, or rerun the helper with
+`--write-env`.
 
 ### 3) Download the FlyWire Codex metadata exports
 
@@ -205,8 +221,8 @@ data/raw/codex/neurotransmitter_type_predictions.csv
 cp config/visual_subset.example.yaml config/local.yaml
 ```
 
-All entries under `config.paths` resolve from the repository root, not from
-the caller's current working directory. You can run the pipeline from another
+All entries under `config.paths` resolve from the repository root, not from the
+caller's current working directory. You can run the pipeline from another
 directory as long as `--config` points to the right file, for example:
 
 ```bash
@@ -223,8 +239,8 @@ python scripts/00_verify_access.py --config config/local.yaml
 ### 6) Build the canonical registry
 
 This normalizes the local Codex exports into one neuron registry, one
-connectivity registry, and a provenance JSON with pinned snapshot/materialization
-metadata plus input file fingerprints.
+connectivity registry, and a provenance JSON with pinned snapshot and input-file
+metadata.
 
 ```bash
 python scripts/build_registry.py --config config/local.yaml
@@ -240,17 +256,16 @@ data/interim/registry/registry_provenance.json
 
 ### 7) Select a subset to mesh
 
-The Milestone 4 selector is now preset-driven. The sample config defines three
-named presets:
+The selector is preset-driven. The sample config defines three named presets:
 
 - `motion_minimal`
 - `motion_medium`
 - `motion_dense`
 
 Each run writes a root-id list, selected-neuron CSV, stats JSON, manifest JSON,
-and a lightweight Markdown/Mermaid preview under `data/interim/subsets/<preset>/`.
-The active preset also refreshes `paths.selected_root_ids` so downstream mesh and
-asset steps can switch inputs by config alone.
+and a lightweight Markdown/Mermaid preview under
+`data/interim/subsets/<preset>/`. The active preset also refreshes
+`paths.selected_root_ids` so downstream steps can switch inputs by config alone.
 
 ```bash
 python scripts/01_select_subset.py --config config/local.yaml
@@ -268,48 +283,55 @@ Generate every preset declared in the config:
 python scripts/01_select_subset.py --config config/local.yaml --all-presets
 ```
 
-This writes the active root-id list to something like:
-
-```text
-data/interim/root_ids_visual_sample.txt
-```
-
-And writes per-preset reports to:
-
-```text
-data/interim/subsets/
-```
-
-### 8) Fetch meshes + skeletons
+### 8) Fetch raw meshes and optional skeletons
 
 ```bash
 python scripts/02_fetch_meshes.py --config config/local.yaml
 ```
 
-This downloads raw per-neuron assets into:
+This downloads per-neuron assets into:
 
 ```text
 data/interim/meshes_raw/
 data/interim/skeletons_raw/
 ```
 
-### 9) Build wave-ready mesh assets
+### 9) Build processed geometry and operator bundles
 
 ```bash
 python scripts/03_build_wave_assets.py --config config/local.yaml
 ```
 
-This creates:
-- simplified meshes,
-- sparse adjacency,
-- graph Laplacians,
-- an example active patch per neuron.
+The processed manifest records:
 
-Outputs land in:
+- `_asset_contract_version: geometry_bundle.v1`
+- `_operator_contract_version: operator_bundle.v2`
 
-```text
-data/processed/
-```
+Per selected root ID, the build emits:
+
+- `data/processed/meshes/<root_id>.ply`
+- `data/processed/graphs/<root_id>_graph.npz`
+- `data/processed/graphs/<root_id>_fine_operator.npz`
+- `data/processed/graphs/<root_id>_patch_graph.npz`
+- `data/processed/graphs/<root_id>_coarse_operator.npz`
+- `data/processed/graphs/<root_id>_transfer_operators.npz`
+- `data/processed/graphs/<root_id>_descriptors.json`
+- `data/processed/graphs/<root_id>_qa.json`
+- `data/processed/graphs/<root_id>_operator_metadata.json`
+- `data/processed/graphs/<root_id>_meta.json` as a legacy compatibility shim
+- `data/processed/asset_manifest.json`
+
+By default, the fine operator bundle uses the Milestone 6 scientific baseline:
+
+- discretization family: `triangle_mesh_cotangent_fem`
+- mass treatment: `lumped_mass`
+- normalization: `mass_normalized`
+- boundary mode: `closed_surface_zero_flux`
+- anisotropy model: `isotropic`
+
+When the metric-aware assembly cannot be realized safely, the allowed fallback
+family is the structural `surface_graph_uniform_laplacian`, and the manifest
+records that explicitly.
 
 ### 10) Generate an offline geometry preview report
 
@@ -318,41 +340,105 @@ python scripts/05_preview_geometry.py --config config/local.yaml --root-id 72057
 ```
 
 If you omit `--root-id`, the preview script reads `paths.selected_root_ids`.
-Reports write to a deterministic directory under:
-
-```text
-data/processed/previews/
-```
+Reports write to a deterministic directory under `config.paths.geometry_preview_dir`
+(default: `data/processed/previews/`).
 
 Each preview directory contains a static `index.html`, `summary.json`, and the
-exact `root_ids.txt` used for that report. See [`docs/geometry_preview.md`](docs/geometry_preview.md)
-for the reviewer checklist and a few common invocation patterns.
+exact `root_ids.txt` used for that report. See
+[`docs/geometry_preview.md`](docs/geometry_preview.md) for reviewer guidance.
 
-## What “meshing for the simulation” means here
+### 11) Generate an offline operator QA report
 
-For each selected root ID, this scaffold does:
+```bash
+python scripts/06_operator_qa.py --config config/local.yaml --limit 4
+```
 
-1. fetch full-resolution FlyWire mesh,
-2. simplify it to a target face budget,
-3. build a sparse surface graph from triangle connectivity,
-4. compute a graph Laplacian,
-5. choose an example local patch that can become the wave solver’s active region,
-6. save everything as `.npz` / `.json` / `.ply`.
+Inspect explicit root IDs instead:
 
-That is enough to support:
-- mesh-resolved wave experiments,
-- branch/patch-local dynamics,
-- synapse-to-patch mapping later,
-- selective promotion of only the currently active neurons.
+```bash
+python scripts/06_operator_qa.py --config config/local.yaml --root-id 101 --root-id 102
+```
+
+This workflow reads only local processed bundles and writes a deterministic
+report under `config.paths.operator_qa_dir/root-ids-<sorted-root-ids>/`
+(default: `data/processed/operator_qa/`). It does not require FlyWire network
+access.
+
+Each report includes:
+
+- `index.html`
+- `report.md`
+- `summary.json`
+- per-root detail JSON
+- SVG panels for pulse initialization, boundary-mask inspection, patch
+  decomposition, smoke-evolved fine/coarse fields, and reconstruction error
+
+See [`docs/operator_qa.md`](docs/operator_qa.md) for the checks, thresholds,
+and operator readiness gate semantics.
+
+### 12) Run the Milestone 6 readiness pass
+
+```bash
+make milestone6-readiness
+```
+
+This uses [`config/milestone_6_verification.yaml`](config/milestone_6_verification.yaml)
+and writes isolated outputs under `data/processed/milestone_6_verification/`.
+It runs a focused fixture suite, rebuilds the local verification bundle, runs
+operator QA, and publishes:
+
+- `milestone_6_readiness.md`
+- `milestone_6_readiness.json`
+
+in the same deterministic operator-QA report directory.
+
+## What "wave-ready" means here
+
+For each selected root ID, the current asset builder can:
+
+1. fetch the raw FlyWire mesh and optional skeleton,
+2. simplify the mesh to a target face budget,
+3. build a surface graph and patch graph,
+4. assemble fine and coarse operators plus transfer operators,
+5. write geometry descriptors and QA sidecars,
+6. record the exact bundle paths and realized assembly mode in a manifest.
+
+When a selected root is missing its raw mesh, the build now keeps processing the
+other roots, records a structured blocked result for the missing input, writes
+the manifest for the full attempted set, and exits non-zero after the summary
+is complete.
+
+That is enough to support later work on:
+
+- morphology-resolved wave solvers,
+- patch-local and multiresolution dynamics,
+- synapse-to-patch mapping,
+- hybrid surface/skeleton/point-neuron representations,
+- offline review gates before simulator integration.
+
+## Contract and QA references
+
+- [`docs/pipeline_notes.md`](docs/pipeline_notes.md): concise artifact-contract
+  overview
+- [`docs/geometry_descriptor_qa.md`](docs/geometry_descriptor_qa.md): geometry
+  descriptors and QA thresholds
+- [`docs/operator_bundle_design.md`](docs/operator_bundle_design.md): Milestone 6
+  discretization choice and operator contract
+- [`docs/operator_qa.md`](docs/operator_qa.md): offline operator QA workflow
 
 ## Milestone 1 design-lock artifacts
 
-Milestone 1 is treated here as a design/specification milestone rather than a proof-of-effect milestone.
+Milestone 1 is treated here as a design/specification milestone rather than a
+proof-of-effect milestone.
 
-- Roadmap and detailed milestone planning: [`docs/milestones.md`](docs/milestones.md)
-- Machine-readable design lock and success criteria: [`config/milestone_1_design_lock.yaml`](config/milestone_1_design_lock.yaml)
-- Example demo manifest: [`manifests/examples/milestone_1_demo.yaml`](manifests/examples/milestone_1_demo.yaml)
-- Manifest schema: [`schemas/milestone_1_experiment_manifest.schema.json`](schemas/milestone_1_experiment_manifest.schema.json)
+- roadmap and detailed milestone planning:
+  [`docs/milestones.md`](docs/milestones.md)
+- machine-readable design lock and success criteria:
+  [`config/milestone_1_design_lock.yaml`](config/milestone_1_design_lock.yaml)
+- example demo manifest:
+  [`manifests/examples/milestone_1_demo.yaml`](manifests/examples/milestone_1_demo.yaml)
+- manifest schema:
+  [`schemas/milestone_1_experiment_manifest.schema.json`](schemas/milestone_1_experiment_manifest.schema.json)
 
 Validate the example manifest with:
 
@@ -363,31 +449,32 @@ make validate-manifest
 or:
 
 ```bash
-python3 scripts/04_validate_manifest.py \
+python scripts/04_validate_manifest.py \
   --manifest manifests/examples/milestone_1_demo.yaml \
   --schema schemas/milestone_1_experiment_manifest.schema.json \
   --design-lock config/milestone_1_design_lock.yaml
 ```
 
-## Suggested first run for your project
+## Suggested first run
 
-Do **not** start by meshing hundreds or thousands of neurons.
+Do not start by meshing hundreds or thousands of neurons.
 
 A good first pass is:
-- 10–25 visual neurons,
-- simplify each to ~10k–20k faces,
-- use one active patch per neuron,
-- test your wave solver on the patch graph before scaling up.
+
+- 10-25 visual neurons,
+- simplify each to about 10k-20k faces,
+- use the default subset presets and default operator assembly,
+- inspect both the geometry preview and operator QA report before scaling up.
 
 Once that is stable, you can add:
-- synaptic placement from CAVE metadata,
+
+- synapse-to-vertex or synapse-to-patch projection,
 - cross-neuron coupling,
-- neuropil-level sheets,
-- scheduler-driven promotion/demotion.
+- richer anisotropy experiments,
+- hybrid representation selection,
+- scheduler-driven promotion and demotion.
 
 ## Make targets
-
-The `Makefile` defaults to `.venv/bin/python` when that virtualenv exists, which makes the local test and pipeline loop work without manually swapping interpreters.
 
 ```bash
 make help
@@ -400,21 +487,23 @@ make select CONFIG=config/local.yaml
 make meshes CONFIG=config/local.yaml
 make assets CONFIG=config/local.yaml
 make preview CONFIG=config/local.yaml
+make operator-qa CONFIG=config/local.yaml
+make milestone6-readiness
 make validate-manifest
 make all CONFIG=config/local.yaml
 ```
 
 ## Caveats
 
-- The full EM/segmentation volumes are massive; this repo intentionally avoids trying to mirror them locally.
-- FlyWire Codex portal exports can change names over time; check the portal if a filename differs.
-- Mesh fetching depends on a valid token and network access.
-- The provided Laplacian is a **starter graph Laplacian**, not a full finite-element surface operator.
-- This scaffold is for preprocessing / asset generation, not the final simulator.
-
-## Good next steps after this scaffold
-
-- add synapse-to-vertex projection,
-- create branch-aware active patches,
-- build a local wave PDE / reaction-diffusion solver on the simplified mesh graph,
-- add a scheduler that promotes neurons from latent → mesh-wave only when needed.
+- the full EM and segmentation volumes are far too large for a practical local
+  mirror, so this repo intentionally stays selective;
+- FlyWire Codex portal exports can change names over time, so check the portal
+  if a filename differs;
+- `make verify` and `make meshes` require a valid FlyWire token and network
+  access;
+- tests, manifest validation, geometry preview, operator QA, and the Milestone 6
+  readiness pass are all local workflows;
+- the default processed operator is now a cotangent-FEM-style surface operator,
+  not just a starter graph Laplacian, but a graph-based fallback still exists
+  for guarded cases;
+- this repo is an asset-preparation and QA pipeline, not the final simulator.

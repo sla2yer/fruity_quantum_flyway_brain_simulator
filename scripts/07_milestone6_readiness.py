@@ -18,6 +18,7 @@ from flywire_wave.milestone6_readiness import (
     build_milestone6_readiness_paths,
     generate_milestone6_readiness_report,
 )
+from flywire_wave.readiness_contract import FOLLOW_ON_READINESS_KEY, READY_FOR_FOLLOW_ON_WORK_KEY
 
 
 def main() -> int:
@@ -86,8 +87,6 @@ def main() -> int:
 
     if args.skip_operator_qa:
         operator_qa_command = _skipped_command_result("operator_qa", "skipped by --skip-operator-qa")
-    elif build_command["status"] == "fail":
-        operator_qa_command = _skipped_command_result("operator_qa", "skipped because build_wave_assets failed")
     else:
         operator_qa_command = _run_command(
             name="operator_qa",
@@ -108,8 +107,8 @@ def main() -> int:
         json.dumps(
             {
                 "report_version": summary["report_version"],
-                "readiness_status": summary["milestone10_readiness"]["status"],
-                "ready_for_engine_work": summary["milestone10_readiness"]["ready_for_engine_work"],
+                "readiness_status": summary[FOLLOW_ON_READINESS_KEY]["status"],
+                READY_FOR_FOLLOW_ON_WORK_KEY: summary[FOLLOW_ON_READINESS_KEY][READY_FOR_FOLLOW_ON_WORK_KEY],
                 "markdown_path": summary["markdown_path"],
                 "json_path": summary["json_path"],
                 "operator_qa_summary_path": summary["operator_qa_summary_path"],
@@ -117,7 +116,7 @@ def main() -> int:
             indent=2,
         )
     )
-    return 1 if summary["milestone10_readiness"]["status"] == "hold" else 0
+    return 1 if summary[FOLLOW_ON_READINESS_KEY]["status"] == "hold" else 0
 
 
 def _run_command(*, name: str, command: list[str], log_dir: Path) -> dict[str, object]:

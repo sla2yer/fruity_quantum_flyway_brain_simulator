@@ -15,10 +15,17 @@ from scipy.sparse.linalg import eigsh
 
 from .geometry_contract import build_geometry_bundle_paths, load_operator_bundle_metadata
 from .io_utils import ensure_dir, write_json
+from .readiness_contract import (
+    OPERATOR_BUNDLE_READY_KEY,
+    OPERATOR_READINESS_GATE_KEY,
+    READINESS_GATE_GO,
+    READINESS_GATE_HOLD,
+    READINESS_GATE_REVIEW,
+)
 from .surface_operators import deserialize_sparse_matrix
 
 
-OPERATOR_QA_REPORT_VERSION = "operator_qa_report.v1"
+OPERATOR_QA_REPORT_VERSION = "operator_qa_report.v2"
 SVG_WIDTH = 360
 SVG_HEIGHT = 280
 SVG_PADDING = 18.0
@@ -38,6 +45,13 @@ REPORT_PALETTE = (
     "#166534",
 )
 EPSILON = 1.0e-12
+_REQUIRED_OPERATOR_QA_INPUTS = (
+    ("fine_operator", "fine_operator_path"),
+    ("coarse_operator", "coarse_operator_path"),
+    ("transfer_operators", "transfer_operator_path"),
+    ("operator_metadata", "operator_metadata_path"),
+    ("patch_graph", "patch_graph_path"),
+)
 
 DEFAULT_OPERATOR_QA_THRESHOLDS: dict[str, dict[str, Any]] = {
     "fine_operator_symmetry_residual_inf": {
@@ -190,8 +204,11 @@ def generate_operator_qa_report(
         "pass": sum(1 for entry in root_entries if entry["summary"]["overall_status"] == "pass"),
         "warn": sum(1 for entry in root_entries if entry["summary"]["overall_status"] == "warn"),
         "fail": sum(1 for entry in root_entries if entry["summary"]["overall_status"] == "fail"),
+        "blocked": sum(1 for entry in root_entries if entry["summary"]["overall_status"] == "blocked"),
     }
-    if status_counts["fail"] > 0:
+    if status_counts["blocked"] > 0:
+        overall_status = "blocked"
+    elif status_counts["fail"] > 0:
         overall_status = "fail"
     elif status_counts["warn"] > 0:
         overall_status = "warn"
@@ -201,11 +218,18 @@ def generate_operator_qa_report(
     aggregate_blocking_failure_count = sum(int(entry["summary"]["blocking_failure_count"]) for entry in root_entries)
     aggregate_warning_count = sum(int(entry["summary"]["warning_count"]) for entry in root_entries)
     aggregate_failure_count = sum(int(entry["summary"]["failure_count"]) for entry in root_entries)
-    milestone10_gate = _milestone10_gate(
+    blocked_root_count = sum(int(entry["summary"].get("missing_prerequisite_count", 0)) > 0 for entry in root_entries)
+    operator_readiness_gate = _operator_readiness_gate(
         blocking_failure_count=aggregate_blocking_failure_count,
         failure_count=aggregate_failure_count,
         warning_count=aggregate_warning_count,
+        blocked_prerequisite_count=blocked_root_count,
     )
+    missing_prerequisite_root_ids = [
+        int(entry["root_id"])
+        for entry in root_entries
+        if int(entry["summary"].get("missing_prerequisite_count", 0)) > 0
+    ]
 
     summary = {
         "report_version": OPERATOR_QA_REPORT_VERSION,
@@ -217,45 +241,59 @@ def generate_operator_qa_report(
         "markdown_path": str(markdown_path),
         "root_ids_path": str(root_ids_path),
         "overall_status": overall_status,
-        "milestone10_gate": milestone10_gate,
+        OPERATOR_READINESS_GATE_KEY: operator_readiness_gate,
+        OPERATOR_BUNDLE_READY_KEY: bool(operator_readiness_gate != READINESS_GATE_HOLD),
         "blocking_failure_count": aggregate_blocking_failure_count,
         "warning_count": aggregate_warning_count,
         "failure_count": aggregate_failure_count,
+        "blocked_root_count": blocked_root_count,
+        "missing_prerequisite_root_ids": missing_prerequisite_root_ids,
         "status_counts": status_counts,
-        "roots": {
-            str(entry["root_id"]): {
-                "overall_status": entry["summary"]["overall_status"],
-                "milestone10_gate": entry["summary"]["milestone10_gate"],
-                "milestone10_engine_ready": bool(entry["summary"]["milestone10_engine_ready"]),
-                "warning_count": int(entry["summary"]["warning_count"]),
-                "failure_count": int(entry["summary"]["failure_count"]),
-                "blocking_failure_count": int(entry["summary"]["blocking_failure_count"]),
-                "boundary_vertex_count": int(entry["boundary"]["boundary_vertex_count"]),
-                "boundary_edge_count": int(entry["boundary"]["boundary_edge_count"]),
-                "patch_count": int(entry["counts"]["patch_count"]),
-                "surface_vertex_count": int(entry["counts"]["surface_vertex_count"]),
-                "pulse_step_count": int(entry["pulse"]["step_count"]),
-                "artifacts": dict(entry["artifacts"]),
-                "key_metrics": {
-                    metric_name: float(entry["metrics"][metric_name])
-                    for metric_name in (
-                        "fine_operator_symmetry_residual_inf",
-                        "coarse_operator_symmetry_residual_inf",
-                        "transfer_galerkin_operator_residual_inf",
-                        "pulse_fine_mass_relative_drift",
-                        "pulse_fine_energy_increase_relative",
-                        "pulse_final_fine_vs_prolongated_coarse_residual_relative",
-                    )
-                },
-            }
-            for entry in root_entries
-        },
+        "roots": {str(entry["root_id"]): _root_summary_payload(entry) for entry in root_entries},
     }
 
     index_path.write_text(_render_report_html(root_entries=root_entries, summary=summary), encoding="utf-8")
     markdown_path.write_text(_render_report_markdown(root_entries=root_entries, summary=summary), encoding="utf-8")
     write_json(summary, summary_path)
     root_ids_path.write_text("".join(f"{root_id}\n" for root_id in normalized_root_ids), encoding="utf-8")
+    return summary
+
+
+def _root_summary_payload(entry: Mapping[str, Any]) -> dict[str, Any]:
+    summary = {
+        "overall_status": str(entry["summary"]["overall_status"]),
+        OPERATOR_READINESS_GATE_KEY: str(entry["summary"][OPERATOR_READINESS_GATE_KEY]),
+        OPERATOR_BUNDLE_READY_KEY: bool(entry["summary"][OPERATOR_BUNDLE_READY_KEY]),
+        "warning_count": int(entry["summary"]["warning_count"]),
+        "failure_count": int(entry["summary"]["failure_count"]),
+        "blocking_failure_count": int(entry["summary"]["blocking_failure_count"]),
+        "artifacts": dict(entry["artifacts"]),
+    }
+    if summary["overall_status"] == "blocked":
+        summary["missing_prerequisite_count"] = int(entry["summary"].get("missing_prerequisite_count", 0))
+        summary["missing_prerequisites"] = list(entry.get("missing_prerequisites", []))
+        return summary
+
+    summary.update(
+        {
+            "boundary_vertex_count": int(entry["boundary"]["boundary_vertex_count"]),
+            "boundary_edge_count": int(entry["boundary"]["boundary_edge_count"]),
+            "patch_count": int(entry["counts"]["patch_count"]),
+            "surface_vertex_count": int(entry["counts"]["surface_vertex_count"]),
+            "pulse_step_count": int(entry["pulse"]["step_count"]),
+            "key_metrics": {
+                metric_name: float(entry["metrics"][metric_name])
+                for metric_name in (
+                    "fine_operator_symmetry_residual_inf",
+                    "coarse_operator_symmetry_residual_inf",
+                    "transfer_galerkin_operator_residual_inf",
+                    "pulse_fine_mass_relative_drift",
+                    "pulse_fine_energy_increase_relative",
+                    "pulse_final_fine_vs_prolongated_coarse_residual_relative",
+                )
+            },
+        }
+    )
     return summary
 
 
@@ -271,6 +309,77 @@ def build_operator_qa_slug(root_ids: Iterable[int]) -> str:
     digest = hashlib.sha1(",".join(str(root_id) for root_id in normalized_root_ids).encode("utf-8")).hexdigest()[:12]
     prefix = "-".join(str(root_id) for root_id in normalized_root_ids[:4])
     return f"root-ids-{prefix}-n{len(normalized_root_ids)}-{digest}"
+
+
+def _collect_missing_operator_inputs(bundle_paths: Any) -> list[dict[str, str]]:
+    missing_prerequisites: list[dict[str, str]] = []
+    for asset_key, attribute_name in _REQUIRED_OPERATOR_QA_INPUTS:
+        path = Path(getattr(bundle_paths, attribute_name))
+        if path.exists():
+            continue
+        missing_prerequisites.append(
+            {
+                "asset_key": asset_key,
+                "path": str(path.resolve()),
+                "reason": "missing_required_operator_qa_input",
+            }
+        )
+    return missing_prerequisites
+
+
+def _build_blocked_root_operator_entry(
+    *,
+    root_id: int,
+    bundle_paths: Any,
+    output_dir: Path,
+    missing_prerequisites: list[dict[str, str]],
+) -> dict[str, Any]:
+    detail_json_path = output_dir / f"{int(root_id)}_details.json"
+    detail_payload = {
+        "report_version": OPERATOR_QA_REPORT_VERSION,
+        "root_id": int(root_id),
+        "input_paths": {
+            "processed_mesh_path": str(bundle_paths.simplified_mesh_path),
+            "patch_graph_path": str(bundle_paths.patch_graph_path),
+            "fine_operator_path": str(bundle_paths.fine_operator_path),
+            "coarse_operator_path": str(bundle_paths.coarse_operator_path),
+            "transfer_operator_path": str(bundle_paths.transfer_operator_path),
+            "operator_metadata_path": str(bundle_paths.operator_metadata_path),
+            "descriptor_sidecar_path": str(bundle_paths.descriptor_sidecar_path),
+            "geometry_qa_path": str(bundle_paths.qa_sidecar_path),
+        },
+        "missing_prerequisites": list(missing_prerequisites),
+        "prerequisite_status": "missing",
+        "checks": {},
+        "metrics": {},
+        "summary": {
+            "overall_status": "blocked",
+            "warning_count": 0,
+            "failure_count": 0,
+            "blocking_failure_count": 0,
+            "missing_prerequisite_count": len(missing_prerequisites),
+            OPERATOR_READINESS_GATE_KEY: READINESS_GATE_HOLD,
+            OPERATOR_BUNDLE_READY_KEY: False,
+        },
+        "artifacts": {
+            "details_json_path": str(detail_json_path.resolve()),
+        },
+    }
+    write_json(detail_payload, detail_json_path)
+    return {
+        "root_id": int(root_id),
+        "metrics": {},
+        "checks": {},
+        "summary": detail_payload["summary"],
+        "pulse": {},
+        "boundary": {},
+        "counts": {},
+        "descriptor_summary": {},
+        "geometry_qa_summary": {},
+        "operator_bundle": {},
+        "artifacts": dict(detail_payload["artifacts"]),
+        "missing_prerequisites": list(missing_prerequisites),
+    }
 
 
 def _build_root_operator_entry(
@@ -292,11 +401,14 @@ def _build_root_operator_entry(
         processed_graph_dir=processed_graph_dir,
     )
 
-    _require_path(bundle_paths.fine_operator_path)
-    _require_path(bundle_paths.coarse_operator_path)
-    _require_path(bundle_paths.transfer_operator_path)
-    _require_path(bundle_paths.operator_metadata_path)
-    _require_path(bundle_paths.patch_graph_path)
+    missing_prerequisites = _collect_missing_operator_inputs(bundle_paths)
+    if missing_prerequisites:
+        return _build_blocked_root_operator_entry(
+            root_id=root_id,
+            bundle_paths=bundle_paths,
+            output_dir=output_dir,
+            missing_prerequisites=missing_prerequisites,
+        )
 
     fine_payload = _load_npz_payload(bundle_paths.fine_operator_path)
     coarse_payload = _load_npz_payload(bundle_paths.coarse_operator_path)
@@ -503,7 +615,7 @@ def evaluate_operator_qa_metrics(
     else:
         overall_status = "pass"
 
-    milestone10_gate = _milestone10_gate(
+    operator_readiness_gate = _operator_readiness_gate(
         blocking_failure_count=blocking_failure_count,
         failure_count=failure_count,
         warning_count=warning_count,
@@ -513,18 +625,24 @@ def evaluate_operator_qa_metrics(
         "warning_count": warning_count,
         "failure_count": failure_count,
         "blocking_failure_count": blocking_failure_count,
-        "milestone10_gate": milestone10_gate,
-        "milestone10_engine_ready": bool(blocking_failure_count == 0),
+        OPERATOR_READINESS_GATE_KEY: operator_readiness_gate,
+        OPERATOR_BUNDLE_READY_KEY: bool(operator_readiness_gate != READINESS_GATE_HOLD),
     }
     return checks, summary
 
 
-def _milestone10_gate(*, blocking_failure_count: int, failure_count: int, warning_count: int) -> str:
-    if int(blocking_failure_count) > 0:
-        return "hold"
+def _operator_readiness_gate(
+    *,
+    blocking_failure_count: int,
+    failure_count: int,
+    warning_count: int,
+    blocked_prerequisite_count: int = 0,
+) -> str:
+    if int(blocked_prerequisite_count) > 0 or int(blocking_failure_count) > 0:
+        return READINESS_GATE_HOLD
     if int(failure_count) > 0 or int(warning_count) > 0:
-        return "review"
-    return "go"
+        return READINESS_GATE_REVIEW
+    return READINESS_GATE_GO
 
 
 def _run_pulse_smoke(
@@ -1016,6 +1134,7 @@ def _render_report_html(*, root_entries: list[dict[str, Any]], summary: dict[str
     .status-pass {{ color: var(--pass); font-weight: 700; }}
     .status-warn {{ color: var(--warn); font-weight: 700; }}
     .status-fail {{ color: var(--fail); font-weight: 700; }}
+    .status-blocked {{ color: var(--fail); font-weight: 700; }}
     .gate-go {{ color: var(--go); font-weight: 700; }}
     .gate-review {{ color: var(--review); font-weight: 700; }}
     .gate-hold {{ color: var(--hold); font-weight: 700; }}
@@ -1029,12 +1148,13 @@ def _render_report_html(*, root_entries: list[dict[str, Any]], summary: dict[str
   <main>
     <section class="card">
       <h1>Offline Operator QA Report</h1>
-      <p>This report runs entirely on local Milestone 6 bundles. Treat <code>milestone10_gate=hold</code> as a stop for engine work, <code>review</code> as a human-inspection gate, and <code>go</code> as a clean pre-engine operator check.</p>
+      <p>This report runs entirely on local Milestone 6 bundles. Treat <code>operator_readiness_gate=hold</code> as a stop for follow-on work, <code>review</code> as a human-inspection gate, and <code>go</code> as a clean offline operator check.</p>
       <div class="summary-grid">
         <div class="summary-item"><strong>Overall status</strong><br><span class="status-{html.escape(summary['overall_status'])}">{html.escape(summary['overall_status'])}</span></div>
-        <div class="summary-item"><strong>Milestone 10 gate</strong><br><span class="gate-{html.escape(summary['milestone10_gate'])}">{html.escape(summary['milestone10_gate'])}</span></div>
+        <div class="summary-item"><strong>Operator readiness gate</strong><br><span class="gate-{html.escape(summary[OPERATOR_READINESS_GATE_KEY])}">{html.escape(summary[OPERATOR_READINESS_GATE_KEY])}</span></div>
         <div class="summary-item"><strong>Roots</strong><br>{int(summary['root_count'])}</div>
         <div class="summary-item"><strong>Blocking failures</strong><br>{int(summary['blocking_failure_count'])}</div>
+        <div class="summary-item"><strong>Blocked prerequisites</strong><br>{int(summary['blocked_root_count'])}</div>
         <div class="summary-item"><strong>Warnings</strong><br>{int(summary['warning_count'])}</div>
         <div class="summary-item"><strong>Output directory</strong><br><code>{html.escape(summary['output_dir'])}</code></div>
       </div>
@@ -1048,6 +1168,40 @@ def _render_report_html(*, root_entries: list[dict[str, Any]], summary: dict[str
 
 def _render_root_html(entry: Mapping[str, Any]) -> str:
     summary = entry["summary"]
+    if summary["overall_status"] == "blocked":
+        missing_rows = "\n".join(
+            (
+                f"<tr><td><code>{html.escape(item['asset_key'])}</code></td>"
+                f"<td><code>{html.escape(item['path'])}</code></td>"
+                f"<td>{html.escape(item['reason'])}</td></tr>"
+            )
+            for item in entry.get("missing_prerequisites", [])
+        )
+        return f"""
+    <section class="card">
+      <h2>Root {int(entry['root_id'])}</h2>
+      <p>This root is blocked before operator QA can run because required local bundle inputs are missing.</p>
+      <div class="summary-grid">
+        <div class="summary-item"><strong>Overall status</strong><br><span class="status-blocked">blocked</span></div>
+        <div class="summary-item"><strong>Operator readiness gate</strong><br><span class="gate-hold">hold</span></div>
+        <div class="summary-item"><strong>Missing prerequisites</strong><br>{int(summary.get('missing_prerequisite_count', 0))}</div>
+        <div class="summary-item"><strong>Detail JSON</strong><br><code>{html.escape(entry['artifacts']['details_json_path'])}</code></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Asset</th>
+            <th>Expected path</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {missing_rows}
+        </tbody>
+      </table>
+    </section>
+    """
+
     pulse = entry["pulse"]
     checks_rows = "\n".join(_render_check_row(metric_name, check) for metric_name, check in entry["checks"].items())
     panel_specs = [
@@ -1069,7 +1223,7 @@ def _render_root_html(entry: Mapping[str, Any]) -> str:
       <p>Fine family <code>{html.escape(entry['operator_bundle']['discretization_family'])}</code>, boundary mode <code>{html.escape(entry['operator_bundle']['boundary_condition_mode'])}</code>, anisotropy <code>{html.escape(entry['operator_bundle']['anisotropy_model'])}</code>.</p>
       <div class="summary-grid">
         <div class="summary-item"><strong>Overall status</strong><br><span class="status-{html.escape(summary['overall_status'])}">{html.escape(summary['overall_status'])}</span></div>
-        <div class="summary-item"><strong>Milestone 10 gate</strong><br><span class="gate-{html.escape(summary['milestone10_gate'])}">{html.escape(summary['milestone10_gate'])}</span></div>
+        <div class="summary-item"><strong>Operator readiness gate</strong><br><span class="gate-{html.escape(summary[OPERATOR_READINESS_GATE_KEY])}">{html.escape(summary[OPERATOR_READINESS_GATE_KEY])}</span></div>
         <div class="summary-item"><strong>Boundary vertices</strong><br>{int(entry['boundary']['boundary_vertex_count'])}</div>
         <div class="summary-item"><strong>Patches</strong><br>{int(entry['counts']['patch_count'])}</div>
         <div class="summary-item"><strong>Pulse seed</strong><br>vertex {int(pulse['seed_vertex'])}, patch {int(pulse['seed_patch'])}</div>
@@ -1102,21 +1256,41 @@ def _render_report_markdown(*, root_entries: list[dict[str, Any]], summary: dict
     lines = [
         "# Offline Operator QA Report",
         "",
-        "Treat `milestone10_gate=hold` as a stop for Milestone 10 engine work. `review` means the bundles still need human inspection before they become the engine baseline.",
+        "Treat `operator_readiness_gate=hold` as a stop for follow-on work. `review` means the bundles still need human inspection before they become the offline baseline.",
         "",
         f"- Overall status: `{summary['overall_status']}`",
-        f"- Milestone 10 gate: `{summary['milestone10_gate']}`",
+        f"- Operator readiness gate: `{summary[OPERATOR_READINESS_GATE_KEY]}`",
         f"- Root count: `{summary['root_count']}`",
+        f"- Blocked prerequisite roots: `{summary['blocked_root_count']}`",
         f"- Output dir: `{summary['output_dir']}`",
         "",
     ]
     for entry in root_entries:
+        if entry["summary"]["overall_status"] == "blocked":
+            lines.extend(
+                [
+                    f"## Root {entry['root_id']}",
+                    "",
+                    "- Overall status: `blocked`",
+                    f"- Operator readiness gate: `{entry['summary'][OPERATOR_READINESS_GATE_KEY]}`",
+                    f"- Missing prerequisite count: `{entry['summary'].get('missing_prerequisite_count', 0)}`",
+                    "",
+                    "### Missing prerequisites",
+                    "",
+                ]
+            )
+            for item in entry.get("missing_prerequisites", []):
+                lines.append(
+                    f"- `{item['asset_key']}` missing at `{item['path']}` ({item['reason']})"
+                )
+            lines.append("")
+            continue
         lines.extend(
             [
                 f"## Root {entry['root_id']}",
                 "",
                 f"- Overall status: `{entry['summary']['overall_status']}`",
-                f"- Milestone 10 gate: `{entry['summary']['milestone10_gate']}`",
+                f"- Operator readiness gate: `{entry['summary'][OPERATOR_READINESS_GATE_KEY]}`",
                 f"- Boundary vertices: `{entry['boundary']['boundary_vertex_count']}`",
                 f"- Pulse seed: `vertex {entry['pulse']['seed_vertex']}`, `patch {entry['pulse']['seed_patch']}`",
                 f"- Smoke steps: `{entry['pulse']['step_count']}`",

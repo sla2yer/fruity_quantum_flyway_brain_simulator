@@ -14,6 +14,7 @@ sys.path.insert(0, str(SRC))
 from flywire_wave.geometry_contract import (
     build_geometry_bundle_paths,
     build_geometry_manifest_record,
+    default_asset_statuses,
     write_geometry_manifest,
 )
 from flywire_wave.milestone6_readiness import generate_milestone6_readiness_report
@@ -112,15 +113,137 @@ class Milestone6ReadinessReportTest(unittest.TestCase):
             self.assertEqual(report["contract_audit"]["operator_assets_ready_root_count"], 1)
             self.assertEqual(report["surface_simulated_root_count"], 1)
             self.assertEqual(report["follow_on_issues"], [])
-            self.assertIn(report["milestone10_readiness"]["status"], {"ready", "review"})
-            self.assertTrue(report["milestone10_readiness"]["ready_for_engine_work"])
+            self.assertIn(report["follow_on_readiness"]["status"], {"ready", "review"})
+            self.assertTrue(report["follow_on_readiness"]["ready_for_follow_on_work"])
+            self.assertNotIn("milestone10_readiness", report)
 
             markdown_text = markdown_path.read_text(encoding="utf-8")
             self.assertIn("Milestone 6 Readiness Report", markdown_text)
             self.assertIn("Readiness verdict", markdown_text)
+            self.assertIn("Ready for follow-on work", markdown_text)
 
             persisted = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(persisted["markdown_path"], report["markdown_path"])
+
+    def test_readiness_report_names_missing_raw_mesh_as_blocking_prerequisite(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            bundle_paths_ready = build_geometry_bundle_paths(
+                101,
+                meshes_raw_dir=tmp_dir / "out" / "meshes_raw",
+                skeletons_raw_dir=tmp_dir / "out" / "skeletons_raw",
+                processed_mesh_dir=tmp_dir / "out" / "processed_meshes",
+                processed_graph_dir=tmp_dir / "out" / "processed_graphs",
+            )
+            bundle_paths_missing = build_geometry_bundle_paths(
+                102,
+                meshes_raw_dir=tmp_dir / "out" / "meshes_raw",
+                skeletons_raw_dir=tmp_dir / "out" / "skeletons_raw",
+                processed_mesh_dir=tmp_dir / "out" / "processed_meshes",
+                processed_graph_dir=tmp_dir / "out" / "processed_graphs",
+            )
+            _write_octahedron_mesh(bundle_paths_ready.raw_mesh_path)
+            _write_stub_swc(bundle_paths_ready.raw_skeleton_path)
+
+            ready_outputs = process_mesh_into_wave_assets(
+                root_id=101,
+                bundle_paths=bundle_paths_ready,
+                simplify_target_faces=8,
+                patch_hops=1,
+                patch_vertex_cap=2,
+                registry_metadata={"cell_type": "T5a", "project_role": "surface_simulated"},
+            )
+
+            manifest_path = tmp_dir / "out" / "asset_manifest.json"
+            meshing_config = {
+                "fetch_skeletons": True,
+                "patch_hops": 1,
+                "patch_vertex_cap": 2,
+                "operator_assembly": {
+                    "version": "operator_assembly.v1",
+                    "boundary_condition": {"mode": "closed_surface_zero_flux"},
+                    "anisotropy": {"model": "isotropic"},
+                },
+                "transfer_restriction_mode": "lumped_mass_patch_average",
+                "transfer_prolongation_mode": "constant_on_patch",
+            }
+            ready_record = build_geometry_manifest_record(
+                bundle_paths=bundle_paths_ready,
+                asset_statuses=ready_outputs["asset_statuses"],
+                dataset_name="public",
+                materialization_version=783,
+                meshing_config_snapshot=meshing_config,
+                registry_metadata={"cell_type": "T5a", "project_role": "surface_simulated"},
+                bundle_metadata=ready_outputs["bundle_metadata"],
+                operator_bundle_metadata=ready_outputs["operator_bundle_metadata"],
+            )
+            missing_record = build_geometry_manifest_record(
+                bundle_paths=bundle_paths_missing,
+                asset_statuses=default_asset_statuses(fetch_skeletons=True),
+                dataset_name="public",
+                materialization_version=783,
+                meshing_config_snapshot=meshing_config,
+                registry_metadata={"cell_type": "Tm1", "project_role": "analysis_only"},
+            )
+            missing_record["build_result"] = {
+                "status": "skipped",
+                "reason": "missing_raw_mesh",
+                "blocking": True,
+                "input_errors": [
+                    {
+                        "code": "missing_raw_mesh",
+                        "asset_key": "raw_mesh",
+                        "path": str(bundle_paths_missing.raw_mesh_path),
+                    }
+                ],
+                "errors": [],
+            }
+            write_geometry_manifest(
+                manifest_path=manifest_path,
+                bundle_records={101: ready_record, 102: missing_record},
+                dataset_name="public",
+                materialization_version=783,
+                meshing_config_snapshot=meshing_config,
+            )
+
+            operator_summary = generate_operator_qa_report(
+                root_ids=[101, 102],
+                meshes_raw_dir=bundle_paths_ready.raw_mesh_path.parent,
+                skeletons_raw_dir=bundle_paths_ready.raw_skeleton_path.parent,
+                processed_mesh_dir=bundle_paths_ready.simplified_mesh_path.parent,
+                processed_graph_dir=bundle_paths_ready.surface_graph_path.parent,
+                operator_qa_dir=tmp_dir / "out" / "operator_qa",
+                pulse_step_count=8,
+            )
+            self.assertEqual(operator_summary["operator_readiness_gate"], "hold")
+            self.assertEqual(operator_summary["missing_prerequisite_root_ids"], [102])
+
+            config_path = tmp_dir / "config.yaml"
+            config_path.write_text("paths: {}\n", encoding="utf-8")
+
+            report = generate_milestone6_readiness_report(
+                config_path=config_path,
+                manifest_path=manifest_path,
+                operator_qa_dir=tmp_dir / "out" / "operator_qa",
+                root_ids=[101, 102],
+                fixture_verification={"status": "pass", "command": "python -m unittest"},
+                build_command={"status": "fail", "command": "scripts/03_build_wave_assets.py --config config.yaml"},
+                operator_qa_command={"status": "pass", "command": "scripts/06_operator_qa.py --config config.yaml"},
+            )
+
+            self.assertEqual(report["follow_on_readiness"]["status"], "hold")
+            self.assertFalse(report["follow_on_readiness"]["ready_for_follow_on_work"])
+            self.assertEqual(report["blocked_prerequisites"]["missing_raw_mesh_root_ids"], [102])
+
+            root_audit = report["contract_audit"]["roots"]["102"]
+            self.assertEqual(root_audit["prerequisite_status"], "missing_raw_mesh")
+            self.assertEqual(root_audit["operator_readiness_gate"], "hold")
+            self.assertTrue(
+                any("raw mesh prerequisite is missing" in issue["message"] for issue in root_audit["issues"])
+            )
+            self.assertTrue(
+                any("raw mesh prerequisite is missing" in finding for finding in report["operator_qa_findings"])
+            )
 
 
 def _write_octahedron_mesh(path: Path) -> None:
