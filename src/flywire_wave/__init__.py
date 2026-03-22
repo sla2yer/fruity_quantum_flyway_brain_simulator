@@ -26,6 +26,7 @@ __all__ = [
     "simulator_execution",
     "simulator_result_contract",
     "simulator_runtime",
+    "simulator_visualization",
     "stimulus_contract",
     "stimulus_registry",
     "synapse_mapping",
