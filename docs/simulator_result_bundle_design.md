@@ -157,6 +157,13 @@ Milestones 10, 12, 13, and 14 must preserve these invariants:
   `milestone_10_readiness.md` plus `milestone_10_readiness.json` under
   `config.paths.processed_simulator_results_dir/readiness/milestone_10/`
 - `make milestone10-readiness` is the one-command entrypoint for that audit
+- `scripts/19_milestone11_readiness.py` is the shipped Milestone 11 follow-on
+  audit path: it reruns the mixed-fidelity `surface_wave` workflow on a
+  deterministic three-class fixture, verifies the resulting bundle can be read
+  back through the shared result-contract helpers and offline viewer, and
+  writes `milestone_11_readiness.md` plus `milestone_11_readiness.json` under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_11/`
+- `make milestone11-readiness` is the one-command entrypoint for that audit
 - the shipped readiness gate uses `config/surface_wave_sweep.verification.yaml`
   as a local non-runaway reference; the broader exploratory sweep remains at
   `config/surface_wave_sweep.example.yaml`

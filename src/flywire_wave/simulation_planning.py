@@ -62,6 +62,11 @@ from .manifests import (
     load_yaml,
     validate_manifest_payload,
 )
+from .mixed_fidelity_policy import (
+    build_mixed_fidelity_policy_hook_summary,
+    evaluate_mixed_fidelity_policy,
+    normalize_mixed_fidelity_assignment_policy,
+)
 from .retinal_contract import build_retinal_bundle_reference, load_retinal_bundle_metadata
 from .retinal_workflow import resolve_retinal_bundle_input
 from .simulator_result_contract import (
@@ -121,12 +126,6 @@ DEFAULT_STABLE_ARM_ORDERING = "manifest_declaration_order"
 DEFAULT_SEED_SWEEP_ORDERING = "manifest_declared_seed_order"
 SHARED_READOUT_VALUE_SEMANTICS = "shared_downstream_activation"
 DEFAULT_MIXED_FIDELITY_ASSIGNMENT_ORDERING = "selected_root_id_ascending"
-DEFAULT_MIXED_FIDELITY_DEFAULT_SOURCE = "registry_project_role"
-SUPPORTED_MIXED_FIDELITY_DEFAULT_SOURCES = (
-    DEFAULT_MIXED_FIDELITY_DEFAULT_SOURCE,
-)
-SUPPORTED_MIXED_FIDELITY_PROMOTION_MODES = ("disabled",)
-SUPPORTED_MIXED_FIDELITY_DEMOTION_MODES = ("disabled",)
 REGISTRY_PROJECT_ROLE_ASSIGNMENT_SOURCE = "registry_project_role"
 ARM_DEFAULT_CLASS_ASSIGNMENT_SOURCE = "arm_default_morphology_class"
 ARM_ROOT_OVERRIDE_ASSIGNMENT_SOURCE = "arm_root_override"
@@ -161,11 +160,6 @@ ALLOWED_DETERMINISM_CONFIG_KEYS = {
 ALLOWED_MIXED_FIDELITY_CONFIG_KEYS = {
     "version",
     "assignment_policy",
-}
-ALLOWED_MIXED_FIDELITY_POLICY_KEYS = {
-    "default_source",
-    "promotion_mode",
-    "demotion_mode",
 }
 ALLOWED_ARM_FIDELITY_ASSIGNMENT_KEYS = {
     "default_morphology_class",
@@ -754,60 +748,14 @@ def _normalize_mixed_fidelity_config(
             "simulation.mixed_fidelity.assignment_policy must be a mapping when "
             "provided."
         )
-    assignment_policy = dict(assignment_policy_payload)
-    unknown_policy_keys = sorted(
-        set(assignment_policy) - ALLOWED_MIXED_FIDELITY_POLICY_KEYS
+    assignment_policy = normalize_mixed_fidelity_assignment_policy(
+        assignment_policy_payload
     )
-    if unknown_policy_keys:
-        raise ValueError(
-            "simulation.mixed_fidelity.assignment_policy contains unsupported "
-            f"keys: {unknown_policy_keys!r}."
-        )
-
-    default_source = _normalize_identifier(
-        assignment_policy.get(
-            "default_source",
-            DEFAULT_MIXED_FIDELITY_DEFAULT_SOURCE,
-        ),
-        field_name="simulation.mixed_fidelity.assignment_policy.default_source",
-    )
-    if default_source not in SUPPORTED_MIXED_FIDELITY_DEFAULT_SOURCES:
-        raise ValueError(
-            "simulation.mixed_fidelity.assignment_policy.default_source must be "
-            f"one of {list(SUPPORTED_MIXED_FIDELITY_DEFAULT_SOURCES)!r}, got "
-            f"{default_source!r}."
-        )
-
-    promotion_mode = _normalize_identifier(
-        assignment_policy.get("promotion_mode", "disabled"),
-        field_name="simulation.mixed_fidelity.assignment_policy.promotion_mode",
-    )
-    if promotion_mode not in SUPPORTED_MIXED_FIDELITY_PROMOTION_MODES:
-        raise ValueError(
-            "simulation.mixed_fidelity.assignment_policy.promotion_mode must be "
-            f"one of {list(SUPPORTED_MIXED_FIDELITY_PROMOTION_MODES)!r}, got "
-            f"{promotion_mode!r}."
-        )
-
-    demotion_mode = _normalize_identifier(
-        assignment_policy.get("demotion_mode", "disabled"),
-        field_name="simulation.mixed_fidelity.assignment_policy.demotion_mode",
-    )
-    if demotion_mode not in SUPPORTED_MIXED_FIDELITY_DEMOTION_MODES:
-        raise ValueError(
-            "simulation.mixed_fidelity.assignment_policy.demotion_mode must be "
-            f"one of {list(SUPPORTED_MIXED_FIDELITY_DEMOTION_MODES)!r}, got "
-            f"{demotion_mode!r}."
-        )
 
     return {
         "version": version,
         "assignment_ordering": DEFAULT_MIXED_FIDELITY_ASSIGNMENT_ORDERING,
-        "assignment_policy": {
-            "default_source": default_source,
-            "promotion_mode": promotion_mode,
-            "demotion_mode": demotion_mode,
-        },
+        "assignment_policy": assignment_policy,
     }
 
 
@@ -1628,6 +1576,7 @@ def _build_model_configuration(
         "surface_wave_execution_plan": _build_surface_wave_execution_plan(
             arm_reference=arm_reference,
             arm_payload=arm_payload,
+            point_neuron_model_spec=runtime_config["baseline_families"][P0_BASELINE_FAMILY],
             topology_condition=topology_condition,
             runtime_timebase=runtime_config["timebase"],
             circuit_assets=circuit_assets,
@@ -1750,6 +1699,7 @@ def _build_surface_wave_execution_plan(
     *,
     arm_reference: Mapping[str, Any],
     arm_payload: Mapping[str, Any] | None = None,
+    point_neuron_model_spec: Mapping[str, Any],
     topology_condition: str,
     runtime_timebase: Mapping[str, Any],
     circuit_assets: Mapping[str, Any],
@@ -1906,6 +1856,7 @@ def _build_surface_wave_execution_plan(
         arm_payload={} if arm_payload is None else arm_payload,
         arm_reference=arm_reference,
         selected_root_assets=selected_root_assets,
+        point_neuron_model_spec=point_neuron_model_spec,
         mixed_fidelity_config=(
             _normalize_mixed_fidelity_config(None)
             if mixed_fidelity_config is None
@@ -2011,6 +1962,7 @@ def _resolve_surface_wave_mixed_fidelity_plan(
     arm_payload: Mapping[str, Any],
     arm_reference: Mapping[str, Any],
     selected_root_assets: Sequence[Mapping[str, Any]],
+    point_neuron_model_spec: Mapping[str, Any],
     mixed_fidelity_config: Mapping[str, Any],
     anisotropy_mode: str,
     branching_mode: str,
@@ -2089,6 +2041,7 @@ def _resolve_surface_wave_mixed_fidelity_plan(
     }
 
     per_root_assignments: list[dict[str, Any]] = []
+    policy_evaluations: list[dict[str, Any]] = []
     surface_operator_assets: list[dict[str, Any]] = []
     surface_coupling_assets: list[dict[str, Any]] = []
     skeleton_runtime_assets: list[dict[str, Any]] = []
@@ -2167,6 +2120,26 @@ def _resolve_surface_wave_mixed_fidelity_plan(
                 hybrid_morphology=hybrid_record,
             )
             realized_anchor_mode = POINT_NEURON_LUMPED_MODE
+        policy_evaluation = evaluate_mixed_fidelity_policy(
+            root_id=root_id,
+            cell_type=str(root_mapping.get("cell_type", "")),
+            realized_morphology_class=morphology_class,
+            assignment_policy=assignment_policy,
+            descriptor_payload=_load_mixed_fidelity_descriptor_payload(root_mapping),
+            arm_id=arm_id,
+            topology_condition=(
+                None
+                if arm_payload.get("topology_condition") is None
+                else str(arm_payload["topology_condition"])
+            ),
+            morphology_condition=(
+                None
+                if arm_payload.get("morphology_condition") is None
+                else str(arm_payload["morphology_condition"])
+            ),
+            arm_tags=_optional_string_sequence(arm_payload.get("tags")),
+        )
+        policy_evaluations.append(copy.deepcopy(policy_evaluation))
 
         per_root_assignments.append(
             {
@@ -2187,6 +2160,7 @@ def _resolve_surface_wave_mixed_fidelity_plan(
                         "root_overrides_by_root"
                     ].get(root_id),
                     assignment_policy=assignment_policy,
+                    policy_evaluation=policy_evaluation,
                     resolved_from=resolved_source_by_root[root_id],
                 ),
                 "approximation_route": _build_approximation_route(
@@ -2194,7 +2168,9 @@ def _resolve_surface_wave_mixed_fidelity_plan(
                         root_id
                     ],
                     realized_morphology_class=morphology_class,
+                    policy_evaluation=policy_evaluation,
                 ),
+                "policy_evaluation": policy_evaluation,
                 "state_resolution": copy.deepcopy(
                     hybrid_record["realized_state_space"]
                 ),
@@ -2220,6 +2196,10 @@ def _resolve_surface_wave_mixed_fidelity_plan(
                 "coupling_asset": copy.deepcopy(coupling_asset),
             }
         )
+    policy_hook = build_mixed_fidelity_policy_hook_summary(
+        assignment_policy=assignment_policy,
+        policy_evaluations=policy_evaluations,
+    )
 
     return {
         "hybrid_morphology": hybrid_morphology,
@@ -2227,6 +2207,13 @@ def _resolve_surface_wave_mixed_fidelity_plan(
             "plan_version": MIXED_FIDELITY_PLAN_VERSION,
             "assignment_ordering": normalized_config["assignment_ordering"],
             "assignment_policy": copy.deepcopy(assignment_policy),
+            "policy_hook": policy_hook,
+            "point_neuron_model_spec": copy.deepcopy(
+                _require_mapping(
+                    point_neuron_model_spec,
+                    field_name="simulation.baseline_families.P0",
+                )
+            ),
             "arm_overrides": {
                 "default_morphology_class": arm_fidelity_assignment[
                     "default_morphology_class"
@@ -2248,12 +2235,26 @@ def _resolve_surface_wave_mixed_fidelity_plan(
     }
 
 
+def _load_mixed_fidelity_descriptor_payload(
+    root_mapping: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    descriptor_sidecar_path = root_mapping.get("descriptor_sidecar_path")
+    if descriptor_sidecar_path is None:
+        return None
+    descriptor_path = Path(str(descriptor_sidecar_path)).resolve()
+    if not descriptor_path.exists():
+        return None
+    descriptor_payload = load_json(descriptor_path)
+    return copy.deepcopy(descriptor_payload)
+
+
 def _build_assignment_provenance(
     *,
     registry_default_morphology_class: str,
     arm_default_morphology_class: str | None,
     arm_root_override_morphology_class: str | None,
     assignment_policy: Mapping[str, Any],
+    policy_evaluation: Mapping[str, Any],
     resolved_from: str,
 ) -> dict[str, Any]:
     return {
@@ -2264,6 +2265,13 @@ def _build_assignment_provenance(
         "promotion_mode": str(assignment_policy["promotion_mode"]),
         "demotion_mode": str(assignment_policy["demotion_mode"]),
         "policy_applied": False,
+        "policy_evaluated": True,
+        "policy_recommended_morphology_class": str(
+            policy_evaluation["recommended_morphology_class"]
+        ),
+        "policy_recommendation_relation": str(
+            policy_evaluation["recommended_relation_to_realized"]
+        ),
         "resolved_from": resolved_from,
     }
 
@@ -2272,6 +2280,7 @@ def _build_approximation_route(
     *,
     registry_default_morphology_class: str,
     realized_morphology_class: str,
+    policy_evaluation: Mapping[str, Any],
 ) -> dict[str, Any]:
     rank_delta = (
         _morphology_class_rank(realized_morphology_class)
@@ -2292,7 +2301,10 @@ def _build_approximation_route(
         "realized_morphology_class": realized_morphology_class,
         "relation_to_registry_default": relation,
         "promotion_rank_delta": rank_delta,
-        "policy_action": "none",
+        "policy_action": str(policy_evaluation["recommended_relation_to_realized"]),
+        "policy_recommended_morphology_class": str(
+            policy_evaluation["recommended_morphology_class"]
+        ),
     }
 
 
@@ -3107,6 +3119,12 @@ def _require_sequence(value: Any, *, field_name: str) -> Sequence[Any]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ValueError(f"{field_name} must be a list.")
     return value
+
+
+def _optional_string_sequence(value: Any) -> list[str]:
+    if value is None:
+        return []
+    return [str(item) for item in _require_sequence(value, field_name="value")]
 
 
 def _asset_record_reference(

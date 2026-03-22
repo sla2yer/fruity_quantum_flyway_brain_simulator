@@ -1,0 +1,10 @@
+paths:
+  processed_stimulus_dir: data/processed/milestone_11_verification/stimuli
+  processed_retinal_dir: data/processed/milestone_11_verification/retinal
+  processed_simulator_results_dir: data/processed/milestone_11_verification/simulator_results
+  mixed_fidelity_inspection_dir: data/processed/milestone_11_verification/mixed_fidelity_inspection
+
+simulation_verification:
+  manifest_path: manifests/examples/milestone_1_demo.yaml
+  schema_path: schemas/milestone_1_experiment_manifest.schema.json
+  design_lock_path: config/milestone_1_design_lock.yaml

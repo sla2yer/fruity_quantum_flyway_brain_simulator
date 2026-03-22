@@ -17,7 +17,9 @@ import numpy as np
 from .io_utils import ensure_dir, write_json
 from .simulator_result_contract import (
     discover_simulator_extension_artifacts,
+    discover_simulator_root_morphology_metadata,
     discover_simulator_result_bundle_paths,
+    load_simulator_root_state_payload,
     load_simulator_result_bundle_metadata,
 )
 
@@ -52,6 +54,8 @@ class BundleVisualizationArchive:
     trace_values: np.ndarray
     metrics_rows: tuple[dict[str, Any], ...]
     state_summary_rows: tuple[dict[str, Any], ...]
+    root_morphology_records: tuple[dict[str, Any], ...]
+    root_state_payloads: tuple[dict[str, Any], ...]
     wave_payload: WaveVisualizationPayload | None
 
     @property
@@ -147,6 +151,7 @@ def _load_archive(path: str | Path) -> BundleVisualizationArchive:
     trace_time_ms, trace_readout_ids, trace_values = _load_trace_archive(bundle_paths["readout_traces"])
     metrics_rows = tuple(_load_metrics_rows(bundle_paths["metrics_table"]))
     state_summary_rows = tuple(_load_state_summary_rows(bundle_paths["state_summary"]))
+    root_morphology_records, root_state_payloads = _load_root_projection_payloads(metadata)
     wave_payload = _load_wave_payload(extension_artifacts)
     return BundleVisualizationArchive(
         metadata_path=metadata_path,
@@ -159,6 +164,8 @@ def _load_archive(path: str | Path) -> BundleVisualizationArchive:
         trace_values=trace_values,
         metrics_rows=metrics_rows,
         state_summary_rows=state_summary_rows,
+        root_morphology_records=root_morphology_records,
+        root_state_payloads=root_state_payloads,
         wave_payload=wave_payload,
     )
 
@@ -227,6 +234,26 @@ def _load_wave_payload(
     )
 
 
+def _load_root_projection_payloads(
+    metadata: Mapping[str, Any],
+) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]]:
+    try:
+        root_records = discover_simulator_root_morphology_metadata(metadata)
+    except ValueError:
+        return (), ()
+    normalized_records = tuple(
+        sorted(
+            (dict(item) for item in root_records),
+            key=lambda item: int(item["root_id"]),
+        )
+    )
+    payloads = tuple(
+        load_simulator_root_state_payload(metadata, root_id=int(item["root_id"]))
+        for item in normalized_records
+    )
+    return normalized_records, payloads
+
+
 def _load_json_if_exists(path: Path | None) -> dict[str, Any] | None:
     if path is None or not path.exists():
         return None
@@ -266,6 +293,10 @@ def _build_summary(
                 "trace_sample_count": int(archive.trace_values.shape[0]),
                 "readout_ids": list(archive.trace_readout_ids),
                 "wave_artifacts_present": archive.wave_payload is not None,
+                "root_morphology_classes": [
+                    str(item["morphology_class"])
+                    for item in archive.root_morphology_records
+                ],
             }
             for archive in archives
         ],
@@ -290,6 +321,10 @@ def _build_wave_summary_row(archive: BundleVisualizationArchive) -> dict[str, An
         "topology_condition": str(coupling.get("topology_condition", "")),
         "shared_output_mean": float(final_state.get("shared_output_mean", 0.0)),
         "root_count": len(payload.patch_traces.get("root_ids", [])),
+        "root_morphology_classes": [
+            str(item["morphology_class"])
+            for item in archive.root_morphology_records
+        ],
     }
 
 
@@ -631,6 +666,17 @@ def _render_bundle_section(archive: BundleVisualizationArchive) -> str:
         ("bundle id", archive.bundle_id),
         ("metadata path", str(archive.metadata_path)),
     ]
+    root_class_labels = [
+        f"{int(item['root_id'])}:{item['morphology_class']}"
+        for item in archive.root_morphology_records
+    ]
+    if root_class_labels:
+        metadata_rows.extend(
+            [
+                ("mixed root classes", ", ".join(root_class_labels)),
+                ("mixed root count", str(len(root_class_labels))),
+            ]
+        )
     if archive.ui_payload is not None:
         context = dict(archive.ui_payload.get("comparison_context", {}))
         metadata_rows.extend(
@@ -674,19 +720,48 @@ def _render_bundle_section(archive: BundleVisualizationArchive) -> str:
     )
     metrics_table = _render_bundle_metrics_table(archive.metrics_rows)
     state_table = _render_state_summary_table(archive.state_summary_rows)
+    root_fidelity_section = (
+        "<details><summary>Root fidelity</summary>"
+        f"{_render_root_fidelity_table(archive.root_state_payloads)}</details>"
+        if archive.root_state_payloads
+        else ""
+    )
     return (
         "<section>"
         '<div class="bundle-title">'
         f"<h2>{html.escape(archive.arm_id)}</h2>"
         f'<div><span class="pill">{html.escape(archive.model_mode)}</span></div>'
         "</div>"
-        f'<div class="grid">{"".join(_render_card(label, value, "") for label, value in metadata_rows[:4])}{trace_cards}</div>'
+        f'<div class="grid">{"".join(_render_card(label, value, "") for label, value in metadata_rows)}{trace_cards}</div>'
         f"<div style=\"margin-top: 1rem;\">{trace_charts}</div>"
         "<details open><summary>Metrics</summary>"
         f"{metrics_table}</details>"
         "<details><summary>State summary</summary>"
         f"{state_table}</details>"
+        f"{root_fidelity_section}"
         "</section>"
+    )
+
+
+def _render_root_fidelity_table(
+    payloads: Sequence[Mapping[str, Any]],
+) -> str:
+    rows = []
+    for payload in payloads:
+        runtime_metadata = dict(payload.get("runtime_metadata", {}))
+        rows.append(
+            "<tr>"
+            f"<td>{int(payload['root_id'])}</td>"
+            f"<td><code>{html.escape(str(payload['morphology_class']))}</code></td>"
+            f"<td>{html.escape(str(payload.get('projection_semantics', '')))}</td>"
+            f"<td>{html.escape(str(runtime_metadata.get('projection_layout', '')))}</td>"
+            f"<td>{html.escape(str(runtime_metadata.get('approximation_family', '')))}</td>"
+            "</tr>"
+        )
+    return (
+        "<table><thead><tr>"
+        "<th>Root</th><th>Morphology class</th><th>Projection semantics</th><th>Projection layout</th><th>Approximation family</th>"
+        f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
     )
 
 
@@ -740,13 +815,18 @@ def _render_wave_section(archive: BundleVisualizationArchive) -> str:
     summary = payload.summary
     final_state = dict(summary.get("final_state_overview", {}))
     coupling = dict(summary.get("coupling", {}))
+    root_classes = ", ".join(
+        f"{int(item['root_id'])}:{item['morphology_class']}"
+        for item in archive.root_morphology_records
+    ) or "none"
     cards = [
         _render_card("shared output mean", _format_float(final_state.get("shared_output_mean")), "Final-state overview"),
         _render_card("coupling events", str(int(coupling.get("coupling_event_count", 0))), "Applied event records captured by the run"),
         _render_card("coupling components", str(int(coupling.get("component_count", 0))), "Distinct connectivity components in the wave bundle"),
         _render_card("topology", str(coupling.get("topology_condition", "")), "Wave run comparison context"),
+        _render_card("root classes", root_classes, "Loaded through the mixed-morphology result index"),
     ]
-    patch_charts = _render_patch_trace_charts(payload.patch_traces)
+    patch_charts = _render_root_projection_charts(archive.root_state_payloads)
     coupling_table = _render_coupling_table(payload.coupling_payload)
     return (
         "<section>"
@@ -761,20 +841,26 @@ def _render_wave_section(archive: BundleVisualizationArchive) -> str:
     )
 
 
-def _render_patch_trace_charts(patch_traces: Mapping[str, np.ndarray]) -> str:
-    root_ids = [int(item) for item in np.asarray(patch_traces.get("root_ids", []), dtype=np.int64).tolist()]
-    substep_time = np.asarray(patch_traces.get("substep_time_ms", []), dtype=np.float64)
+def _render_root_projection_charts(
+    payloads: Sequence[Mapping[str, Any]],
+) -> str:
     charts: list[str] = []
-    for root_id in root_ids:
-        key = f"root_{root_id}_patch_activation"
-        matrix = np.asarray(patch_traces.get(key), dtype=np.float64)
+    for payload in payloads:
+        root_id = int(payload["root_id"])
+        morphology_class = str(payload["morphology_class"])
+        time_ms = np.asarray(payload.get("projection_time_ms", []), dtype=np.float64)
+        matrix = np.asarray(payload.get("projection_trace", []), dtype=np.float64)
         if matrix.size == 0 or matrix.ndim != 2:
-            continue
+            if matrix.ndim == 1 and matrix.size > 0:
+                matrix = matrix.reshape((-1, 1))
+            else:
+                continue
+        element_label = _projection_element_label(morphology_class)
         traces = [
             {
-                "label": f"patch {patch_index}",
+                "label": f"{element_label} {patch_index}",
                 "color": _PALETTE[patch_index % len(_PALETTE)],
-                "time_ms": substep_time,
+                "time_ms": time_ms,
                 "values": matrix[:, patch_index],
             }
             for patch_index in range(matrix.shape[1])
@@ -782,19 +868,31 @@ def _render_patch_trace_charts(patch_traces: Mapping[str, np.ndarray]) -> str:
         charts.append(
             '<div class="chart-wrap" style="margin-top: 1rem;">'
             + _build_line_chart_svg(
-                title=f"Root {root_id} patch activation (normalized)",
+                title=f"Root {root_id} {morphology_class} projection (normalized)",
                 traces=traces,
                 transform="normalized",
                 annotation_lines=_build_patch_annotation_lines(
                     root_id=root_id,
-                    substep_time_ms=substep_time,
+                    substep_time_ms=time_ms,
                     matrix=matrix,
                 ),
                 show_peak_labels=False,
             )
-            + '</div><div class="chart-caption">Patch traces are normalized per root so local patch structure remains visible even when the absolute wave magnitude is very large.</div>'
+            + "</div><div class=\"chart-caption\">"
+            + html.escape(
+                f"{payload.get('projection_semantics', '')} traces are normalized per root so morphology-local structure remains visible even when absolute wave magnitude differs strongly."
+            )
+            + "</div>"
         )
-    return "".join(charts) or '<div class="muted">No patch trace arrays were available for this wave bundle.</div>'
+    return "".join(charts) or '<div class="muted">No root projection arrays were available for this wave bundle.</div>'
+
+
+def _projection_element_label(morphology_class: str) -> str:
+    if morphology_class == "surface_neuron":
+        return "patch"
+    if morphology_class == "skeleton_neuron":
+        return "node"
+    return "state"
 
 
 def _render_coupling_table(coupling_payload: Mapping[str, Any]) -> str:
@@ -826,11 +924,14 @@ def _render_coupling_table(coupling_payload: Mapping[str, Any]) -> str:
             float(group["max_abs_source_value"]),
             abs(float(event.get("source_value", 0.0))),
         )
-        target_patch_drive = event.get("target_patch_drive", [])
-        if isinstance(target_patch_drive, list) and target_patch_drive:
+        target_projection_drive = event.get(
+            "target_projection_drive",
+            event.get("target_patch_drive", []),
+        )
+        if isinstance(target_projection_drive, list) and target_projection_drive:
             group["max_abs_target_drive"] = max(
                 float(group["max_abs_target_drive"]),
-                max(abs(float(item)) for item in target_patch_drive),
+                max(abs(float(item)) for item in target_projection_drive),
             )
     rows = []
     for (pre_root_id, post_root_id, sign_label), payload in sorted(grouped.items()):

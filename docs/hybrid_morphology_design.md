@@ -146,6 +146,65 @@ Promotion is therefore allowed to refine intraneuron state resolution and local
 spatial patterning. It is not allowed to introduce a new decoder, new edges,
 new per-synapse sign rules, or a new top-level model mode.
 
+## Policy Hook
+
+Milestone 11 now exposes one narrow planner-owned policy hook under
+`simulation.mixed_fidelity.assignment_policy`. The hook is deterministic and
+review-oriented: it does not silently rewrite the realized fidelity assignment.
+Instead, it records what a downstream planner or reviewer should consider
+promoting or demoting before relying on a mixed-fidelity arm for later readout
+or validation work.
+
+Supported fields:
+
+- `default_source`
+- `promotion_mode`
+- `demotion_mode`
+- `recommendation_rules`
+
+`promotion_mode` and `demotion_mode` currently support:
+
+- `disabled`
+- `recommend_from_policy`
+
+Each `recommendation_rules[]` entry may declare:
+
+- `minimum_morphology_class` and/or `maximum_morphology_class`
+- optional `root_ids` or `cell_types` filters
+- optional manifest-context filters:
+  `topology_conditions`, `morphology_conditions`, `arm_tags_any`
+- optional numeric descriptor thresholds under `descriptor_thresholds`
+
+Example:
+
+```yaml
+simulation:
+  mixed_fidelity:
+    assignment_policy:
+      promotion_mode: recommend_from_policy
+      demotion_mode: disabled
+      recommendation_rules:
+        - rule_id: promote_patch_dense_surrogate
+          minimum_morphology_class: surface_neuron
+          root_ids: [303]
+          topology_conditions: [intact]
+          arm_tags_any: [surface_wave]
+          descriptor_thresholds:
+            patch_count:
+              gte: 2
+```
+
+The normalized mixed-fidelity plan records, for each root:
+
+- the realized morphology class
+- the recommended morphology class
+- whether that recommendation implies promotion, demotion, or no change
+- which policy rules matched
+- the descriptor and manifest context used for that decision
+
+The planner summary also includes a `policy_hook` block that lists all rule IDs
+and the roots currently flagged for promotion or demotion review.
+
 ## Serialization Rules
 
 Every per-root class record must remain deterministic and include at least:

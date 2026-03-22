@@ -10,10 +10,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from flywire_wave.geometry_contract import (
     COARSE_OPERATOR_KEY,
@@ -42,11 +44,19 @@ from flywire_wave.simulator_result_contract import (
     READOUT_TRACES_KEY,
     STATE_SUMMARY_KEY,
     discover_simulator_extension_artifacts,
+    discover_simulator_root_morphology_metadata,
     discover_simulator_result_bundle_paths,
+    load_simulator_root_state_payload,
     load_simulator_result_bundle_metadata,
+    load_simulator_shared_readout_payload,
 )
+from flywire_wave.simulator_execution import execute_manifest_simulation
 from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
 from flywire_wave.synapse_mapping import materialize_synapse_anchor_maps
+from test_simulation_planning import (
+    _write_manifest_fixture,
+    _write_simulation_fixture,
+)
 
 
 class SimulatorExecutionSmokeTest(unittest.TestCase):
@@ -364,6 +374,146 @@ class SimulatorExecutionSmokeTest(unittest.TestCase):
                 if arm_plan["arm_reference"]["arm_id"] == "surface_wave_intact"
             )
             self.assertEqual(planned_bundle_id, metadata["bundle_id"])
+
+    def test_execute_manifest_simulation_writes_deterministic_mixed_morphology_bundle(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = _write_manifest_fixture(
+                tmp_dir,
+                surface_wave_fidelity_assignment={
+                    "default_morphology_class": "point_neuron",
+                    "root_overrides": [
+                        {"root_id": 101, "morphology_class": "surface_neuron"},
+                        {"root_id": 202, "morphology_class": "skeleton_neuron"},
+                    ],
+                },
+            )
+            config_path = _write_simulation_fixture(
+                tmp_dir,
+                root_specs=[
+                    {
+                        "root_id": 101,
+                        "project_role": "surface_simulated",
+                        "asset_profile": "surface",
+                    },
+                    {
+                        "root_id": 202,
+                        "project_role": "skeleton_simulated",
+                        "asset_profile": "skeleton",
+                    },
+                    {
+                        "root_id": 303,
+                        "project_role": "point_simulated",
+                        "asset_profile": "point",
+                    },
+                ],
+            )
+            _rewrite_skeleton_compatible_surface_wave_config(config_path)
+            schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+            resolved_input = resolve_stimulus_input(
+                manifest_path=manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+            )
+            record_stimulus_bundle(resolved_input)
+            _remove_selected_edges_for_roots(
+                tmp_dir / "out" / "asset_manifest.json",
+                root_ids=[202, 303],
+            )
+
+            first = execute_manifest_simulation(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                model_mode="surface_wave",
+                arm_id="surface_wave_intact",
+            )
+            second = execute_manifest_simulation(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                model_mode="surface_wave",
+                arm_id="surface_wave_intact",
+            )
+
+            self.assertEqual(first, second)
+            self.assertEqual(first["executed_run_count"], 1)
+
+            first_run_summary = first["executed_runs"][0]
+            metadata_path = Path(first_run_summary["metadata_path"])
+            metadata = load_simulator_result_bundle_metadata(metadata_path)
+            discovered_paths = discover_simulator_result_bundle_paths(metadata)
+            discovered_extensions = discover_simulator_extension_artifacts(metadata)
+            extension_paths = {
+                item["artifact_id"]: Path(item["path"]).resolve()
+                for item in discovered_extensions
+            }
+            compared_files = [
+                metadata_path,
+                Path(first_run_summary["state_summary_path"]),
+                Path(first_run_summary["readout_traces_path"]),
+                Path(first_run_summary["metrics_table_path"]),
+                extension_paths["structured_log"],
+                extension_paths["execution_provenance"],
+                extension_paths["ui_comparison_payload"],
+                extension_paths["surface_wave_summary"],
+                extension_paths["surface_wave_patch_traces"],
+                extension_paths["mixed_morphology_state_bundle"],
+                extension_paths["surface_wave_coupling_events"],
+            ]
+            first_run_bytes = {str(path): path.read_bytes() for path in compared_files}
+
+            second_run_summary = second["executed_runs"][0]
+            second_metadata = load_simulator_result_bundle_metadata(
+                Path(second_run_summary["metadata_path"])
+            )
+            second_discovered_paths = discover_simulator_result_bundle_paths(second_metadata)
+            second_root_metadata = discover_simulator_root_morphology_metadata(second_metadata)
+            shared_readout_payload = load_simulator_shared_readout_payload(second_metadata)
+            point_state_payload = load_simulator_root_state_payload(second_metadata, root_id=303)
+
+            self.assertEqual(
+                [item["morphology_class"] for item in second_root_metadata],
+                ["surface_neuron", "skeleton_neuron", "point_neuron"],
+            )
+            self.assertEqual(
+                point_state_payload["morphology_class"],
+                "point_neuron",
+            )
+            self.assertEqual(
+                point_state_payload["runtime_metadata"]["baseline_family"],
+                "P0",
+            )
+            self.assertEqual(
+                point_state_payload["state_summary_rows"][0]["state_id"],
+                "root_303_point_activation_state",
+            )
+            self.assertEqual(
+                tuple(shared_readout_payload["readout_ids"]),
+                ("shared_output_mean",),
+            )
+            self.assertEqual(
+                point_state_payload["projection_trace"].shape[1],
+                1,
+            )
+            self.assertIn("mixed_morphology_state_bundle", extension_paths)
+            self.assertIn("surface_wave_patch_traces", extension_paths)
+            self.assertTrue(
+                any(
+                    row["state_id"] == "root_303_point_activation_state"
+                    for row in json.loads(
+                        Path(second_discovered_paths[STATE_SUMMARY_KEY]).read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                )
+            )
+            for path in compared_files:
+                self.assertEqual(path.read_bytes(), first_run_bytes[str(path)])
 
 
 def _materialize_execution_fixture(tmp_dir: Path) -> dict[str, Path]:
@@ -685,6 +835,47 @@ def _write_stub_swc(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "1 1 0 0 0 1 -1\n2 3 0 1 0 1 1\n",
+        encoding="utf-8",
+    )
+
+
+def _remove_selected_edges_for_roots(
+    manifest_path: Path,
+    *,
+    root_ids: list[int] | tuple[int, ...],
+) -> None:
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    normalized_root_ids = {int(root_id) for root_id in root_ids}
+    for key, record in payload.items():
+        if not isinstance(key, str) or not key.isdigit() or not isinstance(record, dict):
+            continue
+        coupling_bundle = record.get("coupling_bundle")
+        if not isinstance(coupling_bundle, dict):
+            continue
+        edge_bundles = coupling_bundle.get("edge_bundles")
+        if not isinstance(edge_bundles, list):
+            continue
+        coupling_bundle["edge_bundles"] = [
+            edge_bundle
+            for edge_bundle in edge_bundles
+            if int(edge_bundle.get("pre_root_id", -1)) not in normalized_root_ids
+            and int(edge_bundle.get("post_root_id", -1)) not in normalized_root_ids
+        ]
+    manifest_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _rewrite_skeleton_compatible_surface_wave_config(config_path: Path) -> None:
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    surface_wave = payload["simulation"]["surface_wave"]
+    surface_wave.setdefault("recovery", {})["mode"] = "disabled"
+    surface_wave.setdefault("nonlinearity", {})["mode"] = "none"
+    surface_wave.setdefault("anisotropy", {})["mode"] = "isotropic"
+    surface_wave.setdefault("branching", {})["mode"] = "disabled"
+    config_path.write_text(
+        yaml.safe_dump(payload, sort_keys=False),
         encoding="utf-8",
     )
 

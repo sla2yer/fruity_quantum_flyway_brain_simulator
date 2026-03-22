@@ -1,0 +1,178 @@
+[
+  {
+    "ticket_id": "FW-M11-001",
+    "title": "Freeze a versioned hybrid-morphology contract, fidelity taxonomy, and approximation design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-001_Freeze_a_versioned_hybrid-morphology_contract_fidelity_taxonomy_and_approximation_design_note/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-001_Freeze_a_versioned_hybrid-morphology_contract_fidelity_taxonomy_and_approximation_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-001_Freeze_a_versioned_hybrid-morphology_contract_fidelity_taxonomy_and_approximation_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-001_Freeze_a_versioned_hybrid-morphology_contract_fidelity_taxonomy_and_approximation_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-001_Freeze_a_versioned_hybrid-morphology_contract_fidelity_taxonomy_and_approximation_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-001_Freeze_a_versioned_hybrid-morphology_contract_fidelity_taxonomy_and_approximation_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M11-002",
+    "title": "Extend manifest planning and config normalization for per-root fidelity assignment in mixed runs",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-002_Extend_manifest_planning_and_config_normalization_for_per-root_fidelity_assignment_in_mixed_runs/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-002_Extend_manifest_planning_and_config_normalization_for_per-root_fidelity_assignment_in_mixed_runs",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-002_Extend_manifest_planning_and_config_normalization_for_per-root_fidelity_assignment_in_mixed_runs/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-002_Extend_manifest_planning_and_config_normalization_for_per-root_fidelity_assignment_in_mixed_runs/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-002_Extend_manifest_planning_and_config_normalization_for_per-root_fidelity_assignment_in_mixed_runs/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-002_Extend_manifest_planning_and_config_normalization_for_per-root_fidelity_assignment_in_mixed_runs/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M11-003",
+    "title": "Refactor the wave runtime around a pluggable morphology-class interface while preserving current surface behavior",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-003_Refactor_the_wave_runtime_around_a_pluggable_morphology-class_interface_while_preserving_current_surface_behavior/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-003_Refactor_the_wave_runtime_around_a_pluggable_morphology-class_interface_while_preserving_current_surface_behavior",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-003_Refactor_the_wave_runtime_around_a_pluggable_morphology-class_interface_while_preserving_current_surface_behavior/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-003_Refactor_the_wave_runtime_around_a_pluggable_morphology-class_interface_while_preserving_current_surface_behavior/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-003_Refactor_the_wave_runtime_around_a_pluggable_morphology-class_interface_while_preserving_current_surface_behavior/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-003_Refactor_the_wave_runtime_around_a_pluggable_morphology-class_interface_while_preserving_current_surface_behavior/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M11-004",
+    "title": "Build the skeleton-neuron asset handoff, graph approximation, and deterministic skeleton runtime adapter",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-004_Build_the_skeleton-neuron_asset_handoff_graph_approximation_and_deterministic_skeleton_runtime_adapter/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-004_Build_the_skeleton-neuron_asset_handoff_graph_approximation_and_deterministic_skeleton_runtime_adapter",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-004_Build_the_skeleton-neuron_asset_handoff_graph_approximation_and_deterministic_skeleton_runtime_adapter/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-004_Build_the_skeleton-neuron_asset_handoff_graph_approximation_and_deterministic_skeleton_runtime_adapter/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-004_Build_the_skeleton-neuron_asset_handoff_graph_approximation_and_deterministic_skeleton_runtime_adapter/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-004_Build_the_skeleton-neuron_asset_handoff_graph_approximation_and_deterministic_skeleton_runtime_adapter/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M11-005",
+    "title": "Add the point-neuron placeholder class and fidelity-agnostic state serialization for mixed runs",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-005_Add_the_point-neuron_placeholder_class_and_fidelity-agnostic_state_serialization_for_mixed_runs/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-005_Add_the_point-neuron_placeholder_class_and_fidelity-agnostic_state_serialization_for_mixed_runs",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-005_Add_the_point-neuron_placeholder_class_and_fidelity-agnostic_state_serialization_for_mixed_runs/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-005_Add_the_point-neuron_placeholder_class_and_fidelity-agnostic_state_serialization_for_mixed_runs/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-005_Add_the_point-neuron_placeholder_class_and_fidelity-agnostic_state_serialization_for_mixed_runs/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-005_Add_the_point-neuron_placeholder_class_and_fidelity-agnostic_state_serialization_for_mixed_runs/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M11-006",
+    "title": "Implement cross-class coupling routing and canonical source-projection semantics for surface, skeleton, and point neurons",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-006_Implement_cross-class_coupling_routing_and_canonical_source-projection_semantics_for_surface_skeleton_and_point_neurons/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-006_Implement_cross-class_coupling_routing_and_canonical_source-projection_semantics_for_surface_skeleton_and_point_neurons",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-006_Implement_cross-class_coupling_routing_and_canonical_source-projection_semantics_for_surface_skeleton_and_point_neurons/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-006_Implement_cross-class_coupling_routing_and_canonical_source-projection_semantics_for_surface_skeleton_and_point_neurons/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-006_Implement_cross-class_coupling_routing_and_canonical_source-projection_semantics_for_surface_skeleton_and_point_neurons/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-006_Implement_cross-class_coupling_routing_and_canonical_source-projection_semantics_for_surface_skeleton_and_point_neurons/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M11-007",
+    "title": "Add surrogate-preservation audits, promotion and demotion policy hooks, and offline mixed-fidelity inspection tooling",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-007_Add_surrogate-preservation_audits_promotion_and_demotion_policy_hooks_and_offline_mixed-fidelity_inspection_tooling/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-007_Add_surrogate-preservation_audits_promotion_and_demotion_policy_hooks_and_offline_mixed-fidelity_inspection_tooling",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-007_Add_surrogate-preservation_audits_promotion_and_demotion_policy_hooks_and_offline_mixed-fidelity_inspection_tooling/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-007_Add_surrogate-preservation_audits_promotion_and_demotion_policy_hooks_and_offline_mixed-fidelity_inspection_tooling/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-007_Add_surrogate-preservation_audits_promotion_and_demotion_policy_hooks_and_offline_mixed-fidelity_inspection_tooling/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-007_Add_surrogate-preservation_audits_promotion_and_demotion_policy_hooks_and_offline_mixed-fidelity_inspection_tooling/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M11-008",
+    "title": "Run a Milestone 11 mixed-fidelity integration pass and publish a readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-008_Run_a_Milestone_11_mixed-fidelity_integration_pass_and_publish_a_readiness_report/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-008_Run_a_Milestone_11_mixed-fidelity_integration_pass_and_publish_a_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-008_Run_a_Milestone_11_mixed-fidelity_integration_pass_and_publish_a_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-008_Run_a_Milestone_11_mixed-fidelity_integration_pass_and_publish_a_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-008_Run_a_Milestone_11_mixed-fidelity_integration_pass_and_publish_a_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T135208Z/FW-M11-008_Run_a_Milestone_11_mixed-fidelity_integration_pass_and_publish_a_readiness_report/last_message.md"
+  }
+]

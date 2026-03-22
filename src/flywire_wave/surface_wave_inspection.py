@@ -760,6 +760,20 @@ def _resolve_swept_execution_plan(
     seed: int,
 ) -> Any:
     runtime = _require_mapping(arm_plan.get("runtime"), field_name="arm_plan.runtime")
+    model_configuration = _require_mapping(
+        arm_plan.get("model_configuration"),
+        field_name="arm_plan.model_configuration",
+    )
+    existing_execution_plan = _require_mapping(
+        model_configuration.get("surface_wave_execution_plan"),
+        field_name="arm_plan.model_configuration.surface_wave_execution_plan",
+    )
+    mixed_fidelity = _require_mapping(
+        existing_execution_plan.get("mixed_fidelity"),
+        field_name=(
+            "arm_plan.model_configuration.surface_wave_execution_plan.mixed_fidelity"
+        ),
+    )
     determinism = copy.deepcopy(
         _require_mapping(arm_plan.get("determinism"), field_name="arm_plan.determinism")
     )
@@ -768,6 +782,24 @@ def _resolve_swept_execution_plan(
         arm_reference=_require_mapping(
             arm_plan.get("arm_reference"),
             field_name="arm_plan.arm_reference",
+        ),
+        arm_payload={
+            "fidelity_assignment": copy.deepcopy(
+                _require_mapping(
+                    mixed_fidelity.get("arm_overrides"),
+                    field_name=(
+                        "arm_plan.model_configuration.surface_wave_execution_plan."
+                        "mixed_fidelity.arm_overrides"
+                    ),
+                )
+            )
+        },
+        point_neuron_model_spec=_require_mapping(
+            mixed_fidelity.get("point_neuron_model_spec"),
+            field_name=(
+                "arm_plan.model_configuration.surface_wave_execution_plan."
+                "mixed_fidelity.point_neuron_model_spec"
+            ),
         ),
         topology_condition=str(arm_plan["topology_condition"]),
         runtime_timebase=_require_mapping(
@@ -779,6 +811,18 @@ def _resolve_swept_execution_plan(
             field_name="arm_plan.circuit_assets",
         ),
         surface_wave_model=surface_wave_model,
+        mixed_fidelity_config={
+            "assignment_ordering": str(mixed_fidelity["assignment_ordering"]),
+            "assignment_policy": copy.deepcopy(
+                _require_mapping(
+                    mixed_fidelity.get("assignment_policy"),
+                    field_name=(
+                        "arm_plan.model_configuration.surface_wave_execution_plan."
+                        "mixed_fidelity.assignment_policy"
+                    ),
+                )
+            )
+        },
     )
     arm_plan_snapshot = copy.deepcopy(dict(arm_plan))
     arm_plan_snapshot["determinism"] = determinism

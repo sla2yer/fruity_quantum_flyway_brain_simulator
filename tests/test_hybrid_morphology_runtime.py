@@ -17,6 +17,8 @@ sys.path.insert(0, str(SRC))
 
 from flywire_wave.coupling_contract import (
     DISTRIBUTED_PATCH_CLOUD_TOPOLOGY,
+    POINT_NEURON_LUMPED_MODE,
+    POINT_TO_POINT_TOPOLOGY,
     SURFACE_PATCH_CLOUD_MODE,
 )
 from flywire_wave.hybrid_morphology_contract import (
@@ -491,7 +493,101 @@ class HybridMorphologyRuntimeTest(unittest.TestCase):
                 list(second_result.shared_readout_history),
             )
 
-    def test_skeleton_runtime_rejects_selected_edge_routes_until_router_ticket(self) -> None:
+    def test_mixed_runtime_adapter_supports_point_placeholder_deterministically(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            arm_plan = _build_surface_skeleton_arm_plan(
+                tmp_dir,
+                include_point_root=True,
+            )
+
+            first_runtime = resolve_morphology_runtime_from_arm_plan(arm_plan)
+            first_last_drive, first_result = run_morphology_runtime_shared_schedule(
+                first_runtime,
+                drive_values=np.asarray(
+                    [
+                        [0.0, 0.0, 2.0],
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float64,
+                ),
+            )
+            second_runtime = resolve_morphology_runtime_from_arm_plan(arm_plan)
+            second_last_drive, second_result = run_morphology_runtime_shared_schedule(
+                second_runtime,
+                drive_values=np.asarray(
+                    [
+                        [0.0, 0.0, 2.0],
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float64,
+                ),
+            )
+
+            np.testing.assert_allclose(
+                first_last_drive,
+                np.asarray([0.0, 0.0, 0.0], dtype=np.float64),
+            )
+            np.testing.assert_allclose(first_last_drive, second_last_drive)
+            self.assertEqual(
+                first_runtime.descriptor.hybrid_morphology["discovered_morphology_classes"],
+                [POINT_NEURON_CLASS, SKELETON_NEURON_CLASS, SURFACE_NEURON_CLASS],
+            )
+            self.assertEqual(
+                first_runtime.descriptor.runtime_family,
+                "surface_wave_mixed_morphology_runtime_adapter.v1",
+            )
+            np.testing.assert_allclose(
+                first_result.coupling_projection_history_by_root[303],
+                np.asarray(
+                    [[0.0], [1.0], [0.5], [0.25]],
+                    dtype=np.float64,
+                ),
+                atol=1.0e-9,
+            )
+            np.testing.assert_allclose(
+                np.asarray(
+                    first_result.final_state_exports_by_root[303]["activation"],
+                    dtype=np.float64,
+                ),
+                np.asarray([0.25], dtype=np.float64),
+                atol=1.0e-9,
+            )
+            np.testing.assert_allclose(
+                np.asarray(
+                    first_result.final_state_exports_by_root[303]["velocity"],
+                    dtype=np.float64,
+                ),
+                np.asarray([-0.25], dtype=np.float64),
+                atol=1.0e-9,
+            )
+            final_state_ids = {
+                row.state_id
+                for row in first_result.export_state_summaries(state_stage="final")
+            }
+            self.assertIn("root_303_point_activation_state", final_state_ids)
+            self.assertIn("root_303_point_projection_state", final_state_ids)
+
+            projection_payload = first_result.export_projection_trace_payload()
+            self.assertIn("root_303_point_activation", projection_payload)
+            np.testing.assert_allclose(
+                projection_payload["root_303_point_activation"],
+                first_result.coupling_projection_history_by_root[303],
+                atol=1.0e-9,
+            )
+            np.testing.assert_allclose(
+                first_result.coupling_projection_history_by_root[303],
+                second_result.coupling_projection_history_by_root[303],
+                atol=1.0e-9,
+            )
+            self.assertEqual(
+                list(first_result.shared_readout_history),
+                list(second_result.shared_readout_history),
+            )
+
+    def test_missing_selected_edge_bundle_fails_clearly(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
             arm_plan = _build_surface_skeleton_arm_plan(
@@ -504,9 +600,9 @@ class HybridMorphologyRuntimeTest(unittest.TestCase):
                     }
                 ],
             )
-            with self.assertRaises(NotImplementedError) as ctx:
+            with self.assertRaises(ValueError) as ctx:
                 resolve_morphology_runtime_from_arm_plan(arm_plan)
-            self.assertIn("FW-M11-006", str(ctx.exception))
+            self.assertIn("selected edge bundle is missing", str(ctx.exception))
 
     def test_invalid_skeleton_runtime_asset_fails_clearly(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
@@ -530,6 +626,7 @@ def _build_surface_skeleton_arm_plan(
     tmp_dir: Path,
     *,
     selected_edge_bundle_paths: list[dict[str, object]] | None = None,
+    include_point_root: bool = False,
 ) -> dict[str, Any]:
     surface_wave_model = build_surface_wave_model_metadata(
         parameter_bundle={
@@ -554,17 +651,25 @@ def _build_surface_skeleton_arm_plan(
             },
         }
     )
+    root_records = [
+        {
+            "root_id": 101,
+            "morphology_class": "surface_neuron",
+        },
+        {
+            "root_id": 202,
+            "morphology_class": "skeleton_neuron",
+        },
+    ]
+    if include_point_root:
+        root_records.append(
+            {
+                "root_id": 303,
+                "morphology_class": "point_neuron",
+            }
+        )
     hybrid_morphology = build_hybrid_morphology_plan_metadata(
-        root_records=[
-            {
-                "root_id": 101,
-                "morphology_class": "surface_neuron",
-            },
-            {
-                "root_id": 202,
-                "morphology_class": "skeleton_neuron",
-            },
-        ],
+        root_records=root_records,
         model_mode="surface_wave",
     )
     surface_operator_asset = _write_identity_surface_operator_assets(
@@ -583,6 +688,34 @@ def _build_surface_skeleton_arm_plan(
         processed_graph_dir=tmp_dir / "processed_graphs",
     )
     metadata = load_skeleton_runtime_asset_metadata(skeleton_asset["metadata_path"])
+    mixed_fidelity = {
+        "point_neuron_model_spec": {
+            "family": "P0",
+            "model_family": "passive_linear_single_compartment",
+            "state_layout": "scalar_state_per_selected_root",
+            "integration_scheme": "forward_euler",
+            "readout_state": "membrane_state",
+            "initial_state": "all_zero",
+            "parameters": {
+                "membrane_time_constant_ms": 2.0,
+                "resting_potential": 0.0,
+                "input_gain": 1.0,
+                "recurrent_gain": 0.0,
+            },
+        },
+        "per_root_assignments": [],
+    }
+    if include_point_root:
+        mixed_fidelity["per_root_assignments"].append(
+            {
+                "root_id": 303,
+                "realized_morphology_class": "point_neuron",
+                "coupling_asset": _write_point_coupling_asset(
+                    tmp_dir / "point_coupling",
+                    root_id=303,
+                ),
+            }
+        )
     return {
         "arm_reference": {
             "arm_id": "surface_skeleton_fixture",
@@ -606,6 +739,7 @@ def _build_surface_skeleton_arm_plan(
                     "internal_substep_count": 1,
                 },
                 "hybrid_morphology": hybrid_morphology,
+                "mixed_fidelity": mixed_fidelity,
                 "selected_root_operator_assets": [surface_operator_asset],
                 "selected_root_coupling_assets": [surface_coupling_asset],
                 "selected_root_skeleton_assets": [
@@ -719,6 +853,32 @@ def _write_surface_coupling_asset(
         "root_id": root_id,
         "topology_family": DISTRIBUTED_PATCH_CLOUD_TOPOLOGY,
         "fallback_hierarchy": [SURFACE_PATCH_CLOUD_MODE],
+        "local_synapse_registry_path": str(registry_path.resolve()),
+        "incoming_anchor_map_path": str(incoming_anchor_map_path.resolve()),
+        "outgoing_anchor_map_path": str(outgoing_anchor_map_path.resolve()),
+        "coupling_index_path": str(coupling_index_path.resolve()),
+        "selected_edge_bundle_paths": [],
+    }
+
+
+def _write_point_coupling_asset(
+    base_dir: Path,
+    *,
+    root_id: int,
+) -> dict[str, object]:
+    registry_path = base_dir / "synapse_registry.csv"
+    incoming_anchor_map_path = base_dir / f"{root_id}_incoming_anchor_map.npz"
+    outgoing_anchor_map_path = base_dir / f"{root_id}_outgoing_anchor_map.npz"
+    coupling_index_path = base_dir / f"{root_id}_coupling_index.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text("synapse_row_id,pre_root_id,post_root_id\n", encoding="utf-8")
+    incoming_anchor_map_path.write_bytes(b"fixture")
+    outgoing_anchor_map_path.write_bytes(b"fixture")
+    write_json({"root_id": root_id, "edge_count": 0}, coupling_index_path)
+    return {
+        "root_id": root_id,
+        "topology_family": POINT_TO_POINT_TOPOLOGY,
+        "fallback_hierarchy": [POINT_NEURON_LUMPED_MODE],
         "local_synapse_registry_path": str(registry_path.resolve()),
         "incoming_anchor_map_path": str(incoming_anchor_map_path.resolve()),
         "outgoing_anchor_map_path": str(outgoing_anchor_map_path.resolve()),

@@ -425,6 +425,18 @@ Contract notes:
   `config.paths.processed_simulator_results_dir/readiness/milestone_10/milestone_10_readiness.json`
 - `make milestone10-readiness` is the one-command entrypoint for the shipped
   Milestone 10 integration verification pass
+- `scripts/19_milestone11_readiness.py` is the shipped Milestone 11 follow-on
+  audit path: it layers a focused mixed-fidelity fixture suite plus one
+  deterministic three-class `surface_wave` execution, contract-backed result
+  visualization, and the surrogate-preservation inspection workflow on top of
+  `scripts/run_simulation.py`, `scripts/17_visualize_simulator_results.py`,
+  and `scripts/18_mixed_fidelity_inspection.py`
+- the readiness report goes to
+  `config.paths.processed_simulator_results_dir/readiness/milestone_11/milestone_11_readiness.md`
+  and
+  `config.paths.processed_simulator_results_dir/readiness/milestone_11/milestone_11_readiness.json`
+- `make milestone11-readiness` is the one-command entrypoint for the shipped
+  Milestone 11 integration verification pass
 - that readiness gate uses `config/surface_wave_sweep.verification.yaml` as one
   conservative non-runaway local reference bundle for stability review
 - `config/surface_wave_sweep.example.yaml` remains the broader exploratory

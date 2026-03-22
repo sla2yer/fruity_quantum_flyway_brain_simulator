@@ -930,7 +930,8 @@ def _execute_surface_wave_inspection_audit(
             "traces_path",
             "coupled_shared_trace_svg_path",
         ):
-            if not Path(str(artifacts[artifact_key])).exists():
+            artifact_path = artifacts.get(artifact_key)
+            if artifact_path is None or not Path(str(artifact_path)).exists():
                 issues.append(
                     _issue(
                         "blocking",

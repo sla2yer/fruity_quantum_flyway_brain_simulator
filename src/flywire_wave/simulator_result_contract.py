@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from .io_utils import write_json
 from .stimulus_contract import (
     ASSET_STATUS_MISSING,
@@ -96,6 +98,8 @@ METRIC_TABLE_COLUMNS = (
 )
 
 EXTENSION_ROOT_DIRECTORY_NAME = "extensions"
+MIXED_MORPHOLOGY_INDEX_KEY = "mixed_morphology_index"
+MIXED_MORPHOLOGY_INDEX_FORMAT = "json_mixed_morphology_index.v1"
 
 
 @dataclass(frozen=True)
@@ -317,6 +321,7 @@ def build_simulator_contract_manifest_metadata(
             READOUT_TRACES_KEY: "readout_traces.npz",
             METRICS_TABLE_KEY: "metrics.csv",
         },
+        "optional_bundle_fields": [MIXED_MORPHOLOGY_INDEX_KEY],
     }
 
 
@@ -386,6 +391,7 @@ def build_simulator_result_bundle_metadata(
     readout_traces_status: str = ASSET_STATUS_MISSING,
     metrics_table_status: str = ASSET_STATUS_MISSING,
     model_artifacts: Sequence[Mapping[str, Any]] | None = None,
+    mixed_morphology_index: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_manifest_reference = parse_simulator_manifest_reference(manifest_reference)
     normalized_arm_reference = parse_simulator_arm_reference(arm_reference)
@@ -418,7 +424,7 @@ def build_simulator_result_bundle_metadata(
         model_mode=normalized_arm_reference["model_mode"],
     )
     shared_payload_contract = default_shared_payload_contract()
-    return {
+    payload = {
         "contract_version": SIMULATOR_RESULT_BUNDLE_CONTRACT_VERSION,
         "design_note": SIMULATOR_RESULT_BUNDLE_DESIGN_NOTE,
         "design_note_version": SIMULATOR_RESULT_BUNDLE_DESIGN_NOTE_VERSION,
@@ -473,6 +479,15 @@ def build_simulator_result_bundle_metadata(
             MODEL_ARTIFACTS_KEY: normalized_model_artifacts,
         },
     }
+    if mixed_morphology_index is not None:
+        payload[MIXED_MORPHOLOGY_INDEX_KEY] = copy.deepcopy(
+            _normalize_mixed_morphology_index(
+                mixed_morphology_index,
+                artifacts=payload["artifacts"],
+                readout_catalog=normalized_readout_catalog,
+            )
+        )
+    return payload
 
 
 def build_simulator_result_bundle_reference(bundle_metadata: Mapping[str, Any]) -> dict[str, Any]:
@@ -756,6 +771,13 @@ def parse_simulator_result_bundle_metadata(payload: Mapping[str, Any]) -> dict[s
         arm_reference=normalized["arm_reference"],
         shared_payload_contract=normalized["shared_payload_contract"],
     )
+    mixed_morphology_index = normalized.get(MIXED_MORPHOLOGY_INDEX_KEY)
+    if mixed_morphology_index is not None:
+        normalized[MIXED_MORPHOLOGY_INDEX_KEY] = _normalize_mixed_morphology_index(
+            mixed_morphology_index,
+            artifacts=normalized["artifacts"],
+            readout_catalog=normalized["readout_catalog"],
+        )
 
     expected_bundle_id = (
         f"{SIMULATOR_RESULT_BUNDLE_CONTRACT_VERSION}:"
@@ -860,6 +882,153 @@ def discover_simulator_extension_artifacts(record: Mapping[str, Any]) -> list[di
             }
         )
     return discovered
+
+
+def discover_simulator_root_morphology_metadata(
+    record: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    simulator_bundle = parse_simulator_result_bundle_metadata(
+        _extract_simulator_bundle_mapping(record)
+    )
+    mixed_morphology_index = _require_mixed_morphology_index(simulator_bundle)
+    return [
+        copy.deepcopy(dict(item))
+        for item in mixed_morphology_index["roots"]
+    ]
+
+
+def load_simulator_shared_readout_payload(
+    record: Mapping[str, Any],
+) -> dict[str, Any]:
+    simulator_bundle = parse_simulator_result_bundle_metadata(
+        _extract_simulator_bundle_mapping(record)
+    )
+    readout_path = discover_simulator_result_bundle_paths(simulator_bundle)[
+        READOUT_TRACES_KEY
+    ].resolve()
+    with np.load(readout_path, allow_pickle=False) as payload:
+        missing_arrays = [
+            array_name
+            for array_name in READOUT_TRACE_ARRAYS
+            if array_name not in payload.files
+        ]
+        if missing_arrays:
+            raise ValueError(
+                "Shared readout trace payload is missing required arrays: "
+                f"{missing_arrays!r}."
+            )
+        return {
+            "path": readout_path,
+            "time_ms": np.asarray(payload["time_ms"], dtype=np.float64),
+            "readout_ids": tuple(str(item) for item in payload["readout_ids"].tolist()),
+            "values": np.asarray(payload["values"], dtype=np.float64),
+        }
+
+
+def load_simulator_root_state_payload(
+    record: Mapping[str, Any],
+    *,
+    root_id: int,
+) -> dict[str, Any]:
+    simulator_bundle = parse_simulator_result_bundle_metadata(
+        _extract_simulator_bundle_mapping(record)
+    )
+    mixed_morphology_index = _require_mixed_morphology_index(simulator_bundle)
+    root_record = _mixed_morphology_root_record(
+        mixed_morphology_index,
+        root_id=int(root_id),
+    )
+    state_bundle_payload = _load_mixed_morphology_state_bundle(
+        simulator_bundle,
+        artifact_id=str(mixed_morphology_index["state_bundle_artifact_id"]),
+    )
+    state_summary_path = discover_simulator_result_bundle_paths(simulator_bundle)[
+        STATE_SUMMARY_KEY
+    ].resolve()
+    with state_summary_path.open("r", encoding="utf-8") as handle:
+        state_summary_rows = json.load(handle)
+    if not isinstance(state_summary_rows, list):
+        raise ValueError("state_summary payload must be a list of row mappings.")
+
+    extension_paths = {
+        item["artifact_id"]: Path(item["path"]).resolve()
+        for item in discover_simulator_extension_artifacts(simulator_bundle)
+    }
+    projection_path = extension_paths[str(mixed_morphology_index["projection_artifact_id"])]
+    with np.load(projection_path, allow_pickle=False) as projection_payload:
+        projection_time_array = str(root_record["projection_time_array"])
+        projection_trace_array = str(root_record["projection_trace_array"])
+        if projection_time_array not in projection_payload.files:
+            raise ValueError(
+                "Projection trace payload is missing time array "
+                f"{projection_time_array!r}."
+            )
+        if projection_trace_array not in projection_payload.files:
+            raise ValueError(
+                "Projection trace payload is missing root array "
+                f"{projection_trace_array!r}."
+            )
+        projection_time_ms = np.asarray(
+            projection_payload[projection_time_array],
+            dtype=np.float64,
+        )
+        projection_trace = np.asarray(
+            projection_payload[projection_trace_array],
+            dtype=np.float64,
+        )
+
+    root_key = str(root_record["state_bundle_root_key"])
+    runtime_metadata_key = str(root_record["runtime_metadata_root_key"])
+    return {
+        "root_id": int(root_record["root_id"]),
+        "morphology_class": str(root_record["morphology_class"]),
+        "runtime_metadata": copy.deepcopy(
+            _require_mapping(
+                _require_mapping(
+                    state_bundle_payload["runtime_metadata_by_root"],
+                    field_name="mixed_morphology_state_bundle.runtime_metadata_by_root",
+                )[runtime_metadata_key],
+                field_name=(
+                    "mixed_morphology_state_bundle.runtime_metadata_by_root."
+                    f"{runtime_metadata_key}"
+                ),
+            )
+        ),
+        "initial_state_export": copy.deepcopy(
+            _require_mapping(
+                _require_mapping(
+                    state_bundle_payload["initial_state_exports_by_root"],
+                    field_name="mixed_morphology_state_bundle.initial_state_exports_by_root",
+                )[root_key],
+                field_name=(
+                    "mixed_morphology_state_bundle.initial_state_exports_by_root."
+                    f"{root_key}"
+                ),
+            )
+        ),
+        "final_state_export": copy.deepcopy(
+            _require_mapping(
+                _require_mapping(
+                    state_bundle_payload["final_state_exports_by_root"],
+                    field_name="mixed_morphology_state_bundle.final_state_exports_by_root",
+                )[root_key],
+                field_name=(
+                    "mixed_morphology_state_bundle.final_state_exports_by_root."
+                    f"{root_key}"
+                ),
+            )
+        ),
+        "state_summary_rows": [
+            copy.deepcopy(dict(item))
+            for item in state_summary_rows
+            if isinstance(item, Mapping)
+            and str(item.get("state_id")) in set(root_record["state_summary_ids"])
+        ],
+        "projection_time_ms": projection_time_ms,
+        "projection_trace": projection_trace,
+        "projection_semantics": str(root_record["projection_semantics"]),
+        "shared_readout_ids": list(root_record["shared_readout_ids"]),
+    }
 
 
 def resolve_simulator_result_bundle_metadata_path(
@@ -1188,6 +1357,266 @@ def _normalize_model_artifact_records(
             raise ValueError(f"model_artifacts contains duplicate artifact_id {artifact_id!r}.")
         seen_ids.add(artifact_id)
     return sorted_records
+
+
+def _normalize_mixed_morphology_index(
+    payload: Mapping[str, Any],
+    *,
+    artifacts: Mapping[str, Any],
+    readout_catalog: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{MIXED_MORPHOLOGY_INDEX_KEY} must be a mapping.")
+    normalized = copy.deepcopy(dict(payload))
+    required_fields = (
+        "format_version",
+        "state_bundle_artifact_id",
+        "projection_artifact_id",
+        "shared_state_summary_artifact_id",
+        "shared_readout_traces_artifact_id",
+        "roots",
+    )
+    missing_fields = [field for field in required_fields if field not in normalized]
+    if missing_fields:
+        raise ValueError(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY} is missing required fields: {missing_fields!r}."
+        )
+    format_version = _normalize_nonempty_string(
+        normalized["format_version"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.format_version",
+    )
+    if format_version != MIXED_MORPHOLOGY_INDEX_FORMAT:
+        raise ValueError(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.format_version must be "
+            f"{MIXED_MORPHOLOGY_INDEX_FORMAT!r}."
+        )
+    state_bundle_artifact_id = _normalize_identifier(
+        normalized["state_bundle_artifact_id"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.state_bundle_artifact_id",
+    )
+    projection_artifact_id = _normalize_identifier(
+        normalized["projection_artifact_id"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.projection_artifact_id",
+    )
+    shared_state_summary_artifact_id = _normalize_identifier(
+        normalized["shared_state_summary_artifact_id"],
+        field_name=(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.shared_state_summary_artifact_id"
+        ),
+    )
+    shared_readout_traces_artifact_id = _normalize_identifier(
+        normalized["shared_readout_traces_artifact_id"],
+        field_name=(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.shared_readout_traces_artifact_id"
+        ),
+    )
+    if shared_state_summary_artifact_id != STATE_SUMMARY_KEY:
+        raise ValueError(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.shared_state_summary_artifact_id must be "
+            f"{STATE_SUMMARY_KEY!r}."
+        )
+    if shared_readout_traces_artifact_id != READOUT_TRACES_KEY:
+        raise ValueError(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.shared_readout_traces_artifact_id must be "
+            f"{READOUT_TRACES_KEY!r}."
+        )
+    available_extension_ids = {
+        str(item["artifact_id"])
+        for item in artifacts.get(MODEL_ARTIFACTS_KEY, [])
+        if isinstance(item, Mapping)
+    }
+    for artifact_id in (state_bundle_artifact_id, projection_artifact_id):
+        if artifact_id not in available_extension_ids:
+            raise ValueError(
+                f"{MIXED_MORPHOLOGY_INDEX_KEY} references unknown model artifact_id "
+                f"{artifact_id!r}."
+            )
+    roots_payload = normalized["roots"]
+    if not isinstance(roots_payload, Sequence) or isinstance(roots_payload, (str, bytes)):
+        raise ValueError(f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots must be a list.")
+    readout_ids = {
+        str(item["readout_id"])
+        for item in readout_catalog
+    }
+    roots = [
+        _normalize_mixed_morphology_root_record(
+            item,
+            readout_ids=readout_ids,
+        )
+        for item in roots_payload
+    ]
+    seen_root_ids: set[int] = set()
+    for item in roots:
+        root_id = int(item["root_id"])
+        if root_id in seen_root_ids:
+            raise ValueError(
+                f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots contains duplicate root_id {root_id!r}."
+            )
+        seen_root_ids.add(root_id)
+    return {
+        "format_version": format_version,
+        "state_bundle_artifact_id": state_bundle_artifact_id,
+        "projection_artifact_id": projection_artifact_id,
+        "shared_state_summary_artifact_id": shared_state_summary_artifact_id,
+        "shared_readout_traces_artifact_id": shared_readout_traces_artifact_id,
+        "roots": sorted(roots, key=lambda item: (int(item["root_id"]), str(item["morphology_class"]))),
+    }
+
+
+def _normalize_mixed_morphology_root_record(
+    payload: Mapping[str, Any],
+    *,
+    readout_ids: set[str],
+) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots entries must be mappings.")
+    normalized = copy.deepcopy(dict(payload))
+    required_fields = (
+        "root_id",
+        "morphology_class",
+        "state_bundle_root_key",
+        "runtime_metadata_root_key",
+        "state_summary_ids",
+        "projection_time_array",
+        "projection_trace_array",
+        "projection_semantics",
+        "shared_readout_ids",
+    )
+    missing_fields = [field for field in required_fields if field not in normalized]
+    if missing_fields:
+        raise ValueError(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots entry is missing required fields: "
+            f"{missing_fields!r}."
+        )
+    root_id = _normalize_positive_int(
+        normalized["root_id"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.root_id",
+    )
+    morphology_class = _normalize_nonempty_string(
+        normalized["morphology_class"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.morphology_class",
+    )
+    state_bundle_root_key = _normalize_nonempty_string(
+        normalized["state_bundle_root_key"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.state_bundle_root_key",
+    )
+    runtime_metadata_root_key = _normalize_nonempty_string(
+        normalized["runtime_metadata_root_key"],
+        field_name=(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.runtime_metadata_root_key"
+        ),
+    )
+    state_summary_ids_payload = normalized["state_summary_ids"]
+    if not isinstance(state_summary_ids_payload, Sequence) or isinstance(
+        state_summary_ids_payload,
+        (str, bytes),
+    ):
+        raise ValueError(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.state_summary_ids must be a list."
+        )
+    state_summary_ids = [
+        _normalize_nonempty_string(
+            item,
+            field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.state_summary_ids[{index}]",
+        )
+        for index, item in enumerate(state_summary_ids_payload)
+    ]
+    projection_time_array = _normalize_nonempty_string(
+        normalized["projection_time_array"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.projection_time_array",
+    )
+    projection_trace_array = _normalize_nonempty_string(
+        normalized["projection_trace_array"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.projection_trace_array",
+    )
+    projection_semantics = _normalize_nonempty_string(
+        normalized["projection_semantics"],
+        field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.projection_semantics",
+    )
+    shared_readout_ids_payload = normalized["shared_readout_ids"]
+    if not isinstance(shared_readout_ids_payload, Sequence) or isinstance(
+        shared_readout_ids_payload,
+        (str, bytes),
+    ):
+        raise ValueError(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.shared_readout_ids must be a list."
+        )
+    shared_readout_ids = [
+        _normalize_identifier(
+            item,
+            field_name=f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.shared_readout_ids[{index}]",
+        )
+        for index, item in enumerate(shared_readout_ids_payload)
+    ]
+    unknown_readout_ids = sorted(set(shared_readout_ids) - set(readout_ids))
+    if unknown_readout_ids:
+        raise ValueError(
+            f"{MIXED_MORPHOLOGY_INDEX_KEY}.roots.shared_readout_ids references "
+            f"unknown readout IDs {unknown_readout_ids!r}."
+        )
+    return {
+        "root_id": int(root_id),
+        "morphology_class": morphology_class,
+        "state_bundle_root_key": state_bundle_root_key,
+        "runtime_metadata_root_key": runtime_metadata_root_key,
+        "state_summary_ids": sorted(set(state_summary_ids)),
+        "projection_time_array": projection_time_array,
+        "projection_trace_array": projection_trace_array,
+        "projection_semantics": projection_semantics,
+        "shared_readout_ids": sorted(set(shared_readout_ids)),
+    }
+
+
+def _require_mixed_morphology_index(
+    simulator_bundle: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    mixed_morphology_index = simulator_bundle.get(MIXED_MORPHOLOGY_INDEX_KEY)
+    if not isinstance(mixed_morphology_index, Mapping):
+        raise ValueError(
+            "Simulator result bundle metadata does not declare a mixed morphology index."
+        )
+    return mixed_morphology_index
+
+
+def _mixed_morphology_root_record(
+    mixed_morphology_index: Mapping[str, Any],
+    *,
+    root_id: int,
+) -> Mapping[str, Any]:
+    roots = mixed_morphology_index.get("roots")
+    if not isinstance(roots, Sequence):
+        raise ValueError("mixed morphology index roots must be a sequence.")
+    for item in roots:
+        if isinstance(item, Mapping) and int(item.get("root_id", -1)) == int(root_id):
+            return item
+    raise ValueError(f"Mixed morphology index does not contain root_id {root_id!r}.")
+
+
+def _load_mixed_morphology_state_bundle(
+    simulator_bundle: Mapping[str, Any],
+    *,
+    artifact_id: str,
+) -> dict[str, Any]:
+    extension_paths = {
+        item["artifact_id"]: Path(item["path"]).resolve()
+        for item in discover_simulator_extension_artifacts(simulator_bundle)
+    }
+    state_bundle_path = extension_paths.get(str(artifact_id))
+    if state_bundle_path is None:
+        raise ValueError(
+            f"Simulator result bundle is missing mixed morphology artifact {artifact_id!r}."
+        )
+    with state_bundle_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, Mapping):
+        raise ValueError("Mixed morphology state bundle payload must be a mapping.")
+    return copy.deepcopy(dict(payload))
+
+
+def _require_mapping(value: Any, *, field_name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be a mapping.")
+    return value
 
 
 def _normalize_selected_assets(payload: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

@@ -1,0 +1,11 @@
+Implemented FW-M11-005 end to end.
+
+Point placeholders now execute inside the shared mixed-fidelity runtime in [hybrid_morphology_runtime.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/hybrid_morphology_runtime.py), alongside surface and skeleton roots. The planner now threads the canonical P0 point model spec into mixed-fidelity plans in [simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py), and execution writes a contract-level mixed state bundle plus per-root fidelity index in [simulator_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py) and [simulator_result_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_result_contract.py). That gives downstream code one discovery path for per-root class, runtime metadata, state exports, summaries, projection traces, and shared readouts without hardcoded class-specific file rules.
+
+Regression coverage was added in [test_hybrid_morphology_runtime.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_hybrid_morphology_runtime.py), [test_simulator_result_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_result_contract.py), and [test_simulator_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py). I also updated [surface_wave_inspection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/surface_wave_inspection.py) and [milestone10_readiness.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone10_readiness.py) to stay compatible with the new planning/runtime contract.
+
+Verified:
+- `.venv/bin/python -m unittest -v tests.test_hybrid_morphology_runtime tests.test_simulator_result_contract tests.test_simulator_execution`
+- `make test`
+
+Result: `make test` passed, `140` tests total.

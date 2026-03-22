@@ -65,6 +65,31 @@ To rerun the shipped verification-grade inspection directly after readiness,
 point `scripts/15_surface_wave_inspection.py` at
 `data/processed/milestone_10_verification/simulator_results/readiness/milestone_10/generated_fixture/simulation_fixture_config.yaml`.
 
+## Milestone 11 local verification
+
+The shipped Milestone 11 mixed-fidelity integration pass is:
+
+```bash
+make milestone11-readiness
+```
+
+That runs `scripts/19_milestone11_readiness.py` with
+`config/milestone_11_verification.yaml`, materializes a deterministic
+three-root mixed-fidelity fixture, executes the mixed `surface_wave` arm
+through the public simulator command, verifies the offline simulator viewer can
+read the resulting mixed bundle, runs the surrogate-preservation inspection
+workflow, and writes `milestone_11_readiness.md` plus
+`milestone_11_readiness.json` under
+`data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/`.
+
+To rerun the shipped mixed-fidelity verification flow directly after readiness,
+use the generated fixture config and manifest from that report directory:
+
+```bash
+python scripts/run_simulation.py --config data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/generated_fixture/simulation_fixture_config.yaml --manifest data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/generated_fixture/fixture_manifest.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --model-mode surface_wave --arm-id surface_wave_intact
+python scripts/18_mixed_fidelity_inspection.py --config data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/generated_fixture/simulation_fixture_config.yaml --manifest data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/generated_fixture/fixture_manifest.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --arm-id surface_wave_intact
+```
+
 ## Pipeline at a glance
 
 The main pipeline order is:
@@ -88,6 +113,9 @@ Optional offline inspection steps:
 14. `scripts/14_milestone9_readiness.py`
 15. `scripts/15_surface_wave_inspection.py`
 16. `scripts/16_milestone10_readiness.py`
+17. `scripts/17_visualize_simulator_results.py`
+18. `scripts/18_mixed_fidelity_inspection.py`
+19. `scripts/19_milestone11_readiness.py`
 
 ## Source-of-truth inputs
 
@@ -134,7 +162,7 @@ per-neuron when configured.
 - `scripts/`: thin CLI entrypoints for the pipeline and offline review tools
 - `tests/`: local unit tests that do not require FlyWire network access
 - `config/`: example runtime config plus the tracked Milestone 1 and Milestone 6
-  through Milestone 10 verification configs and inputs, including the
+  through Milestone 11 verification configs and inputs, including the
   verification-grade and exploratory surface-wave sweep specs
 - `manifests/`: example experiment manifests
 - `schemas/`: manifest schema files

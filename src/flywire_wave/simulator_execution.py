@@ -17,6 +17,7 @@ from .baseline_execution import (
     resolve_baseline_execution_plan_from_arm_plan,
 )
 from .hybrid_morphology_runtime import (
+    SURFACE_WAVE_MORPHOLOGY_RUNTIME_FAMILY,
     SURFACE_WAVE_RUNTIME_SOURCE_INJECTION_STRATEGY,
     resolve_morphology_runtime_from_arm_plan,
     run_morphology_runtime_shared_schedule,
@@ -39,6 +40,8 @@ from .simulator_result_contract import (
     METRICS_TABLE_KEY,
     MODEL_DIAGNOSTIC_SCOPE,
     MODEL_ARTIFACTS_KEY,
+    MIXED_MORPHOLOGY_INDEX_KEY,
+    MIXED_MORPHOLOGY_INDEX_FORMAT,
     READOUT_TRACES_KEY,
     SHARED_COMPARISON_SCOPE,
     STATE_SUMMARY_KEY,
@@ -69,6 +72,7 @@ SIMULATOR_UI_COMPARISON_PAYLOAD_FORMAT = "json_simulator_ui_comparison_payload.v
 SURFACE_WAVE_SUMMARY_FORMAT = "json_surface_wave_execution_summary.v1"
 SURFACE_WAVE_PATCH_TRACES_FORMAT = "npz_surface_wave_patch_traces.v1"
 SURFACE_WAVE_COUPLING_EVENTS_FORMAT = "json_surface_wave_coupling_events.v1"
+MIXED_MORPHOLOGY_STATE_BUNDLE_FORMAT = "json_mixed_morphology_state_bundle.v1"
 
 EXECUTION_PROVENANCE_ARTIFACT_ID = "execution_provenance"
 STRUCTURED_LOG_ARTIFACT_ID = "structured_log"
@@ -76,6 +80,7 @@ UI_COMPARISON_PAYLOAD_ARTIFACT_ID = "ui_comparison_payload"
 SURFACE_WAVE_SUMMARY_ARTIFACT_ID = "surface_wave_summary"
 SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID = "surface_wave_patch_traces"
 SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID = "surface_wave_coupling_events"
+MIXED_MORPHOLOGY_STATE_BUNDLE_ARTIFACT_ID = "mixed_morphology_state_bundle"
 
 FINAL_ENDPOINT_WINDOW_ID = "finalized_endpoint"
 DECLARED_TIMEBASE_WINDOW_ID = "declared_timebase"
@@ -368,10 +373,20 @@ def _execute_surface_wave_arm_plan(
         arm_plan,
         extra_artifact_specs=_surface_wave_artifact_specs(),
     )
+    result = execution_payload["result"]
+    wave_run = execution_payload["wave_run"]
+    state_summary_rows = execution_payload["state_summary_rows"]
+    bundle_metadata = _attach_mixed_morphology_index(
+        bundle_metadata,
+        mixed_morphology_index=_build_mixed_morphology_index(
+            result=result,
+            wave_run=wave_run,
+            runtime=runtime,
+            state_summary_rows=state_summary_rows,
+        ),
+    )
     bundle_paths = discover_simulator_result_bundle_paths(bundle_metadata)
     extension_paths = _extension_artifact_paths(bundle_metadata)
-    result = execution_payload["result"]
-    state_summary_rows = execution_payload["state_summary_rows"]
     metrics_rows = _build_metric_rows(result)
     provenance_payload = _build_execution_provenance(
         arm_plan=arm_plan,
@@ -417,6 +432,10 @@ def _execute_surface_wave_arm_plan(
     write_json(
         execution_payload["surface_wave_coupling_payload"],
         extension_paths[SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID],
+    )
+    write_json(
+        execution_payload["mixed_morphology_state_bundle_payload"],
+        extension_paths[MIXED_MORPHOLOGY_STATE_BUNDLE_ARTIFACT_ID],
     )
     metadata_path = write_simulator_result_bundle_metadata(bundle_metadata)
 
@@ -485,6 +504,16 @@ def _build_ready_bundle_metadata(
         existing=updated["artifacts"].get(MODEL_ARTIFACTS_KEY, []),
         additions=execution_artifacts,
     )
+    return parse_simulator_result_bundle_metadata(updated)
+
+
+def _attach_mixed_morphology_index(
+    bundle_metadata: Mapping[str, Any],
+    *,
+    mixed_morphology_index: Mapping[str, Any],
+) -> dict[str, Any]:
+    updated = copy.deepcopy(dict(bundle_metadata))
+    updated[MIXED_MORPHOLOGY_INDEX_KEY] = copy.deepcopy(dict(mixed_morphology_index))
     return parse_simulator_result_bundle_metadata(updated)
 
 
@@ -603,6 +632,13 @@ def _surface_wave_artifact_specs() -> tuple[dict[str, Any], ...]:
             "description": "Morphology-resolved patch activation traces written on the internal wave-solver timebase.",
         },
         {
+            "artifact_id": MIXED_MORPHOLOGY_STATE_BUNDLE_ARTIFACT_ID,
+            "file_name": "mixed_morphology_state_bundle.json",
+            "format": MIXED_MORPHOLOGY_STATE_BUNDLE_FORMAT,
+            "artifact_scope": WAVE_MODEL_EXTENSION_SCOPE,
+            "description": "Fidelity-agnostic per-root state exports and runtime metadata for mixed morphology runs.",
+        },
+        {
             "artifact_id": SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID,
             "file_name": "surface_wave_coupling_events.json",
             "format": SURFACE_WAVE_COUPLING_EVENTS_FORMAT,
@@ -678,6 +714,7 @@ def _run_surface_wave_manifest_execution(
     )
     final_state_summary_rows = [row.as_record() for row in final_state_summaries]
     return {
+        "wave_run": wave_run,
         "result": result,
         "state_summary_rows": final_state_summary_rows,
         "structured_log_records": _build_surface_wave_structured_log_records(
@@ -696,6 +733,12 @@ def _run_surface_wave_manifest_execution(
             state_summary_rows=final_state_summary_rows,
         ),
         "surface_wave_patch_trace_payload": wave_run.export_projection_trace_payload(),
+        "mixed_morphology_state_bundle_payload": _build_mixed_morphology_state_bundle_payload(
+            arm_plan=arm_plan,
+            runtime=runtime,
+            wave_run=wave_run,
+            run_blueprint=run_blueprint,
+        ),
         "surface_wave_coupling_payload": {
             "format_version": SURFACE_WAVE_COUPLING_EVENTS_FORMAT,
             "workflow_version": SIMULATOR_MANIFEST_EXECUTION_VERSION,
@@ -718,6 +761,7 @@ def _run_surface_wave_manifest_execution(
             "wave_specific_artifacts": [
                 SURFACE_WAVE_SUMMARY_ARTIFACT_ID,
                 SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID,
+                MIXED_MORPHOLOGY_STATE_BUNDLE_ARTIFACT_ID,
                 SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID,
             ],
         },
@@ -1218,10 +1262,151 @@ def _build_surface_wave_summary_payload(
         },
         "wave_specific_artifacts": {
             "patch_traces_artifact_id": SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID,
+            "mixed_state_bundle_artifact_id": MIXED_MORPHOLOGY_STATE_BUNDLE_ARTIFACT_ID,
             "coupling_events_artifact_id": SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID,
         },
         "state_summary_row_count": len(state_summary_rows),
     }
+
+
+def _build_mixed_morphology_state_bundle_payload(
+    *,
+    arm_plan: Mapping[str, Any],
+    runtime: Any,
+    wave_run: Any,
+    run_blueprint: Any,
+) -> dict[str, Any]:
+    runtime_metadata_by_root = {
+        str(int(item["root_id"])): copy.deepcopy(dict(item))
+        for item in wave_run.runtime_metadata_by_root
+    }
+    return {
+        "format_version": MIXED_MORPHOLOGY_STATE_BUNDLE_FORMAT,
+        "workflow_version": SIMULATOR_MANIFEST_EXECUTION_VERSION,
+        "manifest_reference": copy.deepcopy(run_blueprint.manifest_reference),
+        "arm_reference": copy.deepcopy(run_blueprint.arm_reference),
+        "bundle_reference": copy.deepcopy(run_blueprint.result_bundle_reference),
+        "surface_wave_reference": copy.deepcopy(
+            runtime.descriptor.model_metadata.get("surface_wave_reference")
+        ),
+        "hybrid_morphology": copy.deepcopy(runtime.descriptor.hybrid_morphology),
+        "morphology_runtime": runtime.descriptor.as_mapping(),
+        "root_ids": [int(root_id) for root_id in wave_run.root_ids],
+        "runtime_metadata_by_root": runtime_metadata_by_root,
+        "initial_state_exports_by_root": {
+            str(int(root_id)): copy.deepcopy(state_mapping)
+            for root_id, state_mapping in sorted(
+                wave_run.initial_state_exports_by_root.items()
+            )
+        },
+        "final_state_exports_by_root": {
+            str(int(root_id)): copy.deepcopy(state_mapping)
+            for root_id, state_mapping in sorted(
+                wave_run.final_state_exports_by_root.items()
+            )
+        },
+    }
+
+
+def _build_mixed_morphology_index(
+    *,
+    result: SimulationRunResult,
+    wave_run: Any,
+    runtime: Any,
+    state_summary_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    readout_ids = [
+        definition.readout_id
+        for definition in result.run_blueprint.readout_catalog
+    ]
+    root_records = []
+    for item in wave_run.runtime_metadata_by_root:
+        root_mapping = _require_mapping(
+            item,
+            field_name="wave_run.runtime_metadata_by_root",
+        )
+        root_id = int(root_mapping["root_id"])
+        morphology_class = str(root_mapping["morphology_class"])
+        root_records.append(
+            {
+                "root_id": root_id,
+                "morphology_class": morphology_class,
+                "state_bundle_root_key": str(root_id),
+                "runtime_metadata_root_key": str(root_id),
+                "state_summary_ids": _root_state_summary_ids(
+                    root_id=root_id,
+                    state_summary_rows=state_summary_rows,
+                ),
+                "projection_time_array": _projection_time_array_name(runtime=runtime),
+                "projection_trace_array": _projection_trace_array_name(
+                    root_id=root_id,
+                    morphology_class=morphology_class,
+                    runtime=runtime,
+                ),
+                "projection_semantics": _projection_semantics(
+                    morphology_class=morphology_class,
+                ),
+                "shared_readout_ids": list(readout_ids),
+            }
+        )
+    return {
+        "format_version": MIXED_MORPHOLOGY_INDEX_FORMAT,
+        "state_bundle_artifact_id": MIXED_MORPHOLOGY_STATE_BUNDLE_ARTIFACT_ID,
+        "projection_artifact_id": SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID,
+        "shared_state_summary_artifact_id": STATE_SUMMARY_KEY,
+        "shared_readout_traces_artifact_id": READOUT_TRACES_KEY,
+        "roots": root_records,
+    }
+
+
+def _root_state_summary_ids(
+    *,
+    root_id: int,
+    state_summary_rows: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    state_ids = {
+        str(row["state_id"])
+        for row in state_summary_rows
+        if isinstance(row, Mapping)
+        and str(row.get("scope")) == "root_state"
+        and str(row.get("state_id", "")).startswith(f"root_{int(root_id)}_")
+    }
+    return sorted(state_ids)
+
+
+def _projection_time_array_name(
+    *,
+    runtime: Any,
+) -> str:
+    if str(runtime.descriptor.runtime_family) == SURFACE_WAVE_MORPHOLOGY_RUNTIME_FAMILY:
+        return "substep_time_ms"
+    return "shared_time_ms"
+
+
+def _projection_trace_array_name(
+    *,
+    root_id: int,
+    morphology_class: str,
+    runtime: Any,
+) -> str:
+    if str(runtime.descriptor.runtime_family) == SURFACE_WAVE_MORPHOLOGY_RUNTIME_FAMILY:
+        return f"root_{int(root_id)}_patch_activation"
+    if morphology_class == "surface_neuron":
+        return f"root_{int(root_id)}_patch_activation"
+    if morphology_class == "skeleton_neuron":
+        return f"root_{int(root_id)}_skeleton_activation"
+    return f"root_{int(root_id)}_point_activation"
+
+
+def _projection_semantics(
+    *,
+    morphology_class: str,
+) -> str:
+    if morphology_class == "surface_neuron":
+        return "surface_patch_activation"
+    if morphology_class == "skeleton_neuron":
+        return "skeleton_projection_activation"
+    return "point_projection_activation"
 
 
 def _surface_wave_dynamic_state_vector(
