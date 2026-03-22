@@ -18,9 +18,14 @@ import yaml
 
 from .config import REPO_ROOT, load_config
 from .geometry_contract import (
+    COARSE_OPERATOR_KEY,
+    FINE_OPERATOR_KEY,
+    OPERATOR_METADATA_KEY,
+    TRANSFER_OPERATORS_KEY,
     build_geometry_bundle_paths,
     build_geometry_manifest_record,
     default_asset_statuses,
+    load_operator_bundle_metadata,
     write_geometry_manifest,
 )
 from .io_utils import ensure_dir, write_json, write_root_ids
@@ -971,7 +976,15 @@ def _write_execution_geometry_manifest(*, output_dir: Path, manifest_path: Path)
         processed_mesh_dir=processed_mesh_dir,
         processed_graph_dir=processed_graph_dir,
     )
-    _write_stub_swc(bundle_paths_202.raw_skeleton_path)
+    _write_octahedron_mesh(bundle_paths_202.raw_mesh_path)
+    process_mesh_into_wave_assets(
+        root_id=202,
+        bundle_paths=bundle_paths_202,
+        simplify_target_faces=8,
+        patch_hops=1,
+        patch_vertex_cap=2,
+        registry_metadata={"cell_type": "T5a", "project_role": "surface_simulated"},
+    )
 
     synapse_registry_path = processed_coupling_dir / "synapse_registry.csv"
     _write_execution_synapse_registry(synapse_registry_path)
@@ -985,7 +998,7 @@ def _write_execution_geometry_manifest(*, output_dir: Path, manifest_path: Path)
         neuron_registry=pd.DataFrame(
             {
                 "root_id": [101, 202],
-                "project_role": ["surface_simulated", "skeleton_simulated"],
+                "project_role": ["surface_simulated", "surface_simulated"],
             }
         ),
         synapse_registry_path=synapse_registry_path,
@@ -1002,7 +1015,7 @@ def _write_execution_geometry_manifest(*, output_dir: Path, manifest_path: Path)
     bundle_records = {
         101: build_geometry_manifest_record(
             bundle_paths=bundle_paths_101,
-            asset_statuses=default_asset_statuses(fetch_skeletons=True),
+            asset_statuses=_surface_ready_asset_statuses(),
             dataset_name="flywire_fafb_public",
             materialization_version=783,
             meshing_config_snapshot=_meshing_config_snapshot(),
@@ -1012,21 +1025,27 @@ def _write_execution_geometry_manifest(*, output_dir: Path, manifest_path: Path)
                 "materialization_version": "783",
                 "snapshot_version": "783",
             },
+            operator_bundle_metadata=load_operator_bundle_metadata(
+                bundle_paths_101.operator_metadata_path
+            ),
             processed_coupling_dir=processed_coupling_dir,
             coupling_bundle_metadata=coupling_summary["bundle_metadata_by_root"][101],
         ),
         202: build_geometry_manifest_record(
             bundle_paths=bundle_paths_202,
-            asset_statuses=default_asset_statuses(fetch_skeletons=True),
+            asset_statuses=_surface_ready_asset_statuses(),
             dataset_name="flywire_fafb_public",
             materialization_version=783,
             meshing_config_snapshot=_meshing_config_snapshot(),
             registry_metadata={
-                "cell_type": "Mi1",
-                "project_role": "skeleton_simulated",
+                "cell_type": "T5a",
+                "project_role": "surface_simulated",
                 "materialization_version": "783",
                 "snapshot_version": "783",
             },
+            operator_bundle_metadata=load_operator_bundle_metadata(
+                bundle_paths_202.operator_metadata_path
+            ),
             processed_coupling_dir=processed_coupling_dir,
             coupling_bundle_metadata=coupling_summary["bundle_metadata_by_root"][202],
         ),
@@ -1049,6 +1068,19 @@ def _meshing_config_snapshot() -> dict[str, object]:
             "anisotropy": {"model": "isotropic"},
         }
     }
+
+
+def _surface_ready_asset_statuses() -> dict[str, str]:
+    asset_statuses = default_asset_statuses(fetch_skeletons=False)
+    asset_statuses.update(
+        {
+            FINE_OPERATOR_KEY: "ready",
+            COARSE_OPERATOR_KEY: "ready",
+            TRANSFER_OPERATORS_KEY: "ready",
+            OPERATOR_METADATA_KEY: "ready",
+        }
+    )
+    return asset_statuses
 
 
 def _write_execution_synapse_registry(path: Path) -> None:

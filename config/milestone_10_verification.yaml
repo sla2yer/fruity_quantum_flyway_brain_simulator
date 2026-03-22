@@ -1,0 +1,11 @@
+paths:
+  processed_stimulus_dir: data/processed/milestone_10_verification/stimuli
+  processed_retinal_dir: data/processed/milestone_10_verification/retinal
+  processed_simulator_results_dir: data/processed/milestone_10_verification/simulator_results
+  surface_wave_inspection_dir: data/processed/milestone_10_verification/surface_wave_inspection
+
+simulation_verification:
+  manifest_path: manifests/examples/milestone_1_demo.yaml
+  schema_path: schemas/milestone_1_experiment_manifest.schema.json
+  design_lock_path: config/milestone_1_design_lock.yaml
+  sweep_spec_path: config/surface_wave_sweep.example.yaml

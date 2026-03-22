@@ -290,6 +290,27 @@ def resolve_baseline_execution_plan_from_arm_plan(
     )
 
 
+def load_canonical_input_stream_from_arm_plan(
+    arm_plan: Mapping[str, Any],
+) -> CanonicalInputStream:
+    normalized_arm_plan = _require_mapping(arm_plan, field_name="arm_plan")
+    return _load_canonical_input_stream(
+        arm_plan=normalized_arm_plan,
+        timebase=_resolve_runtime_timebase(normalized_arm_plan),
+    )
+
+
+def build_drive_schedule_for_root_ids(
+    *,
+    root_ids: Sequence[int],
+    canonical_input_stream: CanonicalInputStream,
+) -> BaselineDriveSchedule:
+    return _build_drive_schedule(
+        root_ids=root_ids,
+        canonical_input_stream=canonical_input_stream,
+    )
+
+
 def build_baseline_simulator_run_from_arm_plan(
     arm_plan: Mapping[str, Any],
     *,
@@ -951,7 +972,9 @@ __all__ = [
     "SUPPORTED_CANONICAL_INPUT_SOURCES",
     "SUPPORTED_TOPOLOGY_CONDITIONS",
     "TARGET_ASSIGNMENT_SHUFFLE",
+    "build_drive_schedule_for_root_ids",
     "build_baseline_simulator_run_from_arm_plan",
+    "load_canonical_input_stream_from_arm_plan",
     "resolve_baseline_execution_plan_from_arm_plan",
     "run_baseline_simulation_from_arm_plan",
 ]

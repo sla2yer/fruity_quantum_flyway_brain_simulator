@@ -42,6 +42,20 @@ make smoke
 The `Makefile` automatically uses `.venv/bin/python` when that virtualenv
 exists.
 
+## Milestone 10 local verification
+
+The shipped Milestone 10 integration pass is:
+
+```bash
+make milestone10-readiness
+```
+
+That runs `scripts/16_milestone10_readiness.py` with
+`config/milestone_10_verification.yaml`, exercises the representative
+`surface_wave` execution and inspection workflow on local fixture assets, and
+writes `milestone_10_readiness.md` plus `milestone_10_readiness.json` under
+`data/processed/milestone_10_verification/simulator_results/readiness/milestone_10/`.
+
 ## Pipeline at a glance
 
 The main pipeline order is:
@@ -63,6 +77,8 @@ Optional offline inspection steps:
 12. `scripts/12_retinal_bundle.py`
 13. `scripts/13_milestone8b_readiness.py`
 14. `scripts/14_milestone9_readiness.py`
+15. `scripts/15_surface_wave_inspection.py`
+16. `scripts/16_milestone10_readiness.py`
 
 ## Source-of-truth inputs
 
@@ -109,7 +125,8 @@ per-neuron when configured.
 - `scripts/`: thin CLI entrypoints for the pipeline and offline review tools
 - `tests/`: local unit tests that do not require FlyWire network access
 - `config/`: example runtime config plus the tracked Milestone 1 and Milestone 6
-  through Milestone 9 verification configs and inputs
+  through Milestone 10 verification configs and inputs, including the example
+  surface-wave sweep spec
 - `manifests/`: example experiment manifests
 - `schemas/`: manifest schema files
 - `docs/milestones.md`: consolidated roadmap and milestone planning
@@ -127,6 +144,10 @@ per-neuron when configured.
 - `docs/retinal_bundle_workflow.md`: retinal record/replay/inspect workflow plus
   Milestone 8B readiness command
 - `docs/retinal_inspection.md`: reviewer-oriented offline retinal inspection and
+  readiness workflow
+- `docs/surface_wave_model_design.md`: authoritative Milestone 10 wave-model
+  contract and stability note
+- `docs/surface_wave_inspection.md`: local surface-wave inspection and
   readiness workflow
 - `data/raw/codex/`: manually downloaded Codex CSV snapshots
 - `data/interim/`, `data/processed/`: generated outputs, ignored by git

@@ -1,0 +1,35 @@
+version: surface_wave_sweep.v1
+representative_root_limit: 1
+
+parameter_sets:
+  - sweep_point_id: reference
+    label: Default Milestone 10 reference parameters
+    parameter_bundle:
+      parameter_preset: m10_reference
+
+  - sweep_point_id: recovery_probe
+    label: Recovery-enabled comparison point
+    parameter_bundle:
+      parameter_preset: m10_recovery_probe
+      recovery:
+        mode: activity_driven_first_order
+        time_constant_ms: 14.0
+        drive_gain: 0.3
+        coupling_strength_per_ms2: 0.12
+
+grid:
+  sweep_id: damping_wave_speed
+  base_parameter_bundle:
+    parameter_preset: m10_grid
+  axes:
+    - key: damping.gamma_per_ms
+      label: gamma_per_ms
+      values:
+        - 0.12
+        - 0.18
+        - 0.28
+    - key: propagation.wave_speed_sq_scale
+      label: wave_speed_sq_scale
+      values:
+        - 1.0
+        - 1.25

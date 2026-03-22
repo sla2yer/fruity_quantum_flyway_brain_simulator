@@ -11,6 +11,7 @@ __all__ = [
     "geometry_qa",
     "io_utils",
     "manifests",
+    "milestone10_readiness",
     "mesh_pipeline",
     "registry",
     "retinal_bundle",
@@ -29,4 +30,8 @@ __all__ = [
     "stimulus_registry",
     "synapse_mapping",
     "surface_operators",
+    "surface_wave_contract",
+    "surface_wave_execution",
+    "surface_wave_inspection",
+    "surface_wave_solver",
 ]

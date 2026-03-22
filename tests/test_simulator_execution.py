@@ -8,6 +8,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,9 +16,14 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from flywire_wave.geometry_contract import (
+    COARSE_OPERATOR_KEY,
+    FINE_OPERATOR_KEY,
+    OPERATOR_METADATA_KEY,
+    TRANSFER_OPERATORS_KEY,
     build_geometry_bundle_paths,
     build_geometry_manifest_record,
     default_asset_statuses,
+    load_operator_bundle_metadata,
     write_geometry_manifest,
 )
 from flywire_wave.manifests import load_json
@@ -166,6 +172,161 @@ class SimulatorExecutionSmokeTest(unittest.TestCase):
             )
             self.assertEqual(planned_bundle_id, metadata["bundle_id"])
 
+    def test_cli_executes_surface_wave_manifest_arm_and_writes_wave_extensions(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_execution_fixture(Path(tmp_dir_str))
+            command = [
+                sys.executable,
+                str(ROOT / "scripts" / "run_simulation.py"),
+                "--config",
+                str(fixture["config_path"]),
+                "--manifest",
+                str(fixture["manifest_path"]),
+                "--schema",
+                str(fixture["schema_path"]),
+                "--design-lock",
+                str(fixture["design_lock_path"]),
+                "--model-mode",
+                "surface_wave",
+                "--arm-id",
+                "surface_wave_intact",
+            ]
+            first = subprocess.run(
+                command,
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            first_summary = json.loads(first.stdout)
+            self.assertEqual(first_summary["executed_run_count"], 1)
+
+            run_summary = first_summary["executed_runs"][0]
+            metadata_path = Path(run_summary["metadata_path"])
+            metadata = load_simulator_result_bundle_metadata(metadata_path)
+            discovered_paths = discover_simulator_result_bundle_paths(metadata)
+            discovered_extensions = discover_simulator_extension_artifacts(metadata)
+            extension_records = {
+                item["artifact_id"]: item
+                for item in discovered_extensions
+            }
+            extension_paths = {
+                artifact_id: Path(record["path"])
+                for artifact_id, record in extension_records.items()
+            }
+
+            self.assertEqual(metadata["arm_reference"]["arm_id"], "surface_wave_intact")
+            self.assertEqual(metadata["arm_reference"]["model_mode"], "surface_wave")
+            self.assertIsNone(metadata["arm_reference"]["baseline_family"])
+            self.assertEqual(
+                [item["readout_id"] for item in metadata["readout_catalog"]],
+                ["shared_output_mean"],
+            )
+            self.assertEqual(
+                extension_records["surface_wave_summary"]["artifact_scope"],
+                "wave_model_extension",
+            )
+            self.assertEqual(
+                extension_records["surface_wave_patch_traces"]["format"],
+                "npz_surface_wave_patch_traces.v1",
+            )
+            self.assertEqual(
+                extension_records["surface_wave_coupling_events"]["artifact_scope"],
+                "wave_model_extension",
+            )
+
+            with Path(discovered_paths[STATE_SUMMARY_KEY]).open("r", encoding="utf-8") as handle:
+                state_summary_rows = json.load(handle)
+            self.assertTrue(
+                any(row["state_id"] == "circuit_surface_activation_state" for row in state_summary_rows)
+            )
+            self.assertTrue(
+                any(row["state_id"] == "root_101_patch_activation_state" for row in state_summary_rows)
+            )
+
+            ui_payload = load_json(extension_paths["ui_comparison_payload"])
+            self.assertEqual(
+                ui_payload["format_version"],
+                "json_simulator_ui_comparison_payload.v1",
+            )
+            self.assertEqual(
+                ui_payload["trace_payload"]["path"],
+                str(discovered_paths[READOUT_TRACES_KEY]),
+            )
+            self.assertTrue(
+                {"surface_wave_summary", "surface_wave_patch_traces", "surface_wave_coupling_events"}
+                <= {item["artifact_id"] for item in ui_payload["artifact_inventory"]}
+            )
+
+            wave_summary = load_json(extension_paths["surface_wave_summary"])
+            self.assertEqual(
+                wave_summary["format_version"],
+                "json_surface_wave_execution_summary.v1",
+            )
+            self.assertEqual(
+                wave_summary["input_binding"]["injection_strategy"],
+                "uniform_surface_fill_from_shared_root_schedule",
+            )
+            self.assertEqual(
+                wave_summary["wave_specific_artifacts"]["patch_traces_artifact_id"],
+                "surface_wave_patch_traces",
+            )
+
+            coupling_payload = load_json(extension_paths["surface_wave_coupling_events"])
+            self.assertEqual(
+                coupling_payload["format_version"],
+                "json_surface_wave_coupling_events.v1",
+            )
+            self.assertGreaterEqual(coupling_payload["event_count"], 0)
+
+            with np.load(extension_paths["surface_wave_patch_traces"], allow_pickle=False) as patch_traces:
+                self.assertIn("substep_time_ms", patch_traces.files)
+                self.assertIn("root_101_patch_activation", patch_traces.files)
+                self.assertIn("root_202_patch_activation", patch_traces.files)
+                self.assertGreater(patch_traces["root_101_patch_activation"].shape[0], 1)
+
+            compared_files = [
+                metadata_path,
+                Path(run_summary["state_summary_path"]),
+                Path(run_summary["readout_traces_path"]),
+                Path(run_summary["metrics_table_path"]),
+                extension_paths["structured_log"],
+                extension_paths["execution_provenance"],
+                extension_paths["ui_comparison_payload"],
+                extension_paths["surface_wave_summary"],
+                extension_paths["surface_wave_patch_traces"],
+                extension_paths["surface_wave_coupling_events"],
+            ]
+            first_run_bytes = {
+                str(path): path.read_bytes()
+                for path in compared_files
+            }
+
+            second = subprocess.run(
+                command,
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            second_summary = json.loads(second.stdout)
+            self.assertEqual(first_summary, second_summary)
+            for path in compared_files:
+                self.assertEqual(path.read_bytes(), first_run_bytes[str(path)])
+
+            plan = resolve_manifest_simulation_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+            planned_bundle_id = next(
+                arm_plan["result_bundle"]["reference"]["bundle_id"]
+                for arm_plan in plan["arm_plans"]
+                if arm_plan["arm_reference"]["arm_id"] == "surface_wave_intact"
+            )
+            self.assertEqual(planned_bundle_id, metadata["bundle_id"])
+
 
 def _materialize_execution_fixture(tmp_dir: Path) -> dict[str, Path]:
     output_dir = tmp_dir / "out"
@@ -283,7 +444,15 @@ def _write_execution_geometry_manifest(output_dir: Path, manifest_path: Path) ->
         processed_mesh_dir=processed_mesh_dir,
         processed_graph_dir=processed_graph_dir,
     )
-    _write_stub_swc(bundle_paths_202.raw_skeleton_path)
+    _write_octahedron_mesh(bundle_paths_202.raw_mesh_path)
+    process_mesh_into_wave_assets(
+        root_id=202,
+        bundle_paths=bundle_paths_202,
+        simplify_target_faces=8,
+        patch_hops=1,
+        patch_vertex_cap=2,
+        registry_metadata={"cell_type": "T5a", "project_role": "surface_simulated"},
+    )
 
     synapse_registry_path = processed_coupling_dir / "synapse_registry.csv"
     _write_execution_synapse_registry(synapse_registry_path)
@@ -297,7 +466,7 @@ def _write_execution_geometry_manifest(output_dir: Path, manifest_path: Path) ->
         neuron_registry=pd.DataFrame(
             {
                 "root_id": [101, 202],
-                "project_role": ["surface_simulated", "skeleton_simulated"],
+                "project_role": ["surface_simulated", "surface_simulated"],
             }
         ),
         synapse_registry_path=synapse_registry_path,
@@ -314,7 +483,7 @@ def _write_execution_geometry_manifest(output_dir: Path, manifest_path: Path) ->
     bundle_records = {
         101: build_geometry_manifest_record(
             bundle_paths=bundle_paths_101,
-            asset_statuses=default_asset_statuses(fetch_skeletons=True),
+            asset_statuses=_surface_ready_asset_statuses(),
             dataset_name="flywire_fafb_public",
             materialization_version=783,
             meshing_config_snapshot=_meshing_config_snapshot(),
@@ -324,21 +493,27 @@ def _write_execution_geometry_manifest(output_dir: Path, manifest_path: Path) ->
                 "materialization_version": "783",
                 "snapshot_version": "783",
             },
+            operator_bundle_metadata=load_operator_bundle_metadata(
+                bundle_paths_101.operator_metadata_path
+            ),
             processed_coupling_dir=processed_coupling_dir,
             coupling_bundle_metadata=coupling_summary["bundle_metadata_by_root"][101],
         ),
         202: build_geometry_manifest_record(
             bundle_paths=bundle_paths_202,
-            asset_statuses=default_asset_statuses(fetch_skeletons=True),
+            asset_statuses=_surface_ready_asset_statuses(),
             dataset_name="flywire_fafb_public",
             materialization_version=783,
             meshing_config_snapshot=_meshing_config_snapshot(),
             registry_metadata={
-                "cell_type": "Mi1",
-                "project_role": "skeleton_simulated",
+                "cell_type": "T5a",
+                "project_role": "surface_simulated",
                 "materialization_version": "783",
                 "snapshot_version": "783",
             },
+            operator_bundle_metadata=load_operator_bundle_metadata(
+                bundle_paths_202.operator_metadata_path
+            ),
             processed_coupling_dir=processed_coupling_dir,
             coupling_bundle_metadata=coupling_summary["bundle_metadata_by_root"][202],
         ),
@@ -361,6 +536,19 @@ def _meshing_config_snapshot() -> dict[str, object]:
             "anisotropy": {"model": "isotropic"},
         }
     }
+
+
+def _surface_ready_asset_statuses() -> dict[str, str]:
+    asset_statuses = default_asset_statuses(fetch_skeletons=False)
+    asset_statuses.update(
+        {
+            FINE_OPERATOR_KEY: "ready",
+            COARSE_OPERATOR_KEY: "ready",
+            TRANSFER_OPERATORS_KEY: "ready",
+            OPERATOR_METADATA_KEY: "ready",
+        }
+    )
+    return asset_statuses
 
 
 def _write_execution_synapse_registry(path: Path) -> None:

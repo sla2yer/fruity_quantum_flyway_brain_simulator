@@ -10,11 +10,13 @@ M7_EDGE_FILE ?= config/milestone_7_verification_edges.txt
 M8A_CONFIG ?= config/milestone_8a_verification.yaml
 M8B_CONFIG ?= config/milestone_8b_verification.yaml
 M9_CONFIG ?= config/milestone_9_verification.yaml
+M10_CONFIG ?= config/milestone_10_verification.yaml
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate wave-inspect milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
+WAVE_INSPECT_ARGS ?=
 
 help:
 	@printf '%s\n' \
@@ -30,11 +32,13 @@ help:
 		'coupling-inspect   Build static offline coupling inspection report(s)' \
 		'operator-qa        Build static offline operator QA report(s)' \
 		'simulate           Execute manifest-driven simulator runs and write result bundles' \
+		'wave-inspect       Run local surface-wave sweep and offline inspection report(s)' \
 		'milestone6-readiness Run the Milestone 6 verification pass and publish a readiness report' \
 		'milestone7-readiness Run the Milestone 7 integration verification pass and publish a readiness report' \
 		'milestone8a-readiness Run the Milestone 8A canonical stimulus integration verification pass and publish a readiness report' \
 		'milestone8b-readiness Run the Milestone 8B world-to-retina integration verification pass and publish a readiness report' \
 		'milestone9-readiness Run the Milestone 9 baseline simulator integration verification pass and publish a readiness report' \
+		'milestone10-readiness Run the Milestone 10 surface-wave integration verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -70,6 +74,9 @@ operator-qa:
 simulate:
 	$(PYTHON) scripts/run_simulation.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(SIMULATE_ARGS)
 
+wave-inspect:
+	$(PYTHON) scripts/15_surface_wave_inspection.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(WAVE_INSPECT_ARGS)
+
 milestone6-readiness:
 	$(PYTHON) scripts/07_milestone6_readiness.py --config $(M6_CONFIG)
 
@@ -84,6 +91,9 @@ milestone8b-readiness:
 
 milestone9-readiness:
 	$(PYTHON) scripts/14_milestone9_readiness.py --config $(M9_CONFIG)
+
+milestone10-readiness:
+	$(PYTHON) scripts/16_milestone10_readiness.py --config $(M10_CONFIG)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

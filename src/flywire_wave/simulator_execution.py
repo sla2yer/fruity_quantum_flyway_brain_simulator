@@ -11,7 +11,11 @@ from typing import Any
 
 import numpy as np
 
-from .baseline_execution import resolve_baseline_execution_plan_from_arm_plan
+from .baseline_execution import (
+    build_drive_schedule_for_root_ids,
+    load_canonical_input_stream_from_arm_plan,
+    resolve_baseline_execution_plan_from_arm_plan,
+)
 from .io_utils import (
     write_csv_rows,
     write_deterministic_npz,
@@ -33,6 +37,8 @@ from .simulator_result_contract import (
     READOUT_TRACES_KEY,
     SHARED_COMPARISON_SCOPE,
     STATE_SUMMARY_KEY,
+    SURFACE_WAVE_MODEL_MODE,
+    WAVE_MODEL_EXTENSION_SCOPE,
     build_simulator_extension_artifact_record,
     build_simulator_result_bundle_metadata,
     build_simulator_result_bundle_paths,
@@ -43,22 +49,37 @@ from .simulator_result_contract import (
 from .simulator_runtime import (
     SimulationLifecycleEvent,
     SimulationReadoutDefinition,
+    SimulationReadoutTraces,
     SimulationRunResult,
+    SimulationSnapshot,
+    SimulationStateSummaryRow,
+    build_simulation_run_blueprint,
 )
+from .surface_wave_execution import resolve_surface_wave_execution_plan_from_arm_plan
 
 
 SIMULATOR_MANIFEST_EXECUTION_VERSION = "simulator_manifest_execution.v1"
 SIMULATOR_EXECUTION_PROVENANCE_FORMAT = "json_simulator_execution_provenance.v1"
 SIMULATOR_EXECUTION_LOG_FORMAT = "jsonl_simulator_execution_events.v1"
 SIMULATOR_UI_COMPARISON_PAYLOAD_FORMAT = "json_simulator_ui_comparison_payload.v1"
+SURFACE_WAVE_SUMMARY_FORMAT = "json_surface_wave_execution_summary.v1"
+SURFACE_WAVE_PATCH_TRACES_FORMAT = "npz_surface_wave_patch_traces.v1"
+SURFACE_WAVE_COUPLING_EVENTS_FORMAT = "json_surface_wave_coupling_events.v1"
 
 EXECUTION_PROVENANCE_ARTIFACT_ID = "execution_provenance"
 STRUCTURED_LOG_ARTIFACT_ID = "structured_log"
 UI_COMPARISON_PAYLOAD_ARTIFACT_ID = "ui_comparison_payload"
+SURFACE_WAVE_SUMMARY_ARTIFACT_ID = "surface_wave_summary"
+SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID = "surface_wave_patch_traces"
+SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID = "surface_wave_coupling_events"
 
 FINAL_ENDPOINT_WINDOW_ID = "finalized_endpoint"
 DECLARED_TIMEBASE_WINDOW_ID = "declared_timebase"
-SUPPORTED_EXECUTABLE_MODEL_MODES = (BASELINE_MODEL_MODE,)
+SURFACE_WAVE_INPUT_BINDING_STRATEGY = "uniform_surface_fill_from_shared_root_schedule"
+SUPPORTED_EXECUTABLE_MODEL_MODES = (
+    BASELINE_MODEL_MODE,
+    SURFACE_WAVE_MODEL_MODE,
+)
 
 
 @dataclass(frozen=True)
@@ -206,7 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--model-mode",
         default=BASELINE_MODEL_MODE,
-        help="Simulator model mode to execute. Baseline is currently supported.",
+        help="Simulator model mode to execute. Supported: baseline, surface_wave.",
     )
     parser.add_argument("--arm-id", help="Optional manifest arm_id filter.")
     parser.add_argument(
@@ -241,6 +262,11 @@ def _execute_arm_plan(
     model_mode = _normalize_model_mode(arm_reference.get("model_mode"))
     if model_mode == BASELINE_MODEL_MODE:
         return _execute_baseline_arm_plan(
+            arm_plan,
+            execution_request=execution_request,
+        )
+    if model_mode == SURFACE_WAVE_MODEL_MODE:
+        return _execute_surface_wave_arm_plan(
             arm_plan,
             execution_request=execution_request,
         )
@@ -316,7 +342,109 @@ def _execute_baseline_arm_plan(
     )
 
 
-def _build_ready_bundle_metadata(arm_plan: Mapping[str, Any]) -> dict[str, Any]:
+def _execute_surface_wave_arm_plan(
+    arm_plan: Mapping[str, Any],
+    *,
+    execution_request: Mapping[str, Any],
+) -> ExecutedSimulationArmSummary:
+    resolved = resolve_surface_wave_execution_plan_from_arm_plan(arm_plan)
+    canonical_input_stream = load_canonical_input_stream_from_arm_plan(arm_plan)
+    drive_schedule = build_drive_schedule_for_root_ids(
+        root_ids=resolved.root_ids,
+        canonical_input_stream=canonical_input_stream,
+    )
+    execution_payload = _run_surface_wave_manifest_execution(
+        arm_plan=arm_plan,
+        resolved=resolved,
+        canonical_input_stream=canonical_input_stream,
+        drive_schedule=drive_schedule,
+    )
+
+    bundle_metadata = _build_ready_bundle_metadata(
+        arm_plan,
+        extra_artifact_specs=_surface_wave_artifact_specs(),
+    )
+    bundle_paths = discover_simulator_result_bundle_paths(bundle_metadata)
+    extension_paths = _extension_artifact_paths(bundle_metadata)
+    result = execution_payload["result"]
+    state_summary_rows = execution_payload["state_summary_rows"]
+    metrics_rows = _build_metric_rows(result)
+    provenance_payload = _build_execution_provenance(
+        arm_plan=arm_plan,
+        result=result,
+        bundle_metadata=bundle_metadata,
+        execution_request=execution_request,
+        structured_log_event_count=len(execution_payload["structured_log_records"]),
+        metric_row_count=len(metrics_rows),
+        model_execution=execution_payload["provenance_model_execution"],
+    )
+    ui_payload = _build_ui_comparison_payload(
+        arm_plan=arm_plan,
+        result=result,
+        bundle_metadata=bundle_metadata,
+        metrics_rows=metrics_rows,
+        extension_paths=extension_paths,
+    )
+
+    write_json(state_summary_rows, bundle_paths[STATE_SUMMARY_KEY])
+    write_deterministic_npz(
+        result.readout_traces.as_numpy_archive_payload(),
+        bundle_paths[READOUT_TRACES_KEY],
+    )
+    write_csv_rows(
+        fieldnames=METRIC_TABLE_COLUMNS,
+        rows=metrics_rows,
+        out_path=bundle_paths[METRICS_TABLE_KEY],
+    )
+    write_jsonl(
+        execution_payload["structured_log_records"],
+        extension_paths[STRUCTURED_LOG_ARTIFACT_ID],
+    )
+    write_json(provenance_payload, extension_paths[EXECUTION_PROVENANCE_ARTIFACT_ID])
+    write_json(ui_payload, extension_paths[UI_COMPARISON_PAYLOAD_ARTIFACT_ID])
+    write_json(
+        execution_payload["surface_wave_summary_payload"],
+        extension_paths[SURFACE_WAVE_SUMMARY_ARTIFACT_ID],
+    )
+    write_deterministic_npz(
+        execution_payload["surface_wave_patch_trace_payload"],
+        extension_paths[SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID],
+    )
+    write_json(
+        execution_payload["surface_wave_coupling_payload"],
+        extension_paths[SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID],
+    )
+    metadata_path = write_simulator_result_bundle_metadata(bundle_metadata)
+
+    highlight_metrics = tuple(
+        metric
+        for metric in metrics_rows
+        if metric["metric_id"] in {"final_endpoint_value", "sample_max_value", "sample_peak_time_ms"}
+    )
+    return ExecutedSimulationArmSummary(
+        arm_id=str(bundle_metadata["arm_reference"]["arm_id"]),
+        bundle_id=str(bundle_metadata["bundle_id"]),
+        run_spec_hash=str(bundle_metadata["run_spec_hash"]),
+        bundle_directory=Path(bundle_metadata["bundle_layout"]["bundle_directory"]).resolve(),
+        metadata_path=metadata_path.resolve(),
+        state_summary_path=bundle_paths[STATE_SUMMARY_KEY].resolve(),
+        readout_traces_path=bundle_paths[READOUT_TRACES_KEY].resolve(),
+        metrics_table_path=bundle_paths[METRICS_TABLE_KEY].resolve(),
+        structured_log_path=extension_paths[STRUCTURED_LOG_ARTIFACT_ID].resolve(),
+        provenance_path=extension_paths[EXECUTION_PROVENANCE_ARTIFACT_ID].resolve(),
+        ui_payload_path=extension_paths[UI_COMPARISON_PAYLOAD_ARTIFACT_ID].resolve(),
+        metric_row_count=len(metrics_rows),
+        state_summary_row_count=len(state_summary_rows),
+        structured_log_event_count=len(execution_payload["structured_log_records"]),
+        highlight_metrics=highlight_metrics,
+    )
+
+
+def _build_ready_bundle_metadata(
+    arm_plan: Mapping[str, Any],
+    *,
+    extra_artifact_specs: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
     base_metadata = _resolve_bundle_metadata(arm_plan)
     runtime = _require_mapping(arm_plan.get("runtime"), field_name="arm_plan.runtime")
     bundle_paths = build_simulator_result_bundle_paths(
@@ -328,34 +456,21 @@ def _build_ready_bundle_metadata(arm_plan: Mapping[str, Any]) -> dict[str, Any]:
             base_metadata=base_metadata,
         ),
     )
+    artifact_specs = list(_default_extension_artifact_specs()) + [
+        copy.deepcopy(dict(spec))
+        for spec in extra_artifact_specs
+    ]
     execution_artifacts = [
         build_simulator_extension_artifact_record(
             bundle_paths=bundle_paths,
-            artifact_id=STRUCTURED_LOG_ARTIFACT_ID,
-            file_name="structured_log.jsonl",
-            format=SIMULATOR_EXECUTION_LOG_FORMAT,
-            status=ASSET_STATUS_READY,
-            artifact_scope=MODEL_DIAGNOSTIC_SCOPE,
-            description="Deterministic lifecycle event log for local simulator replay audits.",
-        ),
-        build_simulator_extension_artifact_record(
-            bundle_paths=bundle_paths,
-            artifact_id=EXECUTION_PROVENANCE_ARTIFACT_ID,
-            file_name="execution_provenance.json",
-            format=SIMULATOR_EXECUTION_PROVENANCE_FORMAT,
-            status=ASSET_STATUS_READY,
-            artifact_scope=MODEL_DIAGNOSTIC_SCOPE,
-            description="Stable provenance snapshot for the executed simulator arm and bundle.",
-        ),
-        build_simulator_extension_artifact_record(
-            bundle_paths=bundle_paths,
-            artifact_id=UI_COMPARISON_PAYLOAD_ARTIFACT_ID,
-            file_name="ui_comparison_payload.json",
-            format=SIMULATOR_UI_COMPARISON_PAYLOAD_FORMAT,
-            status=ASSET_STATUS_READY,
-            artifact_scope=SHARED_COMPARISON_SCOPE,
-            description="UI-facing comparison handoff payload discovered from the result bundle inventory.",
-        ),
+            artifact_id=spec["artifact_id"],
+            file_name=spec["file_name"],
+            format=spec["format"],
+            status=spec.get("status", ASSET_STATUS_READY),
+            artifact_scope=spec["artifact_scope"],
+            description=spec["description"],
+        )
+        for spec in artifact_specs
     ]
 
     updated = copy.deepcopy(base_metadata)
@@ -439,6 +554,787 @@ def _merge_model_artifacts(
         merged[artifact_id]
         for artifact_id in sorted(merged)
     ]
+
+
+def _default_extension_artifact_specs() -> tuple[dict[str, Any], ...]:
+    return (
+        {
+            "artifact_id": STRUCTURED_LOG_ARTIFACT_ID,
+            "file_name": "structured_log.jsonl",
+            "format": SIMULATOR_EXECUTION_LOG_FORMAT,
+            "artifact_scope": MODEL_DIAGNOSTIC_SCOPE,
+            "description": "Deterministic lifecycle event log for local simulator replay audits.",
+        },
+        {
+            "artifact_id": EXECUTION_PROVENANCE_ARTIFACT_ID,
+            "file_name": "execution_provenance.json",
+            "format": SIMULATOR_EXECUTION_PROVENANCE_FORMAT,
+            "artifact_scope": MODEL_DIAGNOSTIC_SCOPE,
+            "description": "Stable provenance snapshot for the executed simulator arm and bundle.",
+        },
+        {
+            "artifact_id": UI_COMPARISON_PAYLOAD_ARTIFACT_ID,
+            "file_name": "ui_comparison_payload.json",
+            "format": SIMULATOR_UI_COMPARISON_PAYLOAD_FORMAT,
+            "artifact_scope": SHARED_COMPARISON_SCOPE,
+            "description": "UI-facing comparison handoff payload discovered from the result bundle inventory.",
+        },
+    )
+
+
+def _surface_wave_artifact_specs() -> tuple[dict[str, Any], ...]:
+    return (
+        {
+            "artifact_id": SURFACE_WAVE_SUMMARY_ARTIFACT_ID,
+            "file_name": "surface_wave_summary.json",
+            "format": SURFACE_WAVE_SUMMARY_FORMAT,
+            "artifact_scope": WAVE_MODEL_EXTENSION_SCOPE,
+            "description": "Wave-specific execution summary with solver, input-binding, and morphology-state metadata.",
+        },
+        {
+            "artifact_id": SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID,
+            "file_name": "surface_wave_patch_traces.npz",
+            "format": SURFACE_WAVE_PATCH_TRACES_FORMAT,
+            "artifact_scope": WAVE_MODEL_EXTENSION_SCOPE,
+            "description": "Morphology-resolved patch activation traces written on the internal wave-solver timebase.",
+        },
+        {
+            "artifact_id": SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID,
+            "file_name": "surface_wave_coupling_events.json",
+            "format": SURFACE_WAVE_COUPLING_EVENTS_FORMAT,
+            "artifact_scope": WAVE_MODEL_EXTENSION_SCOPE,
+            "description": "Deterministic surface-wave coupling event history for morphology-resolved replay audits.",
+        },
+    )
+
+
+def _run_surface_wave_manifest_execution(
+    *,
+    arm_plan: Mapping[str, Any],
+    resolved: Any,
+    canonical_input_stream: Any,
+    drive_schedule: Any,
+) -> dict[str, Any]:
+    circuit = resolved.build_circuit()
+    circuit.initialize_zero()
+
+    vertex_count_by_root = {
+        int(bundle.root_id): int(bundle.surface_vertex_count)
+        for bundle in resolved.operator_bundles
+    }
+    last_drive_vector = np.zeros(len(resolved.root_ids), dtype=np.float64)
+    for step_index in range(int(resolved.timebase.sample_count)):
+        last_drive_vector = np.asarray(
+            drive_schedule.drive_values[step_index],
+            dtype=np.float64,
+        ).copy()
+        surface_drives_by_root = {
+            int(root_id): np.full(
+                vertex_count_by_root[int(root_id)],
+                float(last_drive_vector[root_index]),
+                dtype=np.float64,
+            )
+            for root_index, root_id in enumerate(resolved.root_ids)
+        }
+        circuit.step_shared(surface_drives_by_root=surface_drives_by_root)
+
+    wave_run = circuit.finalize()
+    run_blueprint = _build_surface_wave_run_blueprint(
+        arm_plan=arm_plan,
+        resolved=resolved,
+        canonical_input_stream=canonical_input_stream,
+        drive_schedule=drive_schedule,
+    )
+    initial_state_summaries = _build_surface_wave_state_summaries(
+        root_ids=resolved.root_ids,
+        states_by_root=wave_run.initial_states_by_root,
+        patch_state_by_root={
+            int(root_id): np.asarray(
+                wave_run.patch_readout_history_by_root[int(root_id)][0],
+                dtype=np.float64,
+            )
+            for root_id in resolved.root_ids
+        },
+    )
+    final_state_summaries = _build_surface_wave_state_summaries(
+        root_ids=resolved.root_ids,
+        states_by_root=wave_run.final_states_by_root,
+        patch_state_by_root={
+            int(root_id): np.asarray(
+                wave_run.patch_readout_history_by_root[int(root_id)][-1],
+                dtype=np.float64,
+            )
+            for root_id in resolved.root_ids
+        },
+    )
+    shared_trace_values = _build_surface_wave_trace_values(
+        shared_readout_history=wave_run.shared_readout_history,
+        run_blueprint=run_blueprint,
+        sample_count=int(resolved.timebase.sample_count),
+    )
+    final_snapshot = _build_surface_wave_snapshot(
+        lifecycle_stage="finalized",
+        completed_steps=int(resolved.timebase.sample_count),
+        current_time_ms=float(resolved.timebase.time_ms_after_steps(resolved.timebase.sample_count)),
+        root_ids=resolved.root_ids,
+        summary=wave_run.shared_readout_history[-1],
+        readout_catalog=run_blueprint.readout_catalog,
+        state_summaries=final_state_summaries,
+        exogenous_drive=last_drive_vector,
+        recurrent_input=np.zeros(len(resolved.root_ids), dtype=np.float64),
+        dt_ms=float(resolved.timebase.dt_ms),
+    )
+    result = SimulationRunResult(
+        runtime_version=str(resolved.execution_version),
+        run_blueprint=run_blueprint,
+        initial_snapshot=_build_surface_wave_snapshot(
+            lifecycle_stage="initialized",
+            completed_steps=0,
+            current_time_ms=float(resolved.timebase.time_origin_ms),
+            root_ids=resolved.root_ids,
+            summary=wave_run.shared_readout_history[0],
+            readout_catalog=run_blueprint.readout_catalog,
+            state_summaries=initial_state_summaries,
+            exogenous_drive=np.zeros(len(resolved.root_ids), dtype=np.float64),
+            recurrent_input=np.zeros(len(resolved.root_ids), dtype=np.float64),
+            dt_ms=float(resolved.timebase.dt_ms),
+        ),
+        final_snapshot=final_snapshot,
+        readout_traces=SimulationReadoutTraces(
+            time_ms=np.asarray(resolved.timebase.sample_times_ms(), dtype=np.float64),
+            readout_ids=run_blueprint.readout_id_order,
+            values=shared_trace_values,
+            captured_sample_count=int(resolved.timebase.sample_count),
+        ),
+    )
+    final_state_summary_rows = [row.as_record() for row in final_state_summaries]
+    return {
+        "result": result,
+        "state_summary_rows": final_state_summary_rows,
+        "structured_log_records": _build_surface_wave_structured_log_records(
+            wave_run=wave_run,
+            run_blueprint=run_blueprint,
+            drive_schedule=drive_schedule,
+            state_summary_row_count=len(final_state_summary_rows),
+        ),
+        "surface_wave_summary_payload": _build_surface_wave_summary_payload(
+            arm_plan=arm_plan,
+            resolved=resolved,
+            wave_run=wave_run,
+            canonical_input_stream=canonical_input_stream,
+            drive_schedule=drive_schedule,
+            run_blueprint=run_blueprint,
+            state_summary_rows=final_state_summary_rows,
+        ),
+        "surface_wave_patch_trace_payload": _build_surface_wave_patch_trace_payload(
+            resolved=resolved,
+            wave_run=wave_run,
+        ),
+        "surface_wave_coupling_payload": {
+            "format_version": SURFACE_WAVE_COUPLING_EVENTS_FORMAT,
+            "workflow_version": SIMULATOR_MANIFEST_EXECUTION_VERSION,
+            "event_count": len(wave_run.coupling_application_history),
+            "events": [copy.deepcopy(item) for item in wave_run.coupling_application_history],
+        },
+        "provenance_model_execution": {
+            "model_mode": SURFACE_WAVE_MODEL_MODE,
+            "surface_wave_reference": copy.deepcopy(
+                _surface_wave_reference_from_arm_plan(arm_plan)
+            ),
+            "input_binding_strategy": SURFACE_WAVE_INPUT_BINDING_STRATEGY,
+            "drive_schedule_hash": str(drive_schedule.drive_schedule_hash),
+            "solver": {
+                "integration_timestep_ms": float(resolved.integration_timestep_ms),
+                "shared_output_timestep_ms": float(resolved.shared_output_timestep_ms),
+                "internal_substep_count": int(resolved.internal_substep_count),
+            },
+            "coupling": {
+                "topology_condition": resolved.coupling_plan.topology_condition,
+                "shuffle_scope": resolved.coupling_plan.shuffle_scope,
+                "component_count": resolved.coupling_plan.component_count,
+                "max_delay_steps": resolved.coupling_plan.max_delay_steps,
+                "coupling_hash": resolved.coupling_plan.coupling_hash,
+            },
+            "wave_specific_artifacts": [
+                SURFACE_WAVE_SUMMARY_ARTIFACT_ID,
+                SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID,
+                SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID,
+            ],
+        },
+    }
+
+
+def _build_surface_wave_run_blueprint(
+    *,
+    arm_plan: Mapping[str, Any],
+    resolved: Any,
+    canonical_input_stream: Any,
+    drive_schedule: Any,
+) -> Any:
+    runtime = _require_mapping(arm_plan.get("runtime"), field_name="arm_plan.runtime")
+    selection = _require_mapping(arm_plan.get("selection"), field_name="arm_plan.selection")
+    result_bundle_reference: Mapping[str, Any] | None = None
+    result_bundle = arm_plan.get("result_bundle")
+    if isinstance(result_bundle, Mapping):
+        reference = result_bundle.get("reference")
+        if isinstance(reference, Mapping):
+            result_bundle_reference = reference
+    metadata = {
+        "execution_version": str(resolved.execution_version),
+        "runtime_config_version": runtime.get("config_version"),
+        "time_unit": runtime.get("time_unit"),
+        "selected_root_ids_hash": _stable_hash(list(selection.get("selected_root_ids", []))),
+        "canonical_input": {
+            "input_kind": canonical_input_stream.input_kind,
+            "bundle_id": canonical_input_stream.bundle_id,
+            "metadata_path": str(canonical_input_stream.metadata_path),
+            "replay_source": canonical_input_stream.replay_source,
+            "unit_count": canonical_input_stream.unit_count,
+            "neutral_value": canonical_input_stream.neutral_value,
+            "binding_strategy": drive_schedule.strategy,
+            "drive_schedule_hash": drive_schedule.drive_schedule_hash,
+        },
+        "surface_wave_input_binding": {
+            "injection_strategy": SURFACE_WAVE_INPUT_BINDING_STRATEGY,
+            "shared_output_timestep_ms": float(resolved.shared_output_timestep_ms),
+            "integration_timestep_ms": float(resolved.integration_timestep_ms),
+            "internal_substep_count": int(resolved.internal_substep_count),
+        },
+        "surface_wave_model": {
+            "model_family": resolved.surface_wave_model["model_family"],
+            "parameter_hash": resolved.surface_wave_model["parameter_hash"],
+            "solver_family": resolved.surface_wave_model["solver_family"],
+            "surface_wave_reference": copy.deepcopy(
+                _surface_wave_reference_from_arm_plan(arm_plan)
+            ),
+        },
+        "recurrent_coupling": {
+            "topology_condition": resolved.coupling_plan.topology_condition,
+            "shuffle_scope": resolved.coupling_plan.shuffle_scope,
+            "component_count": resolved.coupling_plan.component_count,
+            "max_delay_steps": resolved.coupling_plan.max_delay_steps,
+            "coupling_hash": resolved.coupling_plan.coupling_hash,
+        },
+    }
+    return build_simulation_run_blueprint(
+        manifest_reference=_require_mapping(
+            arm_plan.get("manifest_reference"),
+            field_name="arm_plan.manifest_reference",
+        ),
+        arm_reference=_require_mapping(
+            arm_plan.get("arm_reference"),
+            field_name="arm_plan.arm_reference",
+        ),
+        root_ids=resolved.root_ids,
+        timebase=resolved.timebase,
+        determinism=_require_mapping(
+            arm_plan.get("determinism"),
+            field_name="arm_plan.determinism",
+        ),
+        readout_catalog=_require_sequence(
+            runtime.get("shared_readout_catalog", runtime.get("readout_catalog")),
+            field_name="arm_plan.runtime.shared_readout_catalog",
+        ),
+        result_bundle_reference=result_bundle_reference,
+        metadata=metadata,
+    )
+
+
+def _build_surface_wave_trace_values(
+    *,
+    shared_readout_history: Sequence[Mapping[str, Any]],
+    run_blueprint: Any,
+    sample_count: int,
+) -> np.ndarray:
+    if len(shared_readout_history) < sample_count:
+        raise ValueError("surface-wave shared_readout_history is shorter than the declared sample_count.")
+    values = np.empty(
+        (sample_count, len(run_blueprint.readout_catalog)),
+        dtype=np.float64,
+    )
+    for sample_index in range(sample_count):
+        values[sample_index, :] = _surface_wave_readout_values(
+            summary=shared_readout_history[sample_index],
+            readout_catalog=run_blueprint.readout_catalog,
+        )
+    return values
+
+
+def _build_surface_wave_snapshot(
+    *,
+    lifecycle_stage: str,
+    completed_steps: int,
+    current_time_ms: float,
+    root_ids: Sequence[int],
+    summary: Mapping[str, Any],
+    readout_catalog: Sequence[Any],
+    state_summaries: Sequence[SimulationStateSummaryRow],
+    exogenous_drive: np.ndarray,
+    recurrent_input: np.ndarray,
+    dt_ms: float,
+) -> SimulationSnapshot:
+    dynamic_state = _surface_wave_dynamic_state_vector(summary=summary, root_ids=root_ids)
+    readout_values = _surface_wave_readout_values(
+        summary=summary,
+        readout_catalog=readout_catalog,
+    )
+    return SimulationSnapshot(
+        lifecycle_stage=lifecycle_stage,
+        completed_steps=int(completed_steps),
+        current_time_ms=float(current_time_ms),
+        dt_ms=float(dt_ms),
+        root_ids=tuple(int(root_id) for root_id in root_ids),
+        dynamic_state=dynamic_state,
+        exogenous_drive=np.asarray(exogenous_drive, dtype=np.float64),
+        recurrent_input=np.asarray(recurrent_input, dtype=np.float64),
+        readout_state=dynamic_state.copy(),
+        readout_ids=tuple(definition.readout_id for definition in readout_catalog),
+        readout_values=readout_values,
+        state_summaries=tuple(state_summaries),
+    )
+
+
+def _build_surface_wave_state_summaries(
+    *,
+    root_ids: Sequence[int],
+    states_by_root: Mapping[int, Mapping[str, Any]],
+    patch_state_by_root: Mapping[int, np.ndarray],
+) -> tuple[SimulationStateSummaryRow, ...]:
+    rows: list[SimulationStateSummaryRow] = []
+    all_activation: list[np.ndarray] = []
+    all_velocity: list[np.ndarray] = []
+    all_patch_activation: list[np.ndarray] = []
+
+    for root_id in root_ids:
+        state_mapping = _require_mapping(
+            states_by_root[int(root_id)],
+            field_name=f"states_by_root[{root_id}]",
+        )
+        activation = np.asarray(state_mapping["activation"], dtype=np.float64)
+        velocity = np.asarray(state_mapping["velocity"], dtype=np.float64)
+        patch_activation = np.asarray(patch_state_by_root[int(root_id)], dtype=np.float64)
+        all_activation.append(activation)
+        all_velocity.append(velocity)
+        all_patch_activation.append(patch_activation)
+
+        rows.extend(
+            [
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_surface_activation_state",
+                    scope="root_state",
+                    summary_stat="mean",
+                    value=float(np.mean(activation)),
+                    units="activation_au",
+                ),
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_surface_activation_state",
+                    scope="root_state",
+                    summary_stat="min",
+                    value=float(np.min(activation)),
+                    units="activation_au",
+                ),
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_surface_activation_state",
+                    scope="root_state",
+                    summary_stat="max",
+                    value=float(np.max(activation)),
+                    units="activation_au",
+                ),
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_surface_velocity_state",
+                    scope="root_state",
+                    summary_stat="mean",
+                    value=float(np.mean(velocity)),
+                    units="activation_au_per_ms",
+                ),
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_surface_velocity_state",
+                    scope="root_state",
+                    summary_stat="min",
+                    value=float(np.min(velocity)),
+                    units="activation_au_per_ms",
+                ),
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_surface_velocity_state",
+                    scope="root_state",
+                    summary_stat="max",
+                    value=float(np.max(velocity)),
+                    units="activation_au_per_ms",
+                ),
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_patch_activation_state",
+                    scope="root_state",
+                    summary_stat="mean",
+                    value=float(np.mean(patch_activation)),
+                    units="activation_au",
+                ),
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_patch_activation_state",
+                    scope="root_state",
+                    summary_stat="min",
+                    value=float(np.min(patch_activation)),
+                    units="activation_au",
+                ),
+                _state_summary_row(
+                    state_id=f"root_{int(root_id)}_patch_activation_state",
+                    scope="root_state",
+                    summary_stat="max",
+                    value=float(np.max(patch_activation)),
+                    units="activation_au",
+                ),
+            ]
+        )
+
+        recovery = state_mapping.get("recovery")
+        if recovery is not None:
+            recovery_values = np.asarray(recovery, dtype=np.float64)
+            rows.extend(
+                [
+                    _state_summary_row(
+                        state_id=f"root_{int(root_id)}_recovery_state",
+                        scope="root_state",
+                        summary_stat="mean",
+                        value=float(np.mean(recovery_values)),
+                        units="unitless",
+                    ),
+                    _state_summary_row(
+                        state_id=f"root_{int(root_id)}_recovery_state",
+                        scope="root_state",
+                        summary_stat="max",
+                        value=float(np.max(recovery_values)),
+                        units="unitless",
+                    ),
+                ]
+            )
+
+    circuit_activation = np.concatenate(all_activation)
+    circuit_velocity = np.concatenate(all_velocity)
+    circuit_patch_activation = np.concatenate(all_patch_activation)
+    rows.extend(
+        [
+            _state_summary_row(
+                state_id="circuit_surface_activation_state",
+                scope="circuit_state",
+                summary_stat="mean",
+                value=float(np.mean(circuit_activation)),
+                units="activation_au",
+            ),
+            _state_summary_row(
+                state_id="circuit_surface_activation_state",
+                scope="circuit_state",
+                summary_stat="min",
+                value=float(np.min(circuit_activation)),
+                units="activation_au",
+            ),
+            _state_summary_row(
+                state_id="circuit_surface_activation_state",
+                scope="circuit_state",
+                summary_stat="max",
+                value=float(np.max(circuit_activation)),
+                units="activation_au",
+            ),
+            _state_summary_row(
+                state_id="circuit_surface_velocity_state",
+                scope="circuit_state",
+                summary_stat="mean",
+                value=float(np.mean(circuit_velocity)),
+                units="activation_au_per_ms",
+            ),
+            _state_summary_row(
+                state_id="circuit_surface_velocity_state",
+                scope="circuit_state",
+                summary_stat="min",
+                value=float(np.min(circuit_velocity)),
+                units="activation_au_per_ms",
+            ),
+            _state_summary_row(
+                state_id="circuit_surface_velocity_state",
+                scope="circuit_state",
+                summary_stat="max",
+                value=float(np.max(circuit_velocity)),
+                units="activation_au_per_ms",
+            ),
+            _state_summary_row(
+                state_id="circuit_patch_activation_state",
+                scope="circuit_state",
+                summary_stat="mean",
+                value=float(np.mean(circuit_patch_activation)),
+                units="activation_au",
+            ),
+            _state_summary_row(
+                state_id="circuit_patch_activation_state",
+                scope="circuit_state",
+                summary_stat="min",
+                value=float(np.min(circuit_patch_activation)),
+                units="activation_au",
+            ),
+            _state_summary_row(
+                state_id="circuit_patch_activation_state",
+                scope="circuit_state",
+                summary_stat="max",
+                value=float(np.max(circuit_patch_activation)),
+                units="activation_au",
+            ),
+        ]
+    )
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                row.scope,
+                row.state_id,
+                row.summary_stat,
+                row.units,
+            ),
+        )
+    )
+
+
+def _build_surface_wave_structured_log_records(
+    *,
+    wave_run: Any,
+    run_blueprint: Any,
+    drive_schedule: Any,
+    state_summary_row_count: int,
+) -> list[dict[str, Any]]:
+    root_ids = run_blueprint.root_ids
+    zero_drive = np.zeros(len(root_ids), dtype=np.float64)
+    records = [
+        _surface_wave_structured_log_record(
+            event_index=0,
+            event_type="initialized",
+            summary=wave_run.shared_readout_history[0],
+            root_ids=root_ids,
+            readout_catalog=run_blueprint.readout_catalog,
+            drive_vector=zero_drive,
+            sample_count=int(run_blueprint.timebase.sample_count),
+            dt_ms=float(run_blueprint.timebase.dt_ms),
+            state_summary_row_count=state_summary_row_count,
+        )
+    ]
+    for step_index in range(int(run_blueprint.timebase.sample_count)):
+        records.append(
+            _surface_wave_structured_log_record(
+                event_index=len(records),
+                event_type="step_completed",
+                summary=wave_run.shared_readout_history[step_index + 1],
+                root_ids=root_ids,
+                readout_catalog=run_blueprint.readout_catalog,
+                drive_vector=np.asarray(
+                    drive_schedule.drive_values[step_index],
+                    dtype=np.float64,
+                ),
+                sample_count=int(run_blueprint.timebase.sample_count),
+                dt_ms=float(run_blueprint.timebase.dt_ms),
+                state_summary_row_count=state_summary_row_count,
+            )
+        )
+    records.append(
+        _surface_wave_structured_log_record(
+            event_index=len(records),
+            event_type="finalized",
+            summary=wave_run.shared_readout_history[-1],
+            root_ids=root_ids,
+            readout_catalog=run_blueprint.readout_catalog,
+            drive_vector=(
+                np.asarray(drive_schedule.drive_values[-1], dtype=np.float64)
+                if int(run_blueprint.timebase.sample_count) > 0
+                else zero_drive
+            ),
+            sample_count=int(run_blueprint.timebase.sample_count),
+            dt_ms=float(run_blueprint.timebase.dt_ms),
+            state_summary_row_count=state_summary_row_count,
+        )
+    )
+    return records
+
+
+def _surface_wave_structured_log_record(
+    *,
+    event_index: int,
+    event_type: str,
+    summary: Mapping[str, Any],
+    root_ids: Sequence[int],
+    readout_catalog: Sequence[Any],
+    drive_vector: np.ndarray,
+    sample_count: int,
+    dt_ms: float,
+    state_summary_row_count: int,
+) -> dict[str, Any]:
+    dynamic_state = _surface_wave_dynamic_state_vector(summary=summary, root_ids=root_ids)
+    readout_values = _surface_wave_readout_values(
+        summary=summary,
+        readout_catalog=readout_catalog,
+    )
+    return {
+        "event_index": int(event_index),
+        "event_type": event_type,
+        "completed_steps": int(summary.get("shared_step_index", 0)),
+        "current_time_ms": float(summary["time_ms"]),
+        "dt_ms": float(dt_ms),
+        "sample_count": int(sample_count),
+        "readout_values": {
+            definition.readout_id: float(readout_values[index])
+            for index, definition in enumerate(readout_catalog)
+        },
+        "dynamic_state_min": float(np.min(dynamic_state)),
+        "dynamic_state_max": float(np.max(dynamic_state)),
+        "dynamic_state_mean": float(np.mean(dynamic_state)),
+        "exogenous_drive_l2": float(np.linalg.norm(drive_vector)),
+        "recurrent_input_l2": 0.0,
+        "state_summary_row_count": int(state_summary_row_count),
+    }
+
+
+def _build_surface_wave_summary_payload(
+    *,
+    arm_plan: Mapping[str, Any],
+    resolved: Any,
+    wave_run: Any,
+    canonical_input_stream: Any,
+    drive_schedule: Any,
+    run_blueprint: Any,
+    state_summary_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "format_version": SURFACE_WAVE_SUMMARY_FORMAT,
+        "workflow_version": SIMULATOR_MANIFEST_EXECUTION_VERSION,
+        "manifest_reference": copy.deepcopy(run_blueprint.manifest_reference),
+        "arm_reference": copy.deepcopy(run_blueprint.arm_reference),
+        "bundle_reference": copy.deepcopy(run_blueprint.result_bundle_reference),
+        "surface_wave_reference": copy.deepcopy(_surface_wave_reference_from_arm_plan(arm_plan)),
+        "canonical_input": {
+            "input_kind": canonical_input_stream.input_kind,
+            "bundle_id": canonical_input_stream.bundle_id,
+            "metadata_path": str(canonical_input_stream.metadata_path),
+            "replay_source": canonical_input_stream.replay_source,
+            "unit_count": canonical_input_stream.unit_count,
+            "binding_strategy": drive_schedule.strategy,
+            "drive_schedule_hash": drive_schedule.drive_schedule_hash,
+        },
+        "input_binding": {
+            "injection_strategy": SURFACE_WAVE_INPUT_BINDING_STRATEGY,
+            "shared_output_timestep_ms": float(resolved.shared_output_timestep_ms),
+            "integration_timestep_ms": float(resolved.integration_timestep_ms),
+            "internal_substep_count": int(resolved.internal_substep_count),
+        },
+        "solver": {
+            "integration_timestep_ms": float(resolved.integration_timestep_ms),
+            "shared_output_timestep_ms": float(resolved.shared_output_timestep_ms),
+            "internal_substep_count": int(resolved.internal_substep_count),
+            "substep_count": int(wave_run.substep_count),
+            "shared_step_count": int(wave_run.shared_step_count),
+        },
+        "coupling": {
+            "topology_condition": resolved.coupling_plan.topology_condition,
+            "shuffle_scope": resolved.coupling_plan.shuffle_scope,
+            "component_count": resolved.coupling_plan.component_count,
+            "max_delay_steps": resolved.coupling_plan.max_delay_steps,
+            "coupling_hash": resolved.coupling_plan.coupling_hash,
+            "coupling_event_count": len(wave_run.coupling_application_history),
+        },
+        "runtime_metadata_by_root": [copy.deepcopy(item) for item in wave_run.runtime_metadata_by_root],
+        "final_state_overview": {
+            "shared_output_mean": float(wave_run.shared_readout_history[-1]["shared_output_mean"]),
+            "per_root_mean_activation": copy.deepcopy(
+                wave_run.shared_readout_history[-1]["per_root_mean_activation"]
+            ),
+            "per_root_mean_velocity": copy.deepcopy(
+                wave_run.shared_readout_history[-1]["per_root_mean_velocity"]
+            ),
+        },
+        "wave_specific_artifacts": {
+            "patch_traces_artifact_id": SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID,
+            "coupling_events_artifact_id": SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID,
+        },
+        "state_summary_row_count": len(state_summary_rows),
+    }
+
+
+def _build_surface_wave_patch_trace_payload(
+    *,
+    resolved: Any,
+    wave_run: Any,
+) -> dict[str, np.ndarray]:
+    history_length = len(
+        wave_run.patch_readout_history_by_root[int(resolved.root_ids[0])]
+    )
+    payload: dict[str, np.ndarray] = {
+        "substep_time_ms": (
+            np.arange(history_length, dtype=np.float64) * float(resolved.integration_timestep_ms)
+            + float(resolved.timebase.time_origin_ms)
+        ),
+        "root_ids": np.asarray(resolved.root_ids, dtype=np.int64),
+    }
+    for root_id in resolved.root_ids:
+        payload[f"root_{int(root_id)}_patch_activation"] = np.asarray(
+            wave_run.patch_readout_history_by_root[int(root_id)],
+            dtype=np.float64,
+        )
+    return payload
+
+
+def _surface_wave_dynamic_state_vector(
+    *,
+    summary: Mapping[str, Any],
+    root_ids: Sequence[int],
+) -> np.ndarray:
+    per_root_mean_activation = _require_mapping(
+        summary.get("per_root_mean_activation"),
+        field_name="surface_wave_summary.per_root_mean_activation",
+    )
+    return np.asarray(
+        [
+            float(per_root_mean_activation[str(int(root_id))])
+            for root_id in root_ids
+        ],
+        dtype=np.float64,
+    )
+
+
+def _surface_wave_readout_values(
+    *,
+    summary: Mapping[str, Any],
+    readout_catalog: Sequence[Any],
+) -> np.ndarray:
+    shared_output_mean = float(summary["shared_output_mean"])
+    values = []
+    for definition in readout_catalog:
+        if str(definition.value_semantics) != "shared_downstream_activation":
+            raise ValueError(
+                "surface-wave manifest execution only supports shared readouts with "
+                "value_semantics 'shared_downstream_activation'."
+            )
+        values.append(shared_output_mean)
+    return np.asarray(values, dtype=np.float64)
+
+
+def _surface_wave_reference_from_arm_plan(
+    arm_plan: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    model_configuration = arm_plan.get("model_configuration")
+    if isinstance(model_configuration, Mapping):
+        reference = model_configuration.get("surface_wave_reference")
+        if isinstance(reference, Mapping):
+            return copy.deepcopy(dict(reference))
+    return None
+
+
+def _state_summary_row(
+    *,
+    state_id: str,
+    scope: str,
+    summary_stat: str,
+    value: float,
+    units: str,
+) -> SimulationStateSummaryRow:
+    return SimulationStateSummaryRow(
+        state_id=state_id,
+        scope=scope,
+        summary_stat=summary_stat,
+        value=float(value),
+        units=units,
+    )
 
 
 def _sorted_state_summary_rows(result: SimulationRunResult) -> list[dict[str, Any]]:
@@ -556,9 +1452,10 @@ def _build_execution_provenance(
     execution_request: Mapping[str, Any],
     structured_log_event_count: int,
     metric_row_count: int,
+    model_execution: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     runtime = _require_mapping(arm_plan.get("runtime"), field_name="arm_plan.runtime")
-    return {
+    payload = {
         "format_version": SIMULATOR_EXECUTION_PROVENANCE_FORMAT,
         "workflow_version": SIMULATOR_MANIFEST_EXECUTION_VERSION,
         "execution_request": copy.deepcopy(dict(execution_request)),
@@ -595,6 +1492,9 @@ def _build_execution_provenance(
             "structured_log_event_count": int(structured_log_event_count),
         },
     }
+    if model_execution is not None:
+        payload["model_execution"] = _json_ready(model_execution)
+    return payload
 
 
 def _build_ui_comparison_payload(
@@ -606,6 +1506,17 @@ def _build_ui_comparison_payload(
     extension_paths: Mapping[str, Path],
 ) -> dict[str, Any]:
     result_paths = discover_simulator_result_bundle_paths(bundle_metadata)
+    model_artifacts = sorted(
+        [
+            copy.deepcopy(dict(artifact))
+            for artifact in bundle_metadata["artifacts"].get(MODEL_ARTIFACTS_KEY, [])
+        ],
+        key=lambda artifact: (
+            str(artifact["artifact_scope"]),
+            str(artifact["artifact_id"]),
+            str(artifact["path"]),
+        ),
+    )
     readout_summaries = []
     for index, definition in enumerate(result.run_blueprint.readout_catalog):
         metric_cards = [
@@ -703,24 +1614,15 @@ def _build_ui_comparison_payload(
                 "format": bundle_metadata["artifacts"][METRICS_TABLE_KEY]["format"],
                 "artifact_scope": bundle_metadata["artifacts"][METRICS_TABLE_KEY]["artifact_scope"],
             },
+        ]
+        + [
             {
-                "artifact_id": STRUCTURED_LOG_ARTIFACT_ID,
-                "path": str(extension_paths[STRUCTURED_LOG_ARTIFACT_ID]),
-                "format": SIMULATOR_EXECUTION_LOG_FORMAT,
-                "artifact_scope": MODEL_DIAGNOSTIC_SCOPE,
-            },
-            {
-                "artifact_id": EXECUTION_PROVENANCE_ARTIFACT_ID,
-                "path": str(extension_paths[EXECUTION_PROVENANCE_ARTIFACT_ID]),
-                "format": SIMULATOR_EXECUTION_PROVENANCE_FORMAT,
-                "artifact_scope": MODEL_DIAGNOSTIC_SCOPE,
-            },
-            {
-                "artifact_id": UI_COMPARISON_PAYLOAD_ARTIFACT_ID,
-                "path": str(extension_paths[UI_COMPARISON_PAYLOAD_ARTIFACT_ID]),
-                "format": SIMULATOR_UI_COMPARISON_PAYLOAD_FORMAT,
-                "artifact_scope": SHARED_COMPARISON_SCOPE,
-            },
+                "artifact_id": str(artifact["artifact_id"]),
+                "path": str(artifact["path"]),
+                "format": str(artifact["format"]),
+                "artifact_scope": str(artifact["artifact_scope"]),
+            }
+            for artifact in model_artifacts
         ],
         "trace_payload": {
             "path": str(result_paths[READOUT_TRACES_KEY]),

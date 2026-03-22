@@ -1,0 +1,178 @@
+[
+  {
+    "ticket_id": "FW-M10-001",
+    "title": "Freeze a versioned surface-wave model contract, parameter schema, and stability design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-001_Freeze_a_versioned_surface-wave_model_contract_parameter_schema_and_stability_design_note/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-001_Freeze_a_versioned_surface-wave_model_contract_parameter_schema_and_stability_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-001_Freeze_a_versioned_surface-wave_model_contract_parameter_schema_and_stability_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-001_Freeze_a_versioned_surface-wave_model_contract_parameter_schema_and_stability_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-001_Freeze_a_versioned_surface-wave_model_contract_parameter_schema_and_stability_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-001_Freeze_a_versioned_surface-wave_model_contract_parameter_schema_and_stability_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M10-002",
+    "title": "Extend manifest-driven simulation planning and config normalization for `model_mode=surface_wave`",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-002_Extend_manifest-driven_simulation_planning_and_config_normalization_for_model_mode_surface_wave/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-002_Extend_manifest-driven_simulation_planning_and_config_normalization_for_model_mode_surface_wave",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-002_Extend_manifest-driven_simulation_planning_and_config_normalization_for_model_mode_surface_wave/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-002_Extend_manifest-driven_simulation_planning_and_config_normalization_for_model_mode_surface_wave/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-002_Extend_manifest-driven_simulation_planning_and_config_normalization_for_model_mode_surface_wave/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-002_Extend_manifest-driven_simulation_planning_and_config_normalization_for_model_mode_surface_wave/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M10-003",
+    "title": "Implement single-neuron surface-wave state containers, sparse stepping kernels, and a stability-aware integrator",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-003_Implement_single-neuron_surface-wave_state_containers_sparse_stepping_kernels_and_a_stability-aware_integrator/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-003_Implement_single-neuron_surface-wave_state_containers_sparse_stepping_kernels_and_a_stability-aware_integrator",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-003_Implement_single-neuron_surface-wave_state_containers_sparse_stepping_kernels_and_a_stability-aware_integrator/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-003_Implement_single-neuron_surface-wave_state_containers_sparse_stepping_kernels_and_a_stability-aware_integrator/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-003_Implement_single-neuron_surface-wave_state_containers_sparse_stepping_kernels_and_a_stability-aware_integrator/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-003_Implement_single-neuron_surface-wave_state_containers_sparse_stepping_kernels_and_a_stability-aware_integrator/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M10-004",
+    "title": "Add recovery, nonlinearity, anisotropy, and branching-aware wave mechanics with explicit guardrails",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-004_Add_recovery_nonlinearity_anisotropy_and_branching-aware_wave_mechanics_with_explicit_guardrails/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-004_Add_recovery_nonlinearity_anisotropy_and_branching-aware_wave_mechanics_with_explicit_guardrails",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-004_Add_recovery_nonlinearity_anisotropy_and_branching-aware_wave_mechanics_with_explicit_guardrails/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-004_Add_recovery_nonlinearity_anisotropy_and_branching-aware_wave_mechanics_with_explicit_guardrails/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-004_Add_recovery_nonlinearity_anisotropy_and_branching-aware_wave_mechanics_with_explicit_guardrails/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-004_Add_recovery_nonlinearity_anisotropy_and_branching-aware_wave_mechanics_with_explicit_guardrails/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M10-005",
+    "title": "Integrate synaptic source injection and inter-neuron coupling so multi-neuron wave propagation is executable",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-005_Integrate_synaptic_source_injection_and_inter-neuron_coupling_so_multi-neuron_wave_propagation_is_executable/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-005_Integrate_synaptic_source_injection_and_inter-neuron_coupling_so_multi-neuron_wave_propagation_is_executable",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-005_Integrate_synaptic_source_injection_and_inter-neuron_coupling_so_multi-neuron_wave_propagation_is_executable/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-005_Integrate_synaptic_source_injection_and_inter-neuron_coupling_so_multi-neuron_wave_propagation_is_executable/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-005_Integrate_synaptic_source_injection_and_inter-neuron_coupling_so_multi-neuron_wave_propagation_is_executable/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-005_Integrate_synaptic_source_injection_and_inter-neuron_coupling_so_multi-neuron_wave_propagation_is_executable/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M10-006",
+    "title": "Integrate canonical visual input streams, manifest-driven `surface_wave` execution, and shared result-bundle serialization",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-006_Integrate_canonical_visual_input_streams_manifest-driven_surface_wave_execution_and_shared_result-bundle_serialization/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-006_Integrate_canonical_visual_input_streams_manifest-driven_surface_wave_execution_and_shared_result-bundle_serialization",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-006_Integrate_canonical_visual_input_streams_manifest-driven_surface_wave_execution_and_shared_result-bundle_serialization/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-006_Integrate_canonical_visual_input_streams_manifest-driven_surface_wave_execution_and_shared_result-bundle_serialization/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-006_Integrate_canonical_visual_input_streams_manifest-driven_surface_wave_execution_and_shared_result-bundle_serialization/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-006_Integrate_canonical_visual_input_streams_manifest-driven_surface_wave_execution_and_shared_result-bundle_serialization/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M10-007",
+    "title": "Ship systematic parameter sweeps, stability diagnostics, and offline wave inspection tooling",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-007_Ship_systematic_parameter_sweeps_stability_diagnostics_and_offline_wave_inspection_tooling/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-007_Ship_systematic_parameter_sweeps_stability_diagnostics_and_offline_wave_inspection_tooling",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-007_Ship_systematic_parameter_sweeps_stability_diagnostics_and_offline_wave_inspection_tooling/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-007_Ship_systematic_parameter_sweeps_stability_diagnostics_and_offline_wave_inspection_tooling/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-007_Ship_systematic_parameter_sweeps_stability_diagnostics_and_offline_wave_inspection_tooling/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-007_Ship_systematic_parameter_sweeps_stability_diagnostics_and_offline_wave_inspection_tooling/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M10-008",
+    "title": "Run a Milestone 10 integration verification pass and publish a readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-008_Run_a_Milestone_10_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-008_Run_a_Milestone_10_integration_verification_pass_and_publish_a_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-008_Run_a_Milestone_10_integration_verification_pass_and_publish_a_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-008_Run_a_Milestone_10_integration_verification_pass_and_publish_a_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-008_Run_a_Milestone_10_integration_verification_pass_and_publish_a_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T072405Z/FW-M10-008_Run_a_Milestone_10_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+  }
+]

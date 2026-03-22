@@ -276,6 +276,49 @@ Contract notes:
 note; later tickets should cite it instead of re-litigating the retinal
 abstraction family, coordinate frames, or what one retinal frame means.
 
+### Surface-wave model contract
+
+Milestone 10 now reserves one explicit wave-model discovery surface under the
+versioned contract `surface_wave_model.v1`.
+
+The library-owned default layout is:
+
+- `data/processed/surface_wave_models/bundles/<model_family>/<parameter_hash>/surface_wave_model.json`:
+  authoritative normalized wave-model metadata and parameter bundle
+
+Contract notes:
+
+- model-family naming, parameter normalization, parameter hashing, metadata
+  serialization, and metadata-path discovery now live in
+  `flywire_wave.surface_wave_contract` rather than ad hoc solver code
+- bundle identity is the tuple `(contract_version, model_family,
+  parameter_hash)`
+- the selected Milestone 10 roadmap family is
+  `hybrid_field_readout_system`, realized in v1 as the canonical software
+  model family `hybrid_damped_wave_recovery`
+- the canonical state catalog is:
+  `surface_activation` (`activation_au`), `surface_velocity`
+  (`activation_au_per_ms`), and the optional `recovery_state` (`unitless`)
+- the propagation term is defined against the Milestone 6 mass-normalized
+  surface operator; damping is a separate linear sink on `surface_velocity`
+- synaptic injection semantics reuse Milestone 7 sign, delay, aggregation, and
+  landing-anchor rules and add the realized source to `surface_velocity`
+  through one named source mode `coupling_anchor_current`
+- recovery, nonlinearity, anisotropy, and branching now have explicit mode
+  identifiers in the contract even when the shipped default preset keeps them
+  disabled or in identity mode
+- the canonical v1 solver family identifier is
+  `semi_implicit_velocity_split`, and later stability checks are expected to
+  derive timestep guards from operator spectra rather than graph-degree rules
+- `resolve_surface_wave_model_metadata_path()` and
+  `build_surface_wave_model_reference()` are the discovery helpers later
+  planning, execution, and result code should use instead of hardcoded strings
+
+`docs/surface_wave_model_design.md` is the authoritative Milestone 10 decision
+note; later tickets should cite it instead of re-litigating the chosen wave
+family, state-variable semantics, stability assumptions, or what counts as a
+numerical artifact.
+
 ### Simulator result bundle contract
 
 Milestone 9 now reserves one explicit simulator-owned result surface under the
@@ -317,9 +360,33 @@ Contract notes:
   baseline-versus-wave comparison artifacts keep the same top-level filenames
   and payload conventions
 - `scripts/run_simulation.py` is the public Milestone 9 local execution path:
-  it resolves manifest arms, runs the supported model mode, writes the
+  it resolves manifest arms, runs `baseline` or `surface_wave`, writes the
   canonical bundle, and emits bundle-discovered `structured_log.jsonl`,
-  `execution_provenance.json`, and `ui_comparison_payload.json` handoff files
+  `execution_provenance.json`, `ui_comparison_payload.json`, and any
+  wave-specific extension artifacts needed by morphology-resolved runs
+- local wave execution uses the same public entrypoint, for example:
+  `python scripts/run_simulation.py --config <config> --manifest <manifest> --schema <schema> --design-lock <design-lock> --model-mode surface_wave --arm-id surface_wave_intact`
+- `scripts/15_surface_wave_inspection.py` is the Milestone 10 local audit path:
+  it resolves one or more normalized `surface_wave` arm plans, expands a
+  deterministic parameter sweep, runs coupled executions plus representative
+  single-neuron pulse probes, and writes review-friendly `report.md`,
+  `summary.json`, `runs.csv`, per-run trace archives, and SVG trace panels
+- output goes to
+  `config.paths.surface_wave_inspection_dir/experiment-<experiment-id>__arms-<arm-slug>__sweep-<hash>/`
+- the audit emits compact `pass`, `warn`, or `fail` checks for finite-value
+  stability, pulse-energy growth, wavefront detection, driven dynamic range,
+  spatial contrast, coupling-event presence, and large peak-to-drive ratios
+- `scripts/16_milestone10_readiness.py` is the shipped integration-audit path:
+  it layers a focused fixture suite plus deterministic `surface_wave`
+  execution, baseline comparison, documentation checks, and the shipped
+  inspection workflow on top of `scripts/run_simulation.py` and
+  `scripts/15_surface_wave_inspection.py`
+- the readiness report goes to
+  `config.paths.processed_simulator_results_dir/readiness/milestone_10/milestone_10_readiness.md`
+  and
+  `config.paths.processed_simulator_results_dir/readiness/milestone_10/milestone_10_readiness.json`
+- `make milestone10-readiness` is the one-command entrypoint for the shipped
+  Milestone 10 integration verification pass
 - `scripts/14_milestone9_readiness.py` layers a focused fixture suite plus a
   deterministic manifest-driven baseline audit on top of
   `scripts/run_simulation.py` and writes `milestone_9_readiness.md` plus
