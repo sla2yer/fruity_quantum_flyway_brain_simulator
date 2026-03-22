@@ -2,6 +2,7 @@
 
 __all__ = [
     "agent_tickets",
+    "baseline_execution",
     "config",
     "coupling_assembly",
     "coupling_inspection",
@@ -20,6 +21,9 @@ __all__ = [
     "retinal_workflow",
     "scene_playback",
     "selection",
+    "simulation_planning",
+    "simulator_result_contract",
+    "simulator_runtime",
     "stimulus_contract",
     "stimulus_registry",
     "synapse_mapping",

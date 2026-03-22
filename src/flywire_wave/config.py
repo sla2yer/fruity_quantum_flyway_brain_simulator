@@ -28,6 +28,7 @@ DEFAULT_PATHS = {
     "operator_qa_dir": Path("data/processed/operator_qa"),
     "processed_stimulus_dir": Path("data/processed/stimuli"),
     "processed_retinal_dir": Path("data/processed/retinal"),
+    "processed_simulator_results_dir": Path("data/processed/simulator_results"),
     "manifest_json": Path("data/processed/asset_manifest.json"),
 }
 

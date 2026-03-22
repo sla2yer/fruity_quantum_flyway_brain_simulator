@@ -275,6 +275,50 @@ Contract notes:
 note; later tickets should cite it instead of re-litigating the retinal
 abstraction family, coordinate frames, or what one retinal frame means.
 
+### Simulator result bundle contract
+
+Milestone 9 now reserves one explicit simulator-owned result surface under the
+versioned contract `simulator_result_bundle.v1`.
+
+The library-owned default layout is:
+
+- `data/processed/simulator_results/bundles/<experiment_id>/<arm_id>/<run_spec_hash>/simulator_result_bundle.json`:
+  authoritative per-arm run metadata and artifact inventory
+- `data/processed/simulator_results/bundles/<experiment_id>/<arm_id>/<run_spec_hash>/state_summary.json`:
+  comparison-ready long-table state summaries
+- `data/processed/simulator_results/bundles/<experiment_id>/<arm_id>/<run_spec_hash>/readout_traces.npz`:
+  shared readout traces on the canonical simulator timebase
+- `data/processed/simulator_results/bundles/<experiment_id>/<arm_id>/<run_spec_hash>/metrics.csv`:
+  comparison-ready metric rows keyed by stable readout IDs
+- `data/processed/simulator_results/bundles/<experiment_id>/<arm_id>/<run_spec_hash>/extensions/<file_name>`:
+  reserved model-specific diagnostics or wave-only state archives
+
+Contract notes:
+
+- bundle paths, run-spec hashing, metadata serialization, and artifact
+  discovery now live in `flywire_wave.simulator_result_contract` rather than
+  ad hoc runner code
+- bundle identity is the tuple `(contract_version, experiment_id, arm_id,
+  run_spec_hash)`
+- the bundle records manifest identity, arm identity, model mode, baseline
+  family, seed, shared timebase, ordered selected-asset references, ordered
+  shared readout catalog, and the output artifact inventory needed for
+  deterministic replay
+- timing is always expressed in milliseconds with one declared
+  `fixed_step_uniform` timebase shared by state summaries, trace export, and
+  metric rows
+- `P0` is the canonical passive leaky linear single-compartment baseline and
+  `P1` is the stronger reduced baseline with explicit integration current or
+  deterministic delay structure; both still use the same shared readout
+  contract
+- extra wave diagnostics may be written under `extensions/`, but shared
+  baseline-versus-wave comparison artifacts keep the same top-level filenames
+  and payload conventions
+
+`docs/simulator_result_bundle_design.md` is the authoritative Milestone 9
+decision note; later tickets should cite it instead of re-litigating baseline
+fairness, shared readout semantics, or the result-bundle layout.
+
 ### Offline retinal inspection contract
 
 Milestone 8B now also defines one deterministic offline inspection workflow for
