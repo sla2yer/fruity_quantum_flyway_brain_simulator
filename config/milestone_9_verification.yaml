@@ -1,0 +1,21 @@
+paths:
+  processed_stimulus_dir: data/processed/milestone_9_verification/stimuli
+  processed_retinal_dir: data/processed/milestone_9_verification/retinal
+  processed_simulator_results_dir: data/processed/milestone_9_verification/simulator_results
+
+simulation_verification:
+  manifest_path: manifests/examples/milestone_1_demo.yaml
+  schema_path: schemas/milestone_1_experiment_manifest.schema.json
+  design_lock_path: config/milestone_1_design_lock.yaml
+
+  baseline_families:
+    P0:
+      membrane_time_constant_ms: 12.5
+      recurrent_gain: 0.9
+    P1:
+      membrane_time_constant_ms: 12.5
+      synaptic_current_time_constant_ms: 10.0
+      recurrent_gain: 1.0
+      delay_handling:
+        mode: from_coupling_bundle
+        max_supported_delay_steps: 8

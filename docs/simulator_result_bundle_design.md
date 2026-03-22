@@ -144,6 +144,12 @@ Milestones 10, 12, 13, and 14 must preserve these invariants:
   guesses
 - `scripts/run_simulation.py` is the public local execution path for
   manifest-driven baseline result bundles in Milestone 9
+- `scripts/14_milestone9_readiness.py` is the shipped integration-audit path:
+  it reruns the local baseline workflow on fixture assets, checks comparison
+  readiness, and writes `milestone_9_readiness.md` plus
+  `milestone_9_readiness.json` under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_9/`
+- `make milestone9-readiness` is the one-command entrypoint for that audit
 
 If a future ticket needs a different shared layout, different shared payload
 columns, or a different meaning for `P0`/`P1`, that is a new contract version,

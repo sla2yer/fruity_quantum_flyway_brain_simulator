@@ -320,6 +320,13 @@ Contract notes:
   it resolves manifest arms, runs the supported model mode, writes the
   canonical bundle, and emits bundle-discovered `structured_log.jsonl`,
   `execution_provenance.json`, and `ui_comparison_payload.json` handoff files
+- `scripts/14_milestone9_readiness.py` layers a focused fixture suite plus a
+  deterministic manifest-driven baseline audit on top of
+  `scripts/run_simulation.py` and writes `milestone_9_readiness.md` plus
+  `milestone_9_readiness.json` under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_9/`
+- `make milestone9-readiness` is the one-command entrypoint for the shipped
+  Milestone 9 readiness pass
 
 `docs/simulator_result_bundle_design.md` is the authoritative Milestone 9
 decision note; later tickets should cite it instead of re-litigating baseline

@@ -62,6 +62,7 @@ Optional offline inspection steps:
 11. `scripts/11_milestone8a_readiness.py`
 12. `scripts/12_retinal_bundle.py`
 13. `scripts/13_milestone8b_readiness.py`
+14. `scripts/14_milestone9_readiness.py`
 
 ## Source-of-truth inputs
 
@@ -108,7 +109,7 @@ per-neuron when configured.
 - `scripts/`: thin CLI entrypoints for the pipeline and offline review tools
 - `tests/`: local unit tests that do not require FlyWire network access
 - `config/`: example runtime config plus the tracked Milestone 1 and Milestone 6
-  through Milestone 8B verification configs and inputs
+  through Milestone 9 verification configs and inputs
 - `manifests/`: example experiment manifests
 - `schemas/`: manifest schema files
 - `docs/milestones.md`: consolidated roadmap and milestone planning
@@ -522,6 +523,32 @@ Equivalent explicit command:
 ./.venv/bin/python scripts/13_milestone8b_readiness.py --config config/milestone_8b_verification.yaml
 ```
 
+### 17) Run the Milestone 9 readiness pass
+
+```bash
+make milestone9-readiness
+```
+
+This uses [`config/milestone_9_verification.yaml`](config/milestone_9_verification.yaml)
+and writes isolated outputs under `data/processed/milestone_9_verification/`.
+It runs a focused Milestone 9 fixture suite, materializes a deterministic local
+baseline-simulator fixture, executes the shipped
+`scripts/run_simulation.py` baseline workflow twice against the representative
+Milestone 1 manifest path, audits planning/runtime/result-bundle/UI contract
+compatibility, and publishes:
+
+- `milestone_9_readiness.md`
+- `milestone_9_readiness.json`
+
+under the deterministic readiness report directory
+`data/processed/milestone_9_verification/simulator_results/readiness/milestone_9/`.
+
+Equivalent explicit command:
+
+```bash
+./.venv/bin/python scripts/14_milestone9_readiness.py --config config/milestone_9_verification.yaml
+```
+
 ## What "wave-ready" means here
 
 For each selected root ID, the current asset builder can:
@@ -628,6 +655,7 @@ make milestone6-readiness
 make milestone7-readiness
 make milestone8a-readiness
 make milestone8b-readiness
+make milestone9-readiness
 make validate-manifest
 make all CONFIG=config/local.yaml
 ```
@@ -641,7 +669,7 @@ make all CONFIG=config/local.yaml
 - `make verify` and `make meshes` require a valid FlyWire token and network
   access;
 - tests, manifest validation, geometry preview, operator QA, and the Milestone 6,
-  Milestone 7, Milestone 8A, and Milestone 8B readiness passes are all local workflows;
+  Milestone 7, Milestone 8A, Milestone 8B, and Milestone 9 readiness passes are all local workflows;
 - the default processed operator is now a cotangent-FEM-style surface operator,
   not just a starter graph Laplacian, but a graph-based fallback still exists
   for guarded cases;

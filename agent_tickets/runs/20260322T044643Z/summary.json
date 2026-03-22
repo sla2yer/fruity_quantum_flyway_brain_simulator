@@ -1,0 +1,156 @@
+[
+  {
+    "ticket_id": "FW-M9-001",
+    "title": "Freeze a versioned simulator result bundle contract and fair baseline design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-001_Freeze_a_versioned_simulator_result_bundle_contract_and_fair_baseline_design_note/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-001_Freeze_a_versioned_simulator_result_bundle_contract_and_fair_baseline_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-001_Freeze_a_versioned_simulator_result_bundle_contract_and_fair_baseline_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-001_Freeze_a_versioned_simulator_result_bundle_contract_and_fair_baseline_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-001_Freeze_a_versioned_simulator_result_bundle_contract_and_fair_baseline_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-001_Freeze_a_versioned_simulator_result_bundle_contract_and_fair_baseline_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M9-002",
+    "title": "Build manifest-driven simulation plans, typed baseline config normalization, and run discovery helpers",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-002_Build_manifest-driven_simulation_plans_typed_baseline_config_normalization_and_run_discovery_helpers/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-002_Build_manifest-driven_simulation_plans_typed_baseline_config_normalization_and_run_discovery_helpers",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-002_Build_manifest-driven_simulation_plans_typed_baseline_config_normalization_and_run_discovery_helpers/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-002_Build_manifest-driven_simulation_plans_typed_baseline_config_normalization_and_run_discovery_helpers/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-002_Build_manifest-driven_simulation_plans_typed_baseline_config_normalization_and_run_discovery_helpers/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-002_Build_manifest-driven_simulation_plans_typed_baseline_config_normalization_and_run_discovery_helpers/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M9-003",
+    "title": "Implement the core simulator execution framework, state containers, and deterministic stepping loop",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-003_Implement_the_core_simulator_execution_framework_state_containers_and_deterministic_stepping_loop/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-003_Implement_the_core_simulator_execution_framework_state_containers_and_deterministic_stepping_loop",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-003_Implement_the_core_simulator_execution_framework_state_containers_and_deterministic_stepping_loop/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-003_Implement_the_core_simulator_execution_framework_state_containers_and_deterministic_stepping_loop/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-003_Implement_the_core_simulator_execution_framework_state_containers_and_deterministic_stepping_loop/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-003_Implement_the_core_simulator_execution_framework_state_containers_and_deterministic_stepping_loop/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M9-004",
+    "title": "Implement fair P0 and P1 baseline neuron families with shared readout semantics",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-004_Implement_fair_P0_and_P1_baseline_neuron_families_with_shared_readout_semantics/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-004_Implement_fair_P0_and_P1_baseline_neuron_families_with_shared_readout_semantics",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-004_Implement_fair_P0_and_P1_baseline_neuron_families_with_shared_readout_semantics/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-004_Implement_fair_P0_and_P1_baseline_neuron_families_with_shared_readout_semantics/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-004_Implement_fair_P0_and_P1_baseline_neuron_families_with_shared_readout_semantics/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-004_Implement_fair_P0_and_P1_baseline_neuron_families_with_shared_readout_semantics/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M9-005",
+    "title": "Integrate canonical input streams and Milestone 7 coupling bundles into baseline simulation runs",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-005_Integrate_canonical_input_streams_and_Milestone_7_coupling_bundles_into_baseline_simulation_runs/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-005_Integrate_canonical_input_streams_and_Milestone_7_coupling_bundles_into_baseline_simulation_runs",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-005_Integrate_canonical_input_streams_and_Milestone_7_coupling_bundles_into_baseline_simulation_runs/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-005_Integrate_canonical_input_streams_and_Milestone_7_coupling_bundles_into_baseline_simulation_runs/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-005_Integrate_canonical_input_streams_and_Milestone_7_coupling_bundles_into_baseline_simulation_runs/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-005_Integrate_canonical_input_streams_and_Milestone_7_coupling_bundles_into_baseline_simulation_runs/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M9-006",
+    "title": "Ship manifest-driven baseline execution, result serialization, logging, metrics, and UI-ready comparison payloads",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-006_Ship_manifest-driven_baseline_execution_result_serialization_logging_metrics_and_UI-ready_comparison_payloads/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-006_Ship_manifest-driven_baseline_execution_result_serialization_logging_metrics_and_UI-ready_comparison_payloads",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-006_Ship_manifest-driven_baseline_execution_result_serialization_logging_metrics_and_UI-ready_comparison_payloads/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-006_Ship_manifest-driven_baseline_execution_result_serialization_logging_metrics_and_UI-ready_comparison_payloads/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-006_Ship_manifest-driven_baseline_execution_result_serialization_logging_metrics_and_UI-ready_comparison_payloads/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-006_Ship_manifest-driven_baseline_execution_result_serialization_logging_metrics_and_UI-ready_comparison_payloads/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M9-007",
+    "title": "Run a Milestone 9 integration verification pass and publish a readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-007_Run_a_Milestone_9_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-007_Run_a_Milestone_9_integration_verification_pass_and_publish_a_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-007_Run_a_Milestone_9_integration_verification_pass_and_publish_a_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-007_Run_a_Milestone_9_integration_verification_pass_and_publish_a_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-007_Run_a_Milestone_9_integration_verification_pass_and_publish_a_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T044643Z/FW-M9-007_Run_a_Milestone_9_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+  }
+]

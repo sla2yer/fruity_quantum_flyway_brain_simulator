@@ -9,8 +9,9 @@ M7_CONFIG ?= config/milestone_7_verification.yaml
 M7_EDGE_FILE ?= config/milestone_7_verification_edges.txt
 M8A_CONFIG ?= config/milestone_8a_verification.yaml
 M8B_CONFIG ?= config/milestone_8b_verification.yaml
+M9_CONFIG ?= config/milestone_9_verification.yaml
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
@@ -33,6 +34,7 @@ help:
 		'milestone7-readiness Run the Milestone 7 integration verification pass and publish a readiness report' \
 		'milestone8a-readiness Run the Milestone 8A canonical stimulus integration verification pass and publish a readiness report' \
 		'milestone8b-readiness Run the Milestone 8B world-to-retina integration verification pass and publish a readiness report' \
+		'milestone9-readiness Run the Milestone 9 baseline simulator integration verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -79,6 +81,9 @@ milestone8a-readiness:
 
 milestone8b-readiness:
 	$(PYTHON) scripts/13_milestone8b_readiness.py --config $(M8B_CONFIG)
+
+milestone9-readiness:
+	$(PYTHON) scripts/14_milestone9_readiness.py --config $(M9_CONFIG)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)
