@@ -86,3 +86,43 @@ Or resolve the same canonical output path from the source entrypoint:
 python scripts/12_retinal_bundle.py replay --config path/to/retinal_stimulus.yaml --time-ms 20
 python scripts/12_retinal_bundle.py replay --scene path/to/scene.yaml --time-ms 20
 ```
+
+## Inspect a retinal bundle offline
+
+Generate a deterministic static report from an existing retinal bundle:
+
+```bash
+python scripts/12_retinal_bundle.py inspect \
+  --bundle-metadata data/processed/retinal/bundles/.../retinal_input_bundle.json
+```
+
+Or resolve the canonical bundle path from the same source entrypoint and
+materialize it first when the bundle is not already cached:
+
+```bash
+python scripts/12_retinal_bundle.py inspect --config path/to/retinal_stimulus.yaml
+python scripts/12_retinal_bundle.py inspect --scene path/to/scene.yaml
+```
+
+The inspection report writes sidecars under the deterministic bundle-local
+directory:
+
+```text
+data/processed/retinal/bundles/<source_kind>/<source_family>/<source_name>/<source_hash>/<retinal_spec_hash>/inspection/
+```
+
+That directory contains:
+
+- `index.html`: static review report with world-view versus fly-view frames
+- `report.md`: lightweight Markdown variant for run logs or tickets
+- `summary.json`: machine-readable QA and artifact summary
+- `coverage_layout.svg`: detector layout plus coverage status
+- `frames/frame-<index>-world.svg`: sampled world-view preview panels
+- `frames/frame-<index>-retinal.svg`: sampled retinal-view panels
+
+The report also records deterministic pointers back into
+`retinal_input_bundle.json` under `inspection` so later scripts can discover
+the offline review artifacts from the bundle metadata alone.
+
+See `docs/retinal_inspection.md` for the reviewer checklist and the meaning of
+`pass`, `warn`, and `fail` checks.

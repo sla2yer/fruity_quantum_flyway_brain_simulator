@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from flywire_wave.retinal_workflow import (
+    inspect_retinal_bundle_workflow,
     record_resolved_retinal_bundle,
     replay_retinal_bundle_workflow,
     resolve_retinal_bundle_input,
@@ -45,6 +46,12 @@ def main() -> int:
         help="Optional replay time sample. Repeat to inspect multiple times.",
     )
 
+    inspect_parser = subparsers.add_parser(
+        "inspect",
+        help="Generate a static offline world-view versus fly-view retinal inspection report.",
+    )
+    _add_source_arguments(inspect_parser, require_source=False, allow_bundle_metadata=True)
+
     args = parser.parse_args()
     _validate_source_args(parser, args)
     if args.command == "record":
@@ -59,6 +66,26 @@ def main() -> int:
             processed_retinal_dir=args.processed_retinal_dir,
         )
         summary = record_resolved_retinal_bundle(resolved_input)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "inspect":
+        resolved_input = None
+        if args.bundle_metadata is None:
+            resolved_input = resolve_retinal_bundle_input(
+                config_path=args.config,
+                manifest_path=args.manifest,
+                scene_path=args.scene,
+                retinal_config_path=args.retinal_config,
+                schema_path=args.schema,
+                design_lock_path=args.design_lock,
+                processed_stimulus_dir=args.processed_stimulus_dir,
+                processed_retinal_dir=args.processed_retinal_dir,
+            )
+        summary = inspect_retinal_bundle_workflow(
+            bundle_metadata_path=args.bundle_metadata,
+            resolved_input=resolved_input,
+        )
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
 
@@ -141,9 +168,9 @@ def _validate_source_args(parser: argparse.ArgumentParser, args: argparse.Namesp
 
     if args.command == "record" and source_count != 1:
         parser.error("record requires exactly one of --config, --manifest, or --scene.")
-    if args.command == "replay" and source_count != 1:
+    if args.command in {"replay", "inspect"} and source_count != 1:
         parser.error(
-            "replay requires exactly one of --config, --manifest, --scene, or --bundle-metadata."
+            f"{args.command} requires exactly one of --config, --manifest, --scene, or --bundle-metadata."
         )
     if args.manifest is not None and args.retinal_config is None and getattr(args, "bundle_metadata", None) is None:
         parser.error("--manifest requires --retinal-config for retinal geometry and sampling options.")

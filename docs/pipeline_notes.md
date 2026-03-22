@@ -275,6 +275,27 @@ Contract notes:
 note; later tickets should cite it instead of re-litigating the retinal
 abstraction family, coordinate frames, or what one retinal frame means.
 
+### Offline retinal inspection contract
+
+Milestone 8B now also defines one deterministic offline inspection workflow for
+world-view versus fly-view review:
+
+- `scripts/12_retinal_bundle.py inspect` reads one cached retinal bundle, or
+  resolves the canonical bundle path from a retinal config or scene entrypoint
+- output goes to the bundle-local directory `.../<retinal_spec_hash>/inspection/`
+- the report is static: `index.html`, `report.md`, `summary.json`,
+  `coverage_layout.svg`, and paired world-view plus retinal-view SVG frame
+  panels under `frames/`
+- the report summary emits compact `pass`, `warn`, or `fail` checks for source
+  preview availability, timing consistency, detector-value validity, and
+  detector coverage
+- the workflow writes deterministic inspection pointers back into
+  `retinal_input_bundle.json` under `inspection` so later simulator and UI code
+  can discover the offline review artifacts from bundle metadata alone
+
+See `docs/retinal_inspection.md` for the reviewer checklist and failure
+interpretation.
+
 ### Offline coupling inspection contract
 
 Milestone 7 now also defines one deterministic offline inspection workflow for

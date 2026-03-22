@@ -19,6 +19,7 @@ from .retinal_contract import (
     normalize_retinal_sampling_kernel,
 )
 from .retinal_geometry import ResolvedRetinalGeometry, build_body_to_head_transform, build_world_to_body_transform, resolve_retinal_geometry_spec
+from .retinal_inspection import generate_retinal_inspection_report
 from .retinal_sampling import AnalyticVisualFieldSource, project_visual_source
 from .scene_playback import ResolvedSceneSpec, load_scene_entrypoint, resolve_scene_spec
 from .stimulus_bundle import (
@@ -265,6 +266,24 @@ def replay_retinal_bundle_workflow(
     }
 
 
+def inspect_retinal_bundle_workflow(
+    *,
+    bundle_metadata_path: str | Path | None = None,
+    resolved_input: ResolvedRetinalBundleInput | None = None,
+) -> dict[str, Any]:
+    metadata_path, materialized_bundle = _resolve_or_materialize_retinal_bundle(
+        bundle_metadata_path=bundle_metadata_path,
+        resolved_input=resolved_input,
+    )
+    summary = generate_retinal_inspection_report(metadata_path)
+    summary["mode"] = "inspect"
+    summary["bundle_materialized"] = bool(materialized_bundle)
+    if resolved_input is not None:
+        summary["entrypoint_kind"] = resolved_input.entrypoint_kind
+        summary["entrypoint_path"] = str(resolved_input.entrypoint_path)
+    return summary
+
+
 def _resolve_stimulus_visual_source(
     *,
     resolved_input: ResolvedStimulusInput,
@@ -496,6 +515,23 @@ def _resolve_retinal_bundle_metadata_path(
     if resolved_input is None:
         raise ValueError("Either bundle_metadata_path or resolved_input must be provided.")
     return resolved_input.retinal_bundle_metadata_path.resolve()
+
+
+def _resolve_or_materialize_retinal_bundle(
+    *,
+    bundle_metadata_path: str | Path | None,
+    resolved_input: ResolvedRetinalBundleInput | None,
+) -> tuple[Path, bool]:
+    metadata_path = _resolve_retinal_bundle_metadata_path(
+        bundle_metadata_path=bundle_metadata_path,
+        resolved_input=resolved_input,
+    )
+    if metadata_path.exists():
+        return metadata_path, False
+    if resolved_input is None:
+        raise FileNotFoundError(f"Retinal bundle metadata is missing at {metadata_path}.")
+    record_resolved_retinal_bundle(resolved_input)
+    return metadata_path.resolve(), True
 
 
 def _serialize_effective_transforms(
