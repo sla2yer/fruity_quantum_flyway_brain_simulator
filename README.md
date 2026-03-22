@@ -56,6 +56,8 @@ Optional offline inspection steps:
 5. `scripts/05_preview_geometry.py`
 6. `scripts/06_operator_qa.py`
 7. `scripts/07_milestone6_readiness.py`
+8. `scripts/08_coupling_inspection.py`
+9. `scripts/09_milestone7_readiness.py`
 
 ## Source-of-truth inputs
 
@@ -102,7 +104,7 @@ per-neuron when configured.
 - `scripts/`: thin CLI entrypoints for the pipeline and offline review tools
 - `tests/`: local unit tests that do not require FlyWire network access
 - `config/`: example runtime config plus the tracked Milestone 1 and Milestone 6
-  verification configs
+  through Milestone 7 verification configs and inputs
 - `manifests/`: example experiment manifests
 - `schemas/`: manifest schema files
 - `docs/milestones.md`: consolidated roadmap and milestone planning
@@ -110,6 +112,10 @@ per-neuron when configured.
 - `docs/geometry_descriptor_qa.md`: descriptor and geometry-QA thresholds
 - `docs/operator_bundle_design.md`: authoritative Milestone 6 discretization and
   operator contract note
+- `docs/coupling_bundle_design.md`: authoritative Milestone 7 coupling contract
+  and topology note
+- `docs/coupling_inspection.md`: reviewer-oriented offline coupling inspection
+  workflow
 - `docs/operator_qa.md`: reviewer-oriented offline operator QA workflow
 - `data/raw/codex/`: manually downloaded Codex CSV snapshots
 - `data/interim/`, `data/processed/`: generated outputs, ignored by git
@@ -240,7 +246,10 @@ python scripts/00_verify_access.py --config config/local.yaml
 
 This normalizes the local Codex exports into one neuron registry, one
 connectivity registry, and a provenance JSON with pinned snapshot and input-file
-metadata.
+metadata. It also refreshes the canonical local synapse-registry path under
+`data/processed/coupling/`; when `paths.synapse_source_csv` is configured that
+artifact contains normalized per-synapse rows, and otherwise it stays as an
+empty audited placeholder.
 
 ```bash
 python scripts/build_registry.py --config config/local.yaml
@@ -252,6 +261,8 @@ This writes:
 data/interim/registry/neuron_registry.csv
 data/interim/registry/connectivity_registry.csv
 data/interim/registry/registry_provenance.json
+data/processed/coupling/synapse_registry.csv
+data/processed/coupling/synapse_registry_provenance.json
 ```
 
 ### 7) Select a subset to mesh
@@ -266,6 +277,9 @@ Each run writes a root-id list, selected-neuron CSV, stats JSON, manifest JSON,
 and a lightweight Markdown/Mermaid preview under
 `data/interim/subsets/<preset>/`. The active preset also refreshes
 `paths.selected_root_ids` so downstream steps can switch inputs by config alone.
+When a synapse source snapshot is configured, selection also refreshes the
+canonical `data/processed/coupling/synapse_registry.csv` so it stays scoped to
+the active root set.
 
 ```bash
 python scripts/01_select_subset.py --config config/local.yaml
@@ -347,7 +361,36 @@ Each preview directory contains a static `index.html`, `summary.json`, and the
 exact `root_ids.txt` used for that report. See
 [`docs/geometry_preview.md`](docs/geometry_preview.md) for reviewer guidance.
 
-### 11) Generate an offline operator QA report
+### 11) Generate an offline coupling inspection report
+
+```bash
+python scripts/08_coupling_inspection.py --config config/local.yaml --edge 202:101
+```
+
+Inspect multiple explicit edges instead:
+
+```bash
+python scripts/08_coupling_inspection.py --config config/local.yaml --edge 202:101 --edge 101:303
+```
+
+This workflow reads only local Milestone 7 artifacts and writes a deterministic
+report under `config.paths.coupling_inspection_dir/edges-<sorted-edge-slug>/`
+(default: `data/processed/coupling_inspection/`). It does not require FlyWire
+network access.
+
+Each report includes:
+
+- `index.html`
+- `report.md`
+- `summary.json`
+- `edges.txt`
+- per-edge detail JSON
+- presynaptic readout and postsynaptic landing SVG panels
+
+See [`docs/coupling_inspection.md`](docs/coupling_inspection.md) for the
+checks, reviewer checklist, and threshold override semantics.
+
+### 12) Generate an offline operator QA report
 
 ```bash
 python scripts/06_operator_qa.py --config config/local.yaml --limit 4
@@ -376,7 +419,7 @@ Each report includes:
 See [`docs/operator_qa.md`](docs/operator_qa.md) for the checks, thresholds,
 and operator readiness gate semantics.
 
-### 12) Run the Milestone 6 readiness pass
+### 13) Run the Milestone 6 readiness pass
 
 ```bash
 make milestone6-readiness
@@ -391,6 +434,33 @@ operator QA, and publishes:
 - `milestone_6_readiness.json`
 
 in the same deterministic operator-QA report directory.
+
+### 14) Run the Milestone 7 readiness pass
+
+```bash
+make milestone7-readiness
+```
+
+This uses [`config/milestone_7_verification.yaml`](config/milestone_7_verification.yaml)
+plus [`config/milestone_7_verification_edges.txt`](config/milestone_7_verification_edges.txt)
+and writes isolated outputs under `data/processed/milestone_7_verification/`.
+It runs a focused Milestone 7 fixture suite, rebuilds the scoped registry and
+selected subset, rebuilds the local coupling bundle set, runs coupling
+inspection, and publishes:
+
+- `milestone_7_readiness.md`
+- `milestone_7_readiness.json`
+
+in the same deterministic coupling-inspection report directory.
+
+Equivalent explicit command sequence:
+
+```bash
+./.venv/bin/python scripts/build_registry.py --config config/milestone_7_verification.yaml
+./.venv/bin/python scripts/01_select_subset.py --config config/milestone_7_verification.yaml
+./.venv/bin/python scripts/03_build_wave_assets.py --config config/milestone_7_verification.yaml
+./.venv/bin/python scripts/08_coupling_inspection.py --config config/milestone_7_verification.yaml --edges-file config/milestone_7_verification_edges.txt
+```
 
 ## What "wave-ready" means here
 
@@ -420,6 +490,8 @@ That is enough to support later work on:
 
 - [`docs/pipeline_notes.md`](docs/pipeline_notes.md): concise artifact-contract
   overview
+- [`docs/coupling_inspection.md`](docs/coupling_inspection.md): Milestone 7
+  offline edge-inspection workflow and reviewer checklist
 - [`docs/geometry_descriptor_qa.md`](docs/geometry_descriptor_qa.md): geometry
   descriptors and QA thresholds
 - [`docs/operator_bundle_design.md`](docs/operator_bundle_design.md): Milestone 6

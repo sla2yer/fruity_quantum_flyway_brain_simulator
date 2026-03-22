@@ -28,7 +28,10 @@ Milestone 4 subset generation writes one artifact bundle per named preset under
 - `preview.md`: lightweight Markdown/Mermaid preview for quick inspection
 
 The active preset also refreshes the path named by `config.paths.selected_root_ids`
-so downstream pipeline steps can switch subsets without code changes.
+so downstream pipeline steps can switch subsets without code changes. When
+`config.paths.synapse_source_csv` is configured, the same active-preset write
+also refreshes `config.paths.processed_coupling_dir/synapse_registry.csv` so
+the canonical local synapse table stays aligned with the active selected roots.
 
 ### Geometry handoff contract
 
@@ -82,6 +85,171 @@ Compatibility shim:
 - `docs/operator_bundle_design.md` is the authoritative Milestone 6 operator
   decision note; later tickets should cite it instead of re-litigating the
   default discretization family.
+
+### Synapse and coupling handoff contract
+
+Milestone 7 now reserves one explicit synapse/coupling discovery surface under
+the versioned contract `coupling_bundle.v1`.
+
+The canonical layout is:
+
+- `config.paths.processed_coupling_dir/synapse_registry.csv`: local,
+  simulator-facing synapse registry owned by the library contract
+- `config.paths.processed_coupling_dir/roots/<root_id>_incoming_anchor_map.npz`:
+  postsynaptic landing-anchor lookup for one root
+- `config.paths.processed_coupling_dir/roots/<root_id>_outgoing_anchor_map.npz`:
+  presynaptic readout-anchor lookup for one root
+- `config.paths.processed_coupling_dir/roots/<root_id>_coupling_index.json`:
+  root-local coupling discovery index that can enumerate realized edge bundles
+- `config.paths.processed_coupling_dir/edges/<pre_root_id>__to__<post_root_id>_coupling.npz`:
+  canonical edge-level coupling bundle path
+
+Mapping payload notes:
+
+- root-local anchor maps and edge bundles are deterministic `.npz` tables keyed
+  by canonical synapse-row IDs rather than opaque simulator-only blobs
+- each mapped synapse side records:
+  - the query-coordinate source used (`pre_xyz`, `post_xyz`, or fallback
+    `synapse_xyz`)
+  - the realized anchor mode, anchor type, and anchor resolution
+  - anchor coordinates, Euclidean distance, residual vector, and a local support
+    scale for QA
+  - structured mapping and quality statuses plus any fallback or blocked reason
+- surface anchoring currently resolves to coarse patch IDs and patch centroids;
+  the supporting nearest surface vertex and its distance are also serialized for
+  auditability
+- skeleton fallback currently resolves to the nearest raw SWC node
+- point-neuron fallback resolves to one deterministic root-local lumped anchor
+  derived from the mean available query point for that root and direction
+
+Status semantics:
+
+- mapping status `mapped`: the root's primary supported representation was used
+- mapping status `mapped_with_fallback`: a lower-priority fallback mode was used
+  because a higher-resolution anchor was unavailable or unsupported
+- mapping status `blocked`: no supported anchor could be produced for that
+  synapse side; downstream code must inspect `blocked_reason` rather than
+  assuming the row disappeared
+- quality status `ok`: anchor distance stayed within the local support scale of
+  the chosen representation
+- quality status `warn`: mapping succeeded but the anchor distance exceeded that
+  local support scale; inspect the residuals before trusting the localization
+- quality status `unavailable`: quality metrics could not be computed because
+  the mapping was blocked
+
+Registry-layer materialization notes:
+
+- `config.paths.synapse_source_csv` is the explicit per-synapse local snapshot
+  input when available
+- the registry loader normalizes source aliases into one canonical synapse
+  schema and requires `pre_root_id`, `post_root_id`, plus at least one complete
+  localization field set (`x/y/z`, `pre_x/pre_y/pre_z`, or
+  `post_x/post_y/post_z`)
+- `config.paths.processed_coupling_dir/synapse_registry_provenance.json` is the
+  audit sidecar for the current canonical local synapse registry
+- subset extraction keeps only rows where both endpoints are in the requested
+  root set so grouping the synapse registry by `(pre_root_id, post_root_id,
+  neuropil, nt_type)` reproduces the same-scope edge-level `syn_count`
+
+`config.paths.manifest_json` now also records:
+
+- `_coupling_contract_version` and `_coupling_contract` at the manifest header
+- a per-root `coupling_bundle` block that points to the local synapse registry,
+  root-local anchor maps, the root-local coupling index, and any explicit
+  edge-bundle references already built for that root
+- the design-note path and design-note version each bundle conforms to
+
+The default Milestone 7 semantics are intentionally fixed early:
+
+- topology family: `distributed_patch_cloud`
+- fallback hierarchy: `surface_patch_cloud` ->
+  `skeleton_segment_cloud` -> `point_neuron_lumped`
+- kernel family: `separable_rank_one_cloud`
+- sign representation: `categorical_sign_with_signed_weight`
+- delay representation: `nonnegative_delay_ms_per_synapse_or_delay_bin`
+- delay model: `constant_zero_ms`
+- multi-synapse aggregation: `sum_over_synapses_preserving_sign_and_delay_bins`
+- source/target cloud normalization: `sum_to_one_per_component`
+
+`docs/coupling_bundle_design.md` is the authoritative Milestone 7 decision note;
+later tickets should cite it instead of re-litigating the default coupling
+family, fallback hierarchy, or sign/delay/aggregation invariants.
+
+### Stimulus bundle contract
+
+Milestone 8A now reserves one explicit visual-stimulus discovery surface under
+the versioned contract `stimulus_bundle.v1`.
+
+The library-owned default layout is:
+
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/stimulus_bundle.json`:
+  authoritative stimulus descriptor and replay metadata
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/stimulus_frames.npz`:
+  optional cached frame stack derived from the descriptor
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/stimulus_preview.gif`:
+  optional human-review preview animation
+- `data/processed/stimuli/aliases/<alias_family>/<alias_name>/<parameter_hash>.json`:
+  compatibility alias record pointing old names at the canonical bundle
+
+Contract notes:
+
+- bundle paths, metadata serialization, alias paths, and discovery now live in
+  `flywire_wave.stimulus_contract` rather than ad hoc script code
+- the descriptor metadata records the stimulus-contract version, design-note
+  version, canonical stimulus family/name, deterministic seed, RNG family,
+  parameter snapshot, parameter hash, spatial frame, temporal sampling, and
+  luminance convention
+- the default representation family is `hybrid_descriptor_plus_cache`:
+  descriptor metadata is authoritative and frame caches are optional
+- timing is always expressed in milliseconds with `sample_hold` frame playback
+- the canonical spatial frame is `visual_field_degrees_centered` with origin at
+  the aperture center, positive azimuth to the right, positive elevation up,
+  and pixel centers as sampling points
+- luminance is always interpreted as linear values in `[0.0, 1.0]` with neutral
+  gray `0.5`; signed contrast parameters are deltas relative to that neutral
+  gray
+- compatibility aliases may rename stimulus family/name, but they may not
+  mutate seed, timing, spatial frame, luminance semantics, or generator
+  parameters
+
+The practical replay key is the tuple `(contract_version, stimulus_family,
+stimulus_name, parameter_hash)`. Later manifests and tooling should resolve
+stimuli through the library contract instead of hardcoded frame filenames.
+
+`docs/stimulus_bundle_design.md` is the authoritative Milestone 8A decision
+note; later tickets should cite it instead of re-litigating the representation
+family, replay semantics, or coordinate/luminance conventions.
+
+### Offline coupling inspection contract
+
+Milestone 7 now also defines one deterministic offline inspection workflow for
+edge-level coupling review:
+
+- `scripts/08_coupling_inspection.py` reads the local synapse registry, one or
+  more edge bundles, the matching root-local anchor maps, and whichever local
+  geometry artifacts are needed by the realized anchor types
+- output goes to `config.paths.coupling_inspection_dir/edges-<sorted-edge-slug>/`
+- the report is static: `index.html`, `report.md`, `summary.json`, `edges.txt`,
+  per-edge detail JSON, and SVG panels for presynaptic readout plus
+  postsynaptic landing geometry
+- each edge emits compact `pass`, `warn`, `fail`, or `blocked` QA flags for
+  mapping coverage, anchor-map consistency, component integrity, cloud
+  normalization, and delay sanity
+- the detail JSON keeps the metric table, blocked-synapse rows, and aggregate
+  component rows in a review-friendly format so regressions can be asserted in
+  fixture tests
+- `scripts/09_milestone7_readiness.py` layers a fixture-suite check plus a
+  registry/subset/coupling-contract audit on top of the coupling inspection
+  bundle and writes `milestone_7_readiness.md` plus
+  `milestone_7_readiness.json` into the same deterministic report directory
+- `make milestone7-readiness` is the one-command entrypoint for the shipped
+  offline Milestone 7 verification pass; it uses
+  `config/milestone_7_verification.yaml` plus a tracked edge list so the local
+  audit can run entirely from cached mesh and skeleton assets plus the curated
+  Milestone 7 verification synapse snapshot
+
+See `docs/coupling_inspection.md` for the reviewer checklist and threshold
+override semantics.
 
 ### Offline operator QA contract
 

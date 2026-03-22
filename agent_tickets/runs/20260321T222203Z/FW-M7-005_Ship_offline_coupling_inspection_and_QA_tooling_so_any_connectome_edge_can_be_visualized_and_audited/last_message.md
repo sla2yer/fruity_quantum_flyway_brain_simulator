@@ -1,0 +1,10 @@
+Implemented FW-M7-005 end-to-end.
+
+- Added the offline report generator in [coupling_inspection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/coupling_inspection.py:339). It consumes the local synapse registry, edge bundle, root anchor maps, and local geometry assets; writes deterministic `edges-<sorted-edge-slug>/` report bundles; emits `index.html`, `report.md`, `summary.json`, `edges.txt`, per-edge detail JSON, and source/target SVG panels; and computes compact pass/warn/fail QA flags for mapping coverage, artifact consistency, cloud normalization, weight conservation, and delay integrity.
+- Added the CLI entrypoint in [08_coupling_inspection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/08_coupling_inspection.py:21), the default output path in [config.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/config.py:23), and a `make coupling-inspect` target in [Makefile](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile:53).
+- Documented the workflow and reviewer guidance in [coupling_inspection.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/coupling_inspection.md:1), linked it from [README.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md:358), and added the contract note in [pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md:178).
+- Added the fixture smoke test in [test_coupling_inspection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_coupling_inspection.py:24), which builds local fixture assets, runs the script, and asserts deterministic paths plus expected summary/detail fields.
+
+Verified:
+- `.venv/bin/python -m unittest tests.test_coupling_inspection -v`
+- `make test` (55 tests, all passed)

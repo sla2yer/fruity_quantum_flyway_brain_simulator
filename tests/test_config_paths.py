@@ -26,6 +26,7 @@ class ConfigPathResolutionTest(unittest.TestCase):
                     """
                     paths:
                       neuron_registry_csv: data/interim/registry/neuron_registry.csv
+                      synapse_source_csv: data/raw/codex/synapses.csv
                       subset_output_dir: data/interim/subsets
                     """
                 ).strip()
@@ -48,6 +49,10 @@ class ConfigPathResolutionTest(unittest.TestCase):
             self.assertEqual(
                 cfg["paths"]["classification_csv"],
                 str((tmp_dir / "data/raw/codex/classification.csv").resolve()),
+            )
+            self.assertEqual(
+                cfg["paths"]["synapse_source_csv"],
+                str((tmp_dir / "data/raw/codex/synapses.csv").resolve()),
             )
 
 
@@ -81,11 +86,15 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 fine_operator_path = fixture_dir / "out" / "processed_graphs" / "101_fine_operator.npz"
                 patch_graph_path = fixture_dir / "out" / "processed_graphs" / "101_patch_graph.npz"
                 coarse_operator_path = fixture_dir / "out" / "processed_graphs" / "101_coarse_operator.npz"
+                processed_coupling_dir = fixture_dir / "out" / "processed_coupling"
                 descriptor_path = fixture_dir / "out" / "processed_graphs" / "101_descriptors.json"
                 qa_path = fixture_dir / "out" / "processed_graphs" / "101_qa.json"
                 transfer_operator_path = fixture_dir / "out" / "processed_graphs" / "101_transfer_operators.npz"
                 operator_metadata_path = fixture_dir / "out" / "processed_graphs" / "101_operator_metadata.json"
                 legacy_meta_path = fixture_dir / "out" / "processed_graphs" / "101_meta.json"
+                incoming_anchor_map_path = processed_coupling_dir / "roots" / "101_incoming_anchor_map.npz"
+                outgoing_anchor_map_path = processed_coupling_dir / "roots" / "101_outgoing_anchor_map.npz"
+                coupling_index_path = processed_coupling_dir / "roots" / "101_coupling_index.json"
                 manifest_path = fixture_dir / "out" / "asset_manifest.json"
 
                 self.assertEqual(root_ids_path.read_text(encoding="utf-8").strip(), "101")
@@ -100,16 +109,28 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 self.assertTrue(transfer_operator_path.exists())
                 self.assertTrue(operator_metadata_path.exists())
                 self.assertTrue(legacy_meta_path.exists())
+                self.assertTrue(incoming_anchor_map_path.exists())
+                self.assertTrue(outgoing_anchor_map_path.exists())
+                self.assertTrue(coupling_index_path.exists())
 
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 self.assertEqual(manifest["_asset_contract_version"], "geometry_bundle.v1")
                 self.assertEqual(manifest["_operator_contract_version"], "operator_bundle.v2")
+                self.assertEqual(manifest["_coupling_contract_version"], "coupling_bundle.v1")
                 self.assertEqual(manifest["_dataset"]["flywire_dataset"], "public")
                 self.assertEqual(manifest["_dataset"]["materialization_version"], 783)
                 self.assertEqual(manifest["_meshing_config_snapshot"]["patch_hops"], 2)
                 self.assertEqual(
                     manifest["_meshing_config_snapshot"]["operator_assembly"]["boundary_condition"]["mode"],
                     "closed_surface_zero_flux",
+                )
+                self.assertEqual(
+                    manifest["_meshing_config_snapshot"]["coupling_assembly"]["kernel_family"],
+                    "separable_rank_one_cloud",
+                )
+                self.assertEqual(
+                    manifest["_coupling_contract"]["local_synapse_registry"]["path"],
+                    str((processed_coupling_dir / "synapse_registry.csv").resolve()),
                 )
                 self.assertIn("101", manifest)
                 self.assertEqual(manifest["101"]["processed_mesh_path"], str(processed_mesh_path.resolve()))
@@ -141,6 +162,45 @@ class PipelineConfigPathIntegrationTest(unittest.TestCase):
                 self.assertEqual(manifest["101"]["build"]["meshing_config_snapshot"]["simplify_target_faces"], 8)
                 self.assertEqual(manifest["101"]["operator_bundle"]["contract_version"], "operator_bundle.v2")
                 self.assertEqual(manifest["101"]["operator_bundle"]["anisotropy_model"], "isotropic")
+                self.assertEqual(manifest["101"]["coupling_bundle"]["contract_version"], "coupling_bundle.v1")
+                self.assertEqual(manifest["101"]["coupling_bundle"]["status"], "ready")
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["kernel_family"],
+                    "separable_rank_one_cloud",
+                )
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["delay_model"],
+                    "constant_zero_ms",
+                )
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["assets"]["local_synapse_registry"]["path"],
+                    str((processed_coupling_dir / "synapse_registry.csv").resolve()),
+                )
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["assets"]["incoming_anchor_map"]["status"],
+                    "ready",
+                )
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["assets"]["incoming_anchor_map"]["path"],
+                    str((processed_coupling_dir / "roots" / "101_incoming_anchor_map.npz").resolve()),
+                )
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["assets"]["outgoing_anchor_map"]["status"],
+                    "ready",
+                )
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["assets"]["outgoing_anchor_map"]["path"],
+                    str((processed_coupling_dir / "roots" / "101_outgoing_anchor_map.npz").resolve()),
+                )
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["assets"]["coupling_index"]["status"],
+                    "ready",
+                )
+                self.assertEqual(
+                    manifest["101"]["coupling_bundle"]["assets"]["coupling_index"]["path"],
+                    str((processed_coupling_dir / "roots" / "101_coupling_index.json").resolve()),
+                )
+                self.assertEqual(manifest["101"]["coupling_bundle"]["edge_bundles"], [])
                 self.assertEqual(
                     manifest["101"]["operator_bundle"]["assets"]["fine_operator"]["path"],
                     str(fine_operator_path.resolve()),
@@ -462,6 +522,7 @@ def _write_pipeline_fixture(
               skeletons_raw_dir: {rel_prefix}/out/skeletons_raw
               processed_mesh_dir: {rel_prefix}/out/processed_meshes
               processed_graph_dir: {rel_prefix}/out/processed_graphs
+              processed_coupling_dir: {rel_prefix}/out/processed_coupling
               manifest_json: {rel_prefix}/out/asset_manifest.json
 
             registry:

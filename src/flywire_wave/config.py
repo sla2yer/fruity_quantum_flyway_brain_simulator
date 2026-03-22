@@ -5,6 +5,8 @@ from typing import Any
 
 import yaml
 
+from .stimulus_registry import has_stimulus_reference, resolve_stimulus_spec
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_METADATA_KEY = "__config_metadata__"
@@ -19,8 +21,11 @@ DEFAULT_PATHS = {
     "skeletons_raw_dir": Path("data/interim/skeletons_raw"),
     "processed_mesh_dir": Path("data/processed/meshes"),
     "processed_graph_dir": Path("data/processed/graphs"),
+    "processed_coupling_dir": Path("data/processed/coupling"),
+    "coupling_inspection_dir": Path("data/processed/coupling_inspection"),
     "geometry_preview_dir": Path("data/processed/previews"),
     "operator_qa_dir": Path("data/processed/operator_qa"),
+    "processed_stimulus_dir": Path("data/processed/stimuli"),
     "manifest_json": Path("data/processed/asset_manifest.json"),
 }
 
@@ -41,6 +46,23 @@ def load_config(path: str | Path, *, project_root: str | Path | None = None) -> 
         "config_path": str(cfg_path),
         "project_root": str(resolved_project_root),
     }
+    if has_stimulus_reference(loaded_cfg):
+        resolved_stimulus = resolve_stimulus_spec(loaded_cfg)
+        processed_stimulus_dir = resolved_paths["processed_stimulus_dir"]
+        loaded_cfg["stimulus"] = resolved_stimulus.stimulus_spec
+        loaded_cfg["stimulus_registry_entry"] = resolved_stimulus.registry_entry
+        loaded_cfg["stimulus_contract"] = resolved_stimulus.build_contract_metadata(
+            processed_stimulus_dir=processed_stimulus_dir
+        )
+        loaded_cfg["stimulus_bundle"] = resolved_stimulus.build_bundle_metadata(
+            processed_stimulus_dir=processed_stimulus_dir
+        )
+        loaded_cfg["stimulus_bundle_reference"] = resolved_stimulus.build_bundle_reference(
+            processed_stimulus_dir=processed_stimulus_dir
+        )
+        loaded_cfg["stimulus_bundle_metadata_path"] = resolved_stimulus.resolve_bundle_metadata_path(
+            processed_stimulus_dir=processed_stimulus_dir
+        )
     return loaded_cfg
 
 

@@ -8,6 +8,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from flywire_wave.coupling_contract import (
+    COUPLING_BUNDLE_CONTRACT_VERSION,
+    COUPLING_BUNDLE_DESIGN_NOTE,
+    COUPLING_INDEX_KEY,
+    INCOMING_ANCHOR_MAP_KEY,
+    LOCAL_SYNAPSE_REGISTRY_KEY,
+    OUTGOING_ANCHOR_MAP_KEY,
+)
 from flywire_wave.geometry_contract import (
     ASSET_STATUS_READY,
     ASSET_STATUS_SKIPPED,
@@ -114,11 +122,18 @@ class GeometryContractTest(unittest.TestCase):
             materialization_version=783,
             meshing_config_snapshot={"fetch_skeletons": False, "patch_hops": 2},
         )
+        expected_coupling_dir = (ROOT / "data/processed/coupling").resolve()
 
         self.assertEqual(manifest["_asset_contract_version"], GEOMETRY_ASSET_CONTRACT_VERSION)
         self.assertEqual(manifest["_operator_contract_version"], OPERATOR_BUNDLE_CONTRACT_VERSION)
         self.assertEqual(manifest["_operator_contract"]["design_note"], OPERATOR_BUNDLE_DESIGN_NOTE)
         self.assertEqual(manifest["_operator_contract"]["operator_assembly_config_version"], "operator_assembly.v1")
+        self.assertEqual(manifest["_coupling_contract_version"], COUPLING_BUNDLE_CONTRACT_VERSION)
+        self.assertEqual(manifest["_coupling_contract"]["design_note"], COUPLING_BUNDLE_DESIGN_NOTE)
+        self.assertEqual(
+            manifest["_coupling_contract"]["local_synapse_registry"]["path"],
+            str(expected_coupling_dir / "synapse_registry.csv"),
+        )
         self.assertEqual(manifest["_dataset"]["materialization_version"], 783)
         self.assertEqual(manifest["101"]["bundle_version"], GEOMETRY_ASSET_CONTRACT_VERSION)
         self.assertEqual(manifest["101"]["build"]["meshing_config_snapshot"]["patch_hops"], 2)
@@ -155,6 +170,24 @@ class GeometryContractTest(unittest.TestCase):
         self.assertEqual(
             manifest["101"]["operator_bundle"]["geodesic_neighborhood"]["patch_hops"],
             2,
+        )
+        self.assertEqual(manifest["101"]["coupling_bundle"]["contract_version"], COUPLING_BUNDLE_CONTRACT_VERSION)
+        self.assertEqual(manifest["101"]["coupling_bundle"]["status"], "missing")
+        self.assertEqual(
+            manifest["101"]["coupling_bundle"]["assets"][LOCAL_SYNAPSE_REGISTRY_KEY]["path"],
+            str(expected_coupling_dir / "synapse_registry.csv"),
+        )
+        self.assertEqual(
+            manifest["101"]["coupling_bundle"]["assets"][INCOMING_ANCHOR_MAP_KEY]["path"],
+            str(expected_coupling_dir / "roots/101_incoming_anchor_map.npz"),
+        )
+        self.assertEqual(
+            manifest["101"]["coupling_bundle"]["assets"][OUTGOING_ANCHOR_MAP_KEY]["path"],
+            str(expected_coupling_dir / "roots/101_outgoing_anchor_map.npz"),
+        )
+        self.assertEqual(
+            manifest["101"]["coupling_bundle"]["assets"][COUPLING_INDEX_KEY]["path"],
+            str(expected_coupling_dir / "roots/101_coupling_index.json"),
         )
         self.assertTrue(
             manifest["101"]["operator_bundle"]["transfer_operators"]["fine_to_coarse_restriction"]["available"]
@@ -213,6 +246,7 @@ class GeometryContractTest(unittest.TestCase):
         self.assertEqual(merged["bundle_metadata"]["n_faces"], 4)
         self.assertEqual(merged["raw_asset_provenance"][RAW_MESH_KEY]["fetch_status"], FETCH_STATUS_CACHE_HIT)
         self.assertEqual(merged["operator_bundle"]["status"], ASSET_STATUS_READY)
+        self.assertEqual(merged["coupling_bundle"]["contract_version"], COUPLING_BUNDLE_CONTRACT_VERSION)
 
 
 if __name__ == "__main__":

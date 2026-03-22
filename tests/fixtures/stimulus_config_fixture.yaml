@@ -1,0 +1,16 @@
+dataset:
+  datastack_name: flywire_fafb_public
+  materialization_version: 783
+  flywire_dataset: public
+
+paths:
+  processed_stimulus_dir: data/processed/test_stimuli
+
+stimulus:
+  stimulus_family: moving_edge
+  stimulus_name: simple_moving_edge
+  determinism:
+    seed: 17
+  stimulus_overrides:
+    background: 0.45
+    speed_deg_per_s: 55.0

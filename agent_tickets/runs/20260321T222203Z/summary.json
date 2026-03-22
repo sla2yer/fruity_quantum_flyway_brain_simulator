@@ -1,0 +1,134 @@
+[
+  {
+    "ticket_id": "FW-M7-001",
+    "title": "Freeze a versioned synapse asset contract and inter-neuron coupling design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-001_Freeze_a_versioned_synapse_asset_contract_and_inter-neuron_coupling_design_note/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-001_Freeze_a_versioned_synapse_asset_contract_and_inter-neuron_coupling_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-001_Freeze_a_versioned_synapse_asset_contract_and_inter-neuron_coupling_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-001_Freeze_a_versioned_synapse_asset_contract_and_inter-neuron_coupling_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-001_Freeze_a_versioned_synapse_asset_contract_and_inter-neuron_coupling_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-001_Freeze_a_versioned_synapse_asset_contract_and_inter-neuron_coupling_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M7-002",
+    "title": "Build a canonical local synapse registry from per-synapse source snapshots and selected roots",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-002_Build_a_canonical_local_synapse_registry_from_per-synapse_source_snapshots_and_selected_roots/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-002_Build_a_canonical_local_synapse_registry_from_per-synapse_source_snapshots_and_selected_roots",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-002_Build_a_canonical_local_synapse_registry_from_per-synapse_source_snapshots_and_selected_roots/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-002_Build_a_canonical_local_synapse_registry_from_per-synapse_source_snapshots_and_selected_roots/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-002_Build_a_canonical_local_synapse_registry_from_per-synapse_source_snapshots_and_selected_roots/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-002_Build_a_canonical_local_synapse_registry_from_per-synapse_source_snapshots_and_selected_roots/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M7-003",
+    "title": "Map synapse locations onto surface patches and skeleton anchors with deterministic fallback metadata",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-003_Map_synapse_locations_onto_surface_patches_and_skeleton_anchors_with_deterministic_fallback_metadata/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-003_Map_synapse_locations_onto_surface_patches_and_skeleton_anchors_with_deterministic_fallback_metadata",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-003_Map_synapse_locations_onto_surface_patches_and_skeleton_anchors_with_deterministic_fallback_metadata/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-003_Map_synapse_locations_onto_surface_patches_and_skeleton_anchors_with_deterministic_fallback_metadata/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-003_Map_synapse_locations_onto_surface_patches_and_skeleton_anchors_with_deterministic_fallback_metadata/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-003_Map_synapse_locations_onto_surface_patches_and_skeleton_anchors_with_deterministic_fallback_metadata/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M7-004",
+    "title": "Assemble versioned inter-neuron coupling bundles with configurable kernels, delays, signs, and aggregation rules",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-004_Assemble_versioned_inter-neuron_coupling_bundles_with_configurable_kernels_delays_signs_and_aggregation_rules/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-004_Assemble_versioned_inter-neuron_coupling_bundles_with_configurable_kernels_delays_signs_and_aggregation_rules",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-004_Assemble_versioned_inter-neuron_coupling_bundles_with_configurable_kernels_delays_signs_and_aggregation_rules/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-004_Assemble_versioned_inter-neuron_coupling_bundles_with_configurable_kernels_delays_signs_and_aggregation_rules/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-004_Assemble_versioned_inter-neuron_coupling_bundles_with_configurable_kernels_delays_signs_and_aggregation_rules/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-004_Assemble_versioned_inter-neuron_coupling_bundles_with_configurable_kernels_delays_signs_and_aggregation_rules/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M7-005",
+    "title": "Ship offline coupling inspection and QA tooling so any connectome edge can be visualized and audited",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-005_Ship_offline_coupling_inspection_and_QA_tooling_so_any_connectome_edge_can_be_visualized_and_audited/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-005_Ship_offline_coupling_inspection_and_QA_tooling_so_any_connectome_edge_can_be_visualized_and_audited",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-005_Ship_offline_coupling_inspection_and_QA_tooling_so_any_connectome_edge_can_be_visualized_and_audited/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-005_Ship_offline_coupling_inspection_and_QA_tooling_so_any_connectome_edge_can_be_visualized_and_audited/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-005_Ship_offline_coupling_inspection_and_QA_tooling_so_any_connectome_edge_can_be_visualized_and_audited/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-005_Ship_offline_coupling_inspection_and_QA_tooling_so_any_connectome_edge_can_be_visualized_and_audited/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M7-006",
+    "title": "Run a Milestone 7 integration verification pass and publish a readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-006_Run_a_Milestone_7_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-006_Run_a_Milestone_7_integration_verification_pass_and_publish_a_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-006_Run_a_Milestone_7_integration_verification_pass_and_publish_a_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-006_Run_a_Milestone_7_integration_verification_pass_and_publish_a_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-006_Run_a_Milestone_7_integration_verification_pass_and_publish_a_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260321T222203Z/FW-M7-006_Run_a_Milestone_7_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+  }
+]

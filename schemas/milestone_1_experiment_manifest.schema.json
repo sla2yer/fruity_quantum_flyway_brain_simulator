@@ -56,6 +56,9 @@
       "type": "string",
       "minLength": 1
     },
+    "stimulus": {
+      "$ref": "#/$defs/stimulusReference"
+    },
     "primary_metric": {
       "type": "string",
       "minLength": 1
@@ -208,6 +211,175 @@
     }
   ],
   "$defs": {
+    "jsonValue": {
+      "oneOf": [
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        }
+      ]
+    },
+    "temporalSampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dt_ms": {
+          "type": "number"
+        },
+        "duration_ms": {
+          "type": "number"
+        },
+        "frame_count": {
+          "type": "integer"
+        },
+        "time_origin_ms": {
+          "type": "number"
+        },
+        "sampling_mode": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "spatialFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frame_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "x_axis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "y_axis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pixel_origin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "width_px": {
+          "type": "integer"
+        },
+        "height_px": {
+          "type": "integer"
+        },
+        "width_deg": {
+          "type": "number"
+        },
+        "height_deg": {
+          "type": "number"
+        }
+      }
+    },
+    "luminanceConvention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minimum_value": {
+          "type": "number"
+        },
+        "neutral_value": {
+          "type": "number"
+        },
+        "maximum_value": {
+          "type": "number"
+        },
+        "contrast_semantics": {
+          "type": "string",
+          "minLength": 1
+        },
+        "positive_polarity": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "stimulusDeterminism": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "seed": {
+          "type": "integer"
+        },
+        "rng_family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seed_scope": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "stimulusReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "stimulus_family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stimulus_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stimulus_overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        "temporal_sampling": {
+          "$ref": "#/$defs/temporalSampling"
+        },
+        "spatial_frame": {
+          "$ref": "#/$defs/spatialFrame"
+        },
+        "luminance_convention": {
+          "$ref": "#/$defs/luminanceConvention"
+        },
+        "determinism": {
+          "$ref": "#/$defs/stimulusDeterminism"
+        }
+      },
+      "dependentRequired": {
+        "stimulus_family": [
+          "stimulus_name"
+        ],
+        "stimulus_name": [
+          "stimulus_family"
+        ]
+      }
+    },
     "comparisonArm": {
       "type": "object",
       "additionalProperties": false,

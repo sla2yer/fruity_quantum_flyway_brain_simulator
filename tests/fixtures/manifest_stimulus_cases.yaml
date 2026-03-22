@@ -1,0 +1,49 @@
+valid_cases:
+  nested_stimulus_overrides:
+    random_seed: 17
+    stimulus:
+      determinism:
+        seed: 17
+      stimulus_overrides:
+        background_level: 0.45
+        velocity_deg_per_s: 55.0
+        edge_width_deg: 6.0
+      temporal_sampling:
+        dt_ms: 20.0
+        duration_ms: 500.0
+      spatial_frame:
+        width_px: 64
+        height_px: 48
+
+invalid_cases:
+  unknown_family:
+    stimulus_family: moving_edg
+    error_substring: Unknown stimulus_family
+
+  unknown_preset:
+    stimulus_name: simple_moving_edg
+    error_substring: Unknown stimulus_name
+
+  invalid_family_parameters:
+    stimulus_family: looming
+    stimulus_name: simple_looming
+    stimulus:
+      determinism:
+        seed: 11
+      stimulus_overrides:
+        initial_radius_deg: 10.0
+        final_radius_deg: 8.0
+    error_substring: final_radius_deg must be greater than
+
+  seed_mismatch:
+    random_seed: 17
+    stimulus:
+      determinism:
+        seed: 11
+    error_substring: stimulus.determinism.seed must match
+
+  mismatched_nested_reference:
+    stimulus:
+      stimulus_family: flash
+      stimulus_name: simple_flash
+    error_substring: must resolve to the same canonical stimulus

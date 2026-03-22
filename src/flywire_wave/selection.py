@@ -13,7 +13,7 @@ import networkx as nx
 import pandas as pd
 
 from .io_utils import ensure_dir, write_json, write_root_ids
-from .registry import load_connectivity_registry, load_neuron_registry
+from .registry import load_connectivity_registry, load_neuron_registry, materialize_synapse_registry
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -273,6 +273,19 @@ def generate_subsets_from_config(
             selected_root_ids_path = paths_cfg.get("selected_root_ids")
             if selected_root_ids_path:
                 write_root_ids(extract_root_ids(selected_df), selected_root_ids_path)
+            if "processed_coupling_dir" in paths_cfg or "synapse_source_csv" in paths_cfg:
+                if selected_root_ids_path:
+                    materialize_synapse_registry(
+                        cfg,
+                        root_ids_path=selected_root_ids_path,
+                        scope_label=f"selection:{name}",
+                    )
+                else:
+                    materialize_synapse_registry(
+                        cfg,
+                        root_ids=extract_root_ids(selected_df),
+                        scope_label=f"selection:{name}",
+                    )
 
         artifact_summaries.append(
             {

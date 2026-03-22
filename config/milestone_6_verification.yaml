@@ -11,6 +11,7 @@ paths:
   skeletons_raw_dir: data/interim/skeletons_raw
   processed_mesh_dir: data/processed/milestone_6_verification/meshes
   processed_graph_dir: data/processed/milestone_6_verification/graphs
+  processed_coupling_dir: data/processed/milestone_6_verification/coupling
   operator_qa_dir: data/processed/milestone_6_verification/operator_qa
   manifest_json: data/processed/milestone_6_verification/asset_manifest.json
 

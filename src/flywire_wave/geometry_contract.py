@@ -8,6 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .coupling_contract import (
+    COUPLING_BUNDLE_CONTRACT_VERSION,
+    build_coupling_bundle_metadata,
+    build_coupling_contract_manifest_metadata,
+    normalize_coupling_assembly_config,
+    parse_coupling_bundle_metadata,
+)
 from .io_utils import write_json
 
 
@@ -650,9 +657,16 @@ def build_geometry_manifest_record(
     bundle_metadata: dict[str, Any] | None = None,
     raw_asset_provenance: dict[str, Any] | None = None,
     operator_bundle_metadata: dict[str, Any] | None = None,
+    processed_coupling_dir: str | Path | None = None,
+    coupling_bundle_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     registry_metadata = dict(registry_metadata or {})
     meshing_config_snapshot = _normalize_meshing_config_snapshot(meshing_config_snapshot)
+    processed_coupling_dir = (
+        _default_processed_coupling_dir(bundle_paths)
+        if processed_coupling_dir is None
+        else Path(processed_coupling_dir).resolve()
+    )
     record: dict[str, Any] = {
         "root_id": int(bundle_paths.root_id),
         "bundle_version": GEOMETRY_ASSET_CONTRACT_VERSION,
@@ -672,6 +686,14 @@ def build_geometry_manifest_record(
                 asset_statuses=asset_statuses,
                 meshing_config_snapshot=meshing_config_snapshot,
                 bundle_metadata=bundle_metadata,
+            )
+        ),
+        "coupling_bundle": (
+            parse_coupling_bundle_metadata(coupling_bundle_metadata)
+            if coupling_bundle_metadata is not None
+            else build_coupling_bundle_metadata(
+                root_id=int(bundle_paths.root_id),
+                processed_coupling_dir=processed_coupling_dir,
             )
         ),
         "registry_metadata": registry_metadata,
@@ -704,8 +726,10 @@ def build_geometry_manifest(
     dataset_name: str,
     materialization_version: int | str | None,
     meshing_config_snapshot: dict[str, Any],
+    processed_coupling_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     meshing_config_snapshot = _normalize_meshing_config_snapshot(meshing_config_snapshot)
+    coupling_contract_seed = _first_coupling_bundle_metadata(bundle_records)
     manifest: dict[str, Any] = {
         "_asset_contract_version": GEOMETRY_ASSET_CONTRACT_VERSION,
         "_dataset": {
@@ -715,6 +739,11 @@ def build_geometry_manifest(
         "_meshing_config_snapshot": copy.deepcopy(meshing_config_snapshot),
         "_operator_contract_version": OPERATOR_BUNDLE_CONTRACT_VERSION,
         "_operator_contract": build_operator_bundle_manifest_metadata(),
+        "_coupling_contract_version": COUPLING_BUNDLE_CONTRACT_VERSION,
+        "_coupling_contract": build_coupling_contract_manifest_metadata(
+            coupling_bundle_metadata=coupling_contract_seed,
+            processed_coupling_dir=processed_coupling_dir,
+        ),
     }
     for root_id, record in bundle_records.items():
         manifest[str(int(root_id))] = copy.deepcopy(record)
@@ -728,12 +757,14 @@ def write_geometry_manifest(
     dataset_name: str,
     materialization_version: int | str | None,
     meshing_config_snapshot: dict[str, Any],
+    processed_coupling_dir: str | Path | None = None,
 ) -> Path:
     manifest = build_geometry_manifest(
         bundle_records=bundle_records,
         dataset_name=dataset_name,
         materialization_version=materialization_version,
         meshing_config_snapshot=meshing_config_snapshot,
+        processed_coupling_dir=processed_coupling_dir,
     )
     return write_json(manifest, manifest_path)
 
@@ -810,7 +841,25 @@ def _operator_asset_alias(asset_key: str) -> dict[str, str]:
 def _normalize_meshing_config_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(dict(snapshot))
     normalized["operator_assembly"] = normalize_operator_assembly_config(snapshot.get("operator_assembly"))
+    normalized["coupling_assembly"] = normalize_coupling_assembly_config(snapshot.get("coupling_assembly"))
     return normalized
+
+
+def _default_processed_coupling_dir(bundle_paths: GeometryBundlePaths) -> Path:
+    return (bundle_paths.surface_graph_path.parent.parent / "coupling").resolve()
+
+
+def _first_coupling_bundle_metadata(
+    bundle_records: Mapping[int | str, Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    for root_id in sorted(bundle_records, key=lambda value: int(value)):
+        record = bundle_records[root_id]
+        if not isinstance(record, Mapping):
+            continue
+        coupling_bundle = record.get("coupling_bundle")
+        if isinstance(coupling_bundle, Mapping):
+            return parse_coupling_bundle_metadata(coupling_bundle)
+    return None
 
 
 def _normalize_diagonal_tensor_pair(value: Any, *, field_name: str) -> list[float]:

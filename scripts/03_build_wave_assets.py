@@ -14,6 +14,7 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from flywire_wave.config import load_config
+from flywire_wave.coupling_contract import normalize_coupling_assembly_config
 from flywire_wave.geometry_contract import (
     ASSET_STATUS_READY,
     RAW_MESH_KEY,
@@ -29,6 +30,7 @@ from flywire_wave.geometry_contract import (
 from flywire_wave.io_utils import read_root_ids
 from flywire_wave.mesh_pipeline import process_mesh_into_wave_assets
 from flywire_wave.registry import load_neuron_registry, validate_selected_root_ids
+from flywire_wave.synapse_mapping import materialize_synapse_anchor_maps
 
 
 def _json_safe(value: object) -> object:
@@ -66,9 +68,11 @@ def main() -> int:
     paths = cfg["paths"]
     meshing = dict(cfg["meshing"])
     meshing["operator_assembly"] = normalize_operator_assembly_config(meshing.get("operator_assembly"))
+    meshing["coupling_assembly"] = normalize_coupling_assembly_config(meshing.get("coupling_assembly"))
     dataset = cfg["dataset"].get("flywire_dataset", "public")
     materialization_version = cfg["dataset"].get("materialization_version")
     registry_path = paths.get("neuron_registry_csv", "data/interim/registry/neuron_registry.csv")
+    processed_coupling_dir = paths.get("processed_coupling_dir")
 
     root_ids = read_root_ids(paths["selected_root_ids"])
     if not root_ids:
@@ -89,6 +93,14 @@ def main() -> int:
     qa_warning_details: list[dict[str, object]] = []
     qa_failure_details: list[dict[str, object]] = []
     qa_blocking_failure_details: list[dict[str, object]] = []
+    coupling_summary: dict[str, object] = {
+        "overall_status": "missing",
+        "reason": "coupling_mapping_not_attempted",
+        "synapse_count": 0,
+        "edge_count": 0,
+        "root_summaries": {},
+    }
+    coupling_failed = False
     fetch_skeletons = bool(meshing.get("fetch_skeletons", True))
     for root_id in tqdm(root_ids, desc="Building wave assets"):
         bundle_paths = build_geometry_bundle_paths(
@@ -137,6 +149,7 @@ def main() -> int:
                     meshing_config_snapshot=meshing,
                     registry_metadata=registry_metadata,
                     raw_asset_provenance=existing_record.get("raw_asset_provenance"),
+                    processed_coupling_dir=processed_coupling_dir,
                 ),
             )
             manifest_record["build_result"] = root_result
@@ -191,6 +204,7 @@ def main() -> int:
                     meshing_config_snapshot=meshing,
                     registry_metadata=registry_metadata,
                     raw_asset_provenance=existing_record.get("raw_asset_provenance"),
+                    processed_coupling_dir=processed_coupling_dir,
                 ),
             )
             manifest_record["build_result"] = root_result
@@ -253,6 +267,7 @@ def main() -> int:
                 bundle_metadata=outputs["bundle_metadata"],
                 raw_asset_provenance=existing_record.get("raw_asset_provenance"),
                 operator_bundle_metadata=outputs["operator_bundle_metadata"],
+                processed_coupling_dir=processed_coupling_dir,
             ),
         )
         manifest_record["build_result"] = root_result
@@ -260,19 +275,66 @@ def main() -> int:
         root_results[root_id] = root_result
         built_root_ids.append(int(root_id))
 
+    try:
+        mapping_summary = materialize_synapse_anchor_maps(
+            root_ids=root_ids,
+            processed_coupling_dir=processed_coupling_dir,
+            meshes_raw_dir=paths["meshes_raw_dir"],
+            skeletons_raw_dir=paths["skeletons_raw_dir"],
+            processed_mesh_dir=paths["processed_mesh_dir"],
+            processed_graph_dir=paths["processed_graph_dir"],
+            neuron_registry=registry_df,
+            coupling_assembly=meshing.get("coupling_assembly"),
+        )
+        for root_id, bundle_metadata in mapping_summary["bundle_metadata_by_root"].items():
+            normalized_root_id = int(root_id)
+            if normalized_root_id in manifest_records:
+                manifest_records[normalized_root_id]["coupling_bundle"] = dict(bundle_metadata)
+            if normalized_root_id in root_results:
+                root_results[normalized_root_id]["coupling"] = dict(
+                    mapping_summary["root_summaries"].get(normalized_root_id, {})
+                )
+                root_results[normalized_root_id]["coupling_bundle_status"] = str(bundle_metadata["status"])
+        coupling_summary = {
+            "overall_status": (
+                "missing"
+                if mapping_summary.get("reason") == "missing_local_synapse_registry"
+                else "built"
+            ),
+            "reason": str(mapping_summary.get("reason", "")),
+            "synapse_count": int(mapping_summary.get("synapse_count", 0)),
+            "edge_count": int(mapping_summary.get("edge_count", 0)),
+            "root_summaries": {
+                str(root_id): summary
+                for root_id, summary in sorted(mapping_summary.get("root_summaries", {}).items())
+            },
+        }
+    except Exception as exc:
+        coupling_failed = True
+        coupling_summary = {
+            "overall_status": "failed",
+            "reason": "coupling_mapping_error",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+            "synapse_count": 0,
+            "edge_count": 0,
+            "root_summaries": {},
+        }
+
     write_geometry_manifest(
         manifest_path=paths["manifest_json"],
         bundle_records=manifest_records,
         dataset_name=str(dataset),
         materialization_version=materialization_version,
         meshing_config_snapshot=meshing,
+        processed_coupling_dir=processed_coupling_dir,
     )
     qa_overall_status = "pass"
     if qa_failure_details:
         qa_overall_status = "fail"
     elif qa_warning_details:
         qa_overall_status = "warn"
-    exit_code = 1 if (missing_raw_mesh_details or processing_failure_details or qa_blocking_failure_details) else 0
+    exit_code = 1 if (missing_raw_mesh_details or processing_failure_details or qa_blocking_failure_details or coupling_failed) else 0
     final_status = "fail" if exit_code else qa_overall_status
     blocking_root_ids = sorted(
         {
@@ -316,6 +378,7 @@ def main() -> int:
             "failure_details": qa_failure_details,
             "blocking_failure_details": qa_blocking_failure_details,
         },
+        "coupling": coupling_summary,
         "final_status": final_status,
         "exit_code": exit_code,
     }
@@ -335,6 +398,12 @@ def main() -> int:
         print(
             "Wave asset builds hit per-root processing failures for root_ids="
             f"{failed_roots}. See the JSON summary for structured error details.",
+            file=sys.stderr,
+        )
+    if coupling_failed:
+        print(
+            "Synapse-anchor mapping failed after geometry build. See the JSON summary for structured coupling "
+            "error details.",
             file=sys.stderr,
         )
     return exit_code

@@ -5,8 +5,12 @@ MANIFEST ?= manifests/examples/milestone_1_demo.yaml
 SCHEMA ?= schemas/milestone_1_experiment_manifest.schema.json
 DESIGN_LOCK ?= config/milestone_1_design_lock.yaml
 M6_CONFIG ?= config/milestone_6_verification.yaml
+M7_CONFIG ?= config/milestone_7_verification.yaml
+M7_EDGE_FILE ?= config/milestone_7_verification_edges.txt
 
-.PHONY: help bootstrap verify registry select meshes assets preview operator-qa milestone6-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa milestone6-readiness milestone7-readiness validate-manifest test smoke all
+
+COUPLING_INSPECT_ARGS ?=
 
 help:
 	@printf '%s\n' \
@@ -19,8 +23,10 @@ help:
 		'meshes             Fetch raw meshes and optional skeletons' \
 		'assets             Build processed mesh/graph assets' \
 		'preview            Build static offline geometry preview report(s)' \
+		'coupling-inspect   Build static offline coupling inspection report(s)' \
 		'operator-qa        Build static offline operator QA report(s)' \
 		'milestone6-readiness Run the Milestone 6 verification pass and publish a readiness report' \
+		'milestone7-readiness Run the Milestone 7 integration verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -47,11 +53,17 @@ assets:
 preview:
 	$(PYTHON) scripts/05_preview_geometry.py --config $(CONFIG)
 
+coupling-inspect:
+	$(PYTHON) scripts/08_coupling_inspection.py --config $(CONFIG) $(COUPLING_INSPECT_ARGS)
+
 operator-qa:
 	$(PYTHON) scripts/06_operator_qa.py --config $(CONFIG)
 
 milestone6-readiness:
 	$(PYTHON) scripts/07_milestone6_readiness.py --config $(M6_CONFIG)
+
+milestone7-readiness:
+	$(PYTHON) scripts/09_milestone7_readiness.py --config $(M7_CONFIG) --edges-file $(M7_EDGE_FILE)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

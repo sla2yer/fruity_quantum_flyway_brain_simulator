@@ -3,6 +3,9 @@
 __all__ = [
     "agent_tickets",
     "config",
+    "coupling_assembly",
+    "coupling_inspection",
+    "coupling_contract",
     "geometry_contract",
     "geometry_qa",
     "io_utils",
@@ -10,5 +13,8 @@ __all__ = [
     "mesh_pipeline",
     "registry",
     "selection",
+    "stimulus_contract",
+    "stimulus_registry",
+    "synapse_mapping",
     "surface_operators",
 ]

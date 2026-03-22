@@ -1,0 +1,82 @@
+valid_cases:
+  flash_defaults:
+    stimulus:
+      stimulus_family: flash
+      stimulus_name: simple_flash
+
+  moving_edge_manifest_compat:
+    stimulus_family: moving_edge
+    stimulus_name: simple_moving_edge
+    random_seed: 11
+
+  grating_override_aliases:
+    stimulus:
+      stimulus_family: drifting_grating
+      stimulus_name: simple_drifting_grating
+      temporal_sampling:
+        dt_ms: 25.0
+        duration_ms: 500.0
+      stimulus_overrides:
+        spatial_freq_cpd: 0.12
+        drift_frequency_hz: 3.0
+        phase: 180.0
+        offset_ms: 450.0
+      spatial_frame:
+        width_px: 64
+        height_px: 64
+
+  rotating_flow_alias_and_seed:
+    stimulus:
+      stimulus_family: rotating_flow
+      stimulus_name: clockwise_flow
+      determinism:
+        seed: 5
+      stimulus_overrides:
+        angular_speed_deg_per_s: 120.0
+        outer_radius_deg: 55.0
+
+invalid_cases:
+  unknown_family:
+    stimulus:
+      stimulus_family: moving_edg
+      stimulus_name: simple_moving_edge
+    error_substring: Unknown stimulus_family
+
+  unknown_preset:
+    stimulus:
+      stimulus_family: flash
+      stimulus_name: simple_falsh
+    error_substring: Unknown stimulus_name
+
+  misspelled_override:
+    stimulus:
+      stimulus_family: flash
+      stimulus_name: simple_flash
+      stimulus_overrides:
+        contrst: 0.5
+    error_substring: Unknown stimulus override
+
+  out_of_range_override:
+    stimulus:
+      stimulus_family: flash
+      stimulus_name: simple_flash
+      stimulus_overrides:
+        contrast: 1.5
+    error_substring: stimulus_overrides.contrast must be <= 1.0
+
+  invalid_timing:
+    stimulus:
+      stimulus_family: flash
+      stimulus_name: simple_flash
+      stimulus_overrides:
+        onset_ms: 200.0
+        offset_ms: 150.0
+    error_substring: onset_ms must be less than
+
+  invalid_rng:
+    stimulus:
+      stimulus_family: flash
+      stimulus_name: simple_flash
+      determinism:
+        rng_family: custom_rng
+    error_substring: determinism.rng_family must be

@@ -17,6 +17,8 @@ from flywire_wave.registry import (
     build_registry,
     load_connectivity_registry,
     load_neuron_registry,
+    load_synapse_registry,
+    materialize_synapse_registry,
     resolve_registry_source_paths,
     validate_selected_root_ids,
 )
@@ -216,6 +218,202 @@ class RegistryBuildTest(unittest.TestCase):
             self.assertIn("classification", provenance["inputs"])
             self.assertTrue(provenance["inputs"]["classification"]["sha256"])
 
+    def test_build_registry_materializes_synapse_registry_and_derives_connectivity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            raw_dir = tmp_dir / "raw"
+            out_dir = tmp_dir / "out"
+            raw_dir.mkdir()
+            out_dir.mkdir()
+
+            self._write_classification_csv(raw_dir / "classification.csv")
+            self._write_synapse_csv(
+                raw_dir / "synapses.csv",
+                [
+                    {
+                        "id": "syn-1",
+                        "pre_pt_root_id": 101,
+                        "post_pt_root_id": 102,
+                        "ctr_pt_x": 11.0,
+                        "ctr_pt_y": 12.0,
+                        "ctr_pt_z": 13.0,
+                        "pre_pt_x": 10.0,
+                        "pre_pt_y": 11.0,
+                        "pre_pt_z": 12.0,
+                        "post_pt_x": 12.0,
+                        "post_pt_y": 13.0,
+                        "post_pt_z": 14.0,
+                        "neuropil_name": "LOP_R",
+                        "neurotransmitter": "ach",
+                        "synaptic_sign": "excitatory",
+                        "confidence_score": 0.98,
+                    },
+                    {
+                        "id": "syn-2",
+                        "pre_pt_root_id": 101,
+                        "post_pt_root_id": 103,
+                        "ctr_pt_x": 21.0,
+                        "ctr_pt_y": 22.0,
+                        "ctr_pt_z": 23.0,
+                        "pre_pt_x": 20.0,
+                        "pre_pt_y": 21.0,
+                        "pre_pt_z": 22.0,
+                        "post_pt_x": 22.0,
+                        "post_pt_y": 23.0,
+                        "post_pt_z": 24.0,
+                        "neuropil_name": "ME_R",
+                        "neurotransmitter": "gaba",
+                        "synaptic_sign": "inhibitory",
+                        "confidence_score": 0.77,
+                    },
+                ],
+            )
+
+            cfg = {
+                "dataset": {
+                    "materialization_version": 783,
+                },
+                "paths": {
+                    "codex_raw_dir": str(raw_dir),
+                    "classification_csv": str(raw_dir / "classification.csv"),
+                    "synapse_source_csv": str(raw_dir / "synapses.csv"),
+                    "neuron_registry_csv": str(out_dir / "neuron_registry.csv"),
+                    "connectivity_registry_csv": str(out_dir / "connectivity_registry.csv"),
+                    "registry_provenance_json": str(out_dir / "registry_provenance.json"),
+                    "processed_coupling_dir": str(out_dir / "processed_coupling"),
+                },
+            }
+
+            summary = build_registry(cfg)
+
+            self.assertEqual(summary["neuron_count"], 3)
+            self.assertEqual(summary["connection_count"], 2)
+            self.assertEqual(summary["synapse_count"], 2)
+
+            neuron_registry = load_neuron_registry(out_dir / "neuron_registry.csv")
+            connectivity_registry = load_connectivity_registry(out_dir / "connectivity_registry.csv")
+            synapse_registry = load_synapse_registry(out_dir / "processed_coupling" / "synapse_registry.csv")
+            provenance = json.loads((out_dir / "registry_provenance.json").read_text(encoding="utf-8"))
+            synapse_provenance = json.loads(
+                (out_dir / "processed_coupling" / "synapse_registry_provenance.json").read_text(encoding="utf-8")
+            )
+
+            row_103 = neuron_registry.loc[neuron_registry["root_id"] == 103].iloc[0]
+            synapse_row = synapse_registry.iloc[0]
+            connectivity_row = connectivity_registry.sort_values(["pre_root_id", "post_root_id"]).iloc[0]
+
+            self.assertEqual(row_103["source_file"], "synapses.csv")
+            self.assertEqual(synapse_row["synapse_row_id"], "synapses.csv#1")
+            self.assertEqual(synapse_row["synapse_id"], "syn-1")
+            self.assertEqual(synapse_row["pre_root_id"], 101)
+            self.assertEqual(synapse_row["post_root_id"], 102)
+            self.assertAlmostEqual(synapse_row["x"], 11.0)
+            self.assertAlmostEqual(synapse_row["post_z"], 14.0)
+            self.assertEqual(synapse_row["neuropil"], "LOP_R")
+            self.assertEqual(synapse_row["nt_type"], "ACH")
+            self.assertEqual(synapse_row["sign"], "excitatory")
+            self.assertEqual(synapse_row["source_file"], "synapses.csv")
+
+            self.assertEqual(connectivity_row["pre_root_id"], 101)
+            self.assertEqual(connectivity_row["post_root_id"], 102)
+            self.assertEqual(connectivity_row["syn_count"], 1)
+            self.assertEqual(connectivity_row["source_file"], "synapses.csv")
+
+            self.assertEqual(provenance["connectivity_registry_relation"]["derivation"], "synapse_snapshot_aggregated")
+            self.assertEqual(provenance["inputs"]["synapses"]["path"], str(raw_dir / "synapses.csv"))
+            self.assertEqual(
+                provenance["outputs"]["synapse_registry"],
+                str((out_dir / "processed_coupling" / "synapse_registry.csv").resolve()),
+            )
+            self.assertEqual(synapse_provenance["scope"]["mode"], "all_rows")
+            self.assertEqual(synapse_provenance["row_count"], 2)
+
+    def test_materialize_synapse_registry_rejects_missing_localization_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            source_path = tmp_dir / "synapses.csv"
+            self._write_synapse_csv(
+                source_path,
+                [
+                    {
+                        "id": "syn-1",
+                        "pre_pt_root_id": 101,
+                        "post_pt_root_id": 102,
+                        "neuropil_name": "LOP_R",
+                    }
+                ],
+            )
+            cfg = {
+                "paths": {
+                    "synapse_source_csv": str(source_path),
+                    "processed_coupling_dir": str(tmp_dir / "processed_coupling"),
+                }
+            }
+
+            with self.assertRaisesRegex(ValueError, "missing required localization columns"):
+                materialize_synapse_registry(cfg)
+
+    def test_materialize_synapse_registry_filters_requested_root_ids_deterministically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            source_path = tmp_dir / "synapses.csv"
+            self._write_synapse_csv(
+                source_path,
+                [
+                    {
+                        "id": "syn-1",
+                        "pre_pt_root_id": 101,
+                        "post_pt_root_id": 102,
+                        "ctr_pt_x": 1.0,
+                        "ctr_pt_y": 2.0,
+                        "ctr_pt_z": 3.0,
+                    },
+                    {
+                        "id": "syn-2",
+                        "pre_pt_root_id": 101,
+                        "post_pt_root_id": 103,
+                        "ctr_pt_x": 4.0,
+                        "ctr_pt_y": 5.0,
+                        "ctr_pt_z": 6.0,
+                    },
+                    {
+                        "id": "syn-3",
+                        "pre_pt_root_id": 103,
+                        "post_pt_root_id": 102,
+                        "ctr_pt_x": 7.0,
+                        "ctr_pt_y": 8.0,
+                        "ctr_pt_z": 9.0,
+                    },
+                    {
+                        "id": "syn-4",
+                        "pre_pt_root_id": 102,
+                        "post_pt_root_id": 101,
+                        "ctr_pt_x": 10.0,
+                        "ctr_pt_y": 11.0,
+                        "ctr_pt_z": 12.0,
+                    },
+                ],
+            )
+            cfg = {
+                "paths": {
+                    "synapse_source_csv": str(source_path),
+                    "processed_coupling_dir": str(tmp_dir / "processed_coupling"),
+                }
+            }
+
+            summary = materialize_synapse_registry(cfg, root_ids=[102, 101], scope_label="unit-test")
+
+            synapse_registry = load_synapse_registry(tmp_dir / "processed_coupling" / "synapse_registry.csv")
+            provenance = json.loads(
+                (tmp_dir / "processed_coupling" / "synapse_registry_provenance.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(summary["synapse_count"], 2)
+            self.assertEqual(synapse_registry["synapse_id"].tolist(), ["syn-1", "syn-4"])
+            self.assertEqual(provenance["scope"]["mode"], "root_id_subset")
+            self.assertEqual(provenance["scope"]["label"], "unit-test")
+            self.assertEqual(provenance["scope"]["root_ids"], [101, 102])
+
     def test_selection_can_filter_registry_by_super_class_and_role(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
@@ -255,6 +453,9 @@ class RegistryBuildTest(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+
+    def _write_synapse_csv(self, path: Path, rows: list[dict[str, object]]) -> None:
+        pd.DataFrame(rows).to_csv(path, index=False)
 
 
 class RegistryMembershipValidationTest(unittest.TestCase):

@@ -15,7 +15,9 @@ from flywire_wave.registry import build_registry
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build canonical FlyWire metadata and connectivity registries.")
+    parser = argparse.ArgumentParser(
+        description="Build canonical FlyWire neuron/connectivity registries and the local synapse registry when configured."
+    )
     parser.add_argument(
         "--config",
         required=True,

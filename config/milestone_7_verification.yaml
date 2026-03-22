@@ -1,0 +1,76 @@
+dataset:
+  datastack_name: flywire_fafb_public
+  materialization_version: 783
+  flywire_dataset: public
+
+paths:
+  codex_raw_dir: config/milestone_7_verification_inputs
+  neuron_registry_csv: data/interim/milestone_7_verification/neuron_registry.csv
+  connectivity_registry_csv: data/interim/milestone_7_verification/connectivity_registry.csv
+  registry_provenance_json: data/interim/milestone_7_verification/registry_provenance.json
+  synapse_source_csv: config/milestone_7_verification_inputs/synapses.csv
+  selected_root_ids: data/interim/milestone_7_verification/root_ids.txt
+  subset_output_dir: data/interim/milestone_7_verification/subsets
+  meshes_raw_dir: data/interim/meshes_raw
+  skeletons_raw_dir: data/interim/skeletons_raw
+  processed_mesh_dir: data/processed/milestone_7_verification/meshes
+  processed_graph_dir: data/processed/milestone_7_verification/graphs
+  processed_coupling_dir: data/processed/milestone_7_verification/coupling
+  coupling_inspection_dir: data/processed/milestone_7_verification/coupling_inspection
+  manifest_json: data/processed/milestone_7_verification/asset_manifest.json
+
+registry:
+  snapshot_version: 783
+  project_roles:
+    surface_simulated:
+      - LC31b
+    skeleton_simulated:
+      - MeTu1
+    point_simulated:
+      - LC16
+
+selection:
+  active_preset: milestone7_cached_subset
+  sort_by: root_id
+  preview_edge_limit: 12
+  presets:
+    milestone7_cached_subset:
+      description: >
+        Offline Milestone 7 verification subset over real cached mesh and skeleton
+        assets with explicit surface, skeleton, and point-mode roots.
+      include:
+        root_ids:
+          - 720575940602483424
+          - 720575940603372460
+          - 720575940603452384
+      max_neurons: 3
+
+meshing:
+  fetch_skeletons: true
+  refetch_meshes: false
+  refetch_skeletons: false
+  require_skeletons: false
+  simplify_target_faces: 6000
+  patch_hops: 4
+  patch_vertex_cap: 1200
+  operator_assembly:
+    version: operator_assembly.v1
+    boundary_condition:
+      mode: closed_surface_zero_flux
+    anisotropy:
+      model: isotropic
+  coupling_assembly:
+    version: coupling_assembly.v1
+    topology_family: distributed_patch_cloud
+    kernel_family: separable_rank_one_cloud
+    sign_representation: categorical_sign_with_signed_weight
+    delay_representation: nonnegative_delay_ms_per_synapse_or_delay_bin
+    delay_model:
+      version: coupling_delay_model.v1
+      mode: constant_zero_ms
+      base_delay_ms: 0.0
+      velocity_distance_units_per_ms: 1.0
+      delay_bin_size_ms: 0.0
+    aggregation_rule: sum_over_synapses_preserving_sign_and_delay_bins
+    source_cloud_normalization: sum_to_one_per_component
+    target_cloud_normalization: sum_to_one_per_component

@@ -1,0 +1,333 @@
+cases:
+  flash_clip_timing:
+    stimulus:
+      stimulus:
+        stimulus_family: flash
+        stimulus_name: simple_flash
+        temporal_sampling:
+          dt_ms: 20.0
+          duration_ms: 160.0
+        spatial_frame:
+          width_px: 16
+          height_px: 16
+          width_deg: 32.0
+          height_deg: 32.0
+        stimulus_overrides:
+          onset_ms: 40.0
+          offset_ms: 120.0
+          radius_deg: 6.0
+          edge_softness_deg: 0.0
+          contrast: 0.7
+    expected:
+      shape_t_y_x: [8, 16, 16]
+      frame_times_ms: [0.0, 20.0, 40.0, 60.0, 80.0, 100.0, 120.0, 140.0]
+      family_kind: disc_flash
+      samples:
+        - time_ms: 20.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 40.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 1.0
+        - time_ms: 80.0
+          azimuth_deg: 8.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 120.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.5
+
+  moving_bar_negative_aperture:
+    stimulus:
+      stimulus:
+        stimulus_family: moving_bar
+        stimulus_name: simple_moving_bar
+        temporal_sampling:
+          dt_ms: 20.0
+          duration_ms: 120.0
+        spatial_frame:
+          width_px: 32
+          height_px: 16
+          width_deg: 32.0
+          height_deg: 16.0
+        stimulus_overrides:
+          background_level: 0.4
+          contrast: 0.2
+          polarity: negative
+          onset_ms: 0.0
+          offset_ms: 120.0
+          bar_width_deg: 4.0
+          direction_deg: 0.0
+          velocity_deg_per_s: 20.0
+          aperture_radius_deg: 6.0
+          edge_softness_deg: 0.0
+    expected:
+      shape_t_y_x: [6, 16, 32]
+      frame_times_ms: [0.0, 20.0, 40.0, 60.0, 80.0, 100.0]
+      family_kind: moving_bar
+      samples:
+        - time_ms: 0.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.3
+        - time_ms: 100.0
+          azimuth_deg: 2.0
+          elevation_deg: 0.0
+          value: 0.3
+        - time_ms: 100.0
+          azimuth_deg: -5.0
+          elevation_deg: 0.0
+          value: 0.4
+        - time_ms: 100.0
+          azimuth_deg: 8.0
+          elevation_deg: 0.0
+          value: 0.4
+
+  translated_edge_ramp:
+    stimulus:
+      stimulus:
+        stimulus_family: translated_edge
+        stimulus_name: simple_translated_edge
+        temporal_sampling:
+          dt_ms: 20.0
+          duration_ms: 120.0
+        spatial_frame:
+          width_px: 32
+          height_px: 16
+          width_deg: 32.0
+          height_deg: 16.0
+        stimulus_overrides:
+          background_level: 0.2
+          contrast: 0.3
+          onset_ms: 0.0
+          offset_ms: 120.0
+          direction_deg: 0.0
+          velocity_deg_per_s: 10.0
+          edge_width_deg: 4.0
+          phase_offset_deg: 0.0
+    expected:
+      shape_t_y_x: [6, 16, 32]
+      frame_times_ms: [0.0, 20.0, 40.0, 60.0, 80.0, 100.0]
+      family_kind: translated_edge
+      samples:
+        - time_ms: 0.0
+          azimuth_deg: -3.0
+          elevation_deg: 0.0
+          value: 0.8
+        - time_ms: 0.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 0.0
+          azimuth_deg: 3.0
+          elevation_deg: 0.0
+          value: 0.2
+        - time_ms: 100.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.65
+
+  drifting_grating_phase:
+    stimulus:
+      stimulus:
+        stimulus_family: drifting_grating
+        stimulus_name: simple_drifting_grating
+        temporal_sampling:
+          dt_ms: 25.0
+          duration_ms: 250.0
+        spatial_frame:
+          width_px: 32
+          height_px: 32
+          width_deg: 32.0
+          height_deg: 32.0
+        stimulus_overrides:
+          background_level: 0.4
+          contrast: 0.25
+          onset_ms: 0.0
+          offset_ms: 250.0
+          spatial_frequency_cpd: 0.1
+          temporal_frequency_hz: 2.0
+          drift_direction_deg: 0.0
+          phase_deg: 90.0
+          waveform: sine
+          aperture_radius_deg: 10.0
+    expected:
+      shape_t_y_x: [10, 32, 32]
+      frame_times_ms: [0.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0, 225.0]
+      family_kind: drifting_grating
+      samples:
+        - time_ms: 0.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.75
+        - time_ms: 0.0
+          azimuth_deg: 5.0
+          elevation_deg: 0.0
+          value: 0.25
+        - time_ms: 125.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 0.0
+          azimuth_deg: 12.0
+          elevation_deg: 0.0
+          value: 0.4
+
+  looming_growth:
+    stimulus:
+      stimulus:
+        stimulus_family: looming
+        stimulus_name: simple_looming
+        temporal_sampling:
+          dt_ms: 50.0
+          duration_ms: 250.0
+        spatial_frame:
+          width_px: 12
+          height_px: 12
+          width_deg: 24.0
+          height_deg: 24.0
+        stimulus_overrides:
+          background_level: 0.5
+          contrast: 0.3
+          polarity: negative
+          onset_ms: 0.0
+          offset_ms: 200.0
+          initial_radius_deg: 2.0
+          final_radius_deg: 6.0
+          edge_softness_deg: 0.0
+    expected:
+      shape_t_y_x: [5, 12, 12]
+      frame_times_ms: [0.0, 50.0, 100.0, 150.0, 200.0]
+      family_kind: looming_disc
+      samples:
+        - time_ms: 0.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.2
+        - time_ms: 0.0
+          azimuth_deg: 3.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 100.0
+          azimuth_deg: 3.0
+          elevation_deg: 0.0
+          value: 0.2
+        - time_ms: 150.0
+          azimuth_deg: 5.0
+          elevation_deg: 0.0
+          value: 0.2
+        - time_ms: 200.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.5
+
+  radial_flow_expansion_square:
+    stimulus:
+      stimulus:
+        stimulus_family: radial_flow
+        stimulus_name: expanding_flow
+        temporal_sampling:
+          dt_ms: 50.0
+          duration_ms: 250.0
+        spatial_frame:
+          width_px: 16
+          height_px: 16
+          width_deg: 32.0
+          height_deg: 32.0
+        stimulus_overrides:
+          background_level: 0.5
+          contrast: 0.25
+          polarity: positive
+          onset_ms: 0.0
+          offset_ms: 200.0
+          motion_sign: expansion
+          radial_speed_deg_per_s: 20.0
+          radial_spatial_frequency_cpd: 0.25
+          phase_deg: 90.0
+          waveform: square
+          inner_radius_deg: 2.0
+          outer_radius_deg: 12.0
+    expected:
+      shape_t_y_x: [5, 16, 16]
+      frame_times_ms: [0.0, 50.0, 100.0, 150.0, 200.0]
+      family_kind: radial_flow
+      samples:
+        - time_ms: 0.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 0.0
+          azimuth_deg: 6.0
+          elevation_deg: 0.0
+          value: 0.25
+        - time_ms: 100.0
+          azimuth_deg: 6.0
+          elevation_deg: 0.0
+          value: 0.75
+        - time_ms: 100.0
+          azimuth_deg: 14.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 200.0
+          azimuth_deg: 6.0
+          elevation_deg: 0.0
+          value: 0.5
+
+  rotating_flow_clockwise_square:
+    stimulus:
+      stimulus:
+        stimulus_family: rotating_flow
+        stimulus_name: clockwise_rotation
+        temporal_sampling:
+          dt_ms: 250.0
+          duration_ms: 1250.0
+        spatial_frame:
+          width_px: 16
+          height_px: 16
+          width_deg: 32.0
+          height_deg: 32.0
+        stimulus_overrides:
+          background_level: 0.5
+          contrast: 0.25
+          polarity: positive
+          onset_ms: 0.0
+          offset_ms: 1250.0
+          angular_velocity_deg_per_s: 90.0
+          angular_cycle_count: 2
+          phase_deg: 45.0
+          waveform: square
+          inner_radius_deg: 2.0
+          outer_radius_deg: 12.0
+    expected:
+      shape_t_y_x: [5, 16, 16]
+      frame_times_ms: [0.0, 250.0, 500.0, 750.0, 1000.0]
+      family_kind: rotating_flow
+      samples:
+        - time_ms: 0.0
+          azimuth_deg: 0.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 0.0
+          azimuth_deg: 6.0
+          elevation_deg: 0.0
+          value: 0.75
+        - time_ms: 0.0
+          azimuth_deg: 0.0
+          elevation_deg: 6.0
+          value: 0.25
+        - time_ms: 500.0
+          azimuth_deg: 13.0
+          elevation_deg: 0.0
+          value: 0.5
+        - time_ms: 1000.0
+          azimuth_deg: 6.0
+          elevation_deg: 0.0
+          value: 0.25
+
+  moving_edge_alias_compat:
+    stimulus:
+      stimulus_family: moving_edge
+      stimulus_name: simple_moving_edge

@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from flywire_wave.io_utils import read_root_ids
+from flywire_wave.registry import load_synapse_registry
 from flywire_wave.selection import generate_subsets_from_config
 
 
@@ -110,6 +111,33 @@ class SelectionPresetToolTest(unittest.TestCase):
                 ["add_direct_context", "add_downstream_readout", "add_halo_context"],
             )
 
+    def test_active_preset_refreshes_subset_scoped_synapse_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            registry_path, connectivity_path = _write_fixture_registry(tmp_dir)
+            synapse_source_path = _write_fixture_synapses(tmp_dir / "synapses.csv")
+            selected_root_ids_path = tmp_dir / "active_root_ids.txt"
+            subset_output_dir = tmp_dir / "subsets"
+            processed_coupling_dir = tmp_dir / "processed_coupling"
+
+            cfg = _fixture_config(
+                registry_path=registry_path,
+                connectivity_path=connectivity_path,
+                selected_root_ids_path=selected_root_ids_path,
+                subset_output_dir=subset_output_dir,
+                processed_coupling_dir=processed_coupling_dir,
+                synapse_source_csv=synapse_source_path,
+            )
+
+            generate_subsets_from_config(cfg, config_path=tmp_dir / "config.yaml")
+
+            selected_root_ids = set(read_root_ids(selected_root_ids_path))
+            synapse_registry = load_synapse_registry(processed_coupling_dir / "synapse_registry.csv")
+
+            self.assertEqual(synapse_registry["synapse_id"].tolist(), ["syn-1", "syn-4"])
+            self.assertTrue(synapse_registry["pre_root_id"].isin(selected_root_ids).all())
+            self.assertTrue(synapse_registry["post_root_id"].isin(selected_root_ids).all())
+
 
 def _fixture_config(
     *,
@@ -117,13 +145,23 @@ def _fixture_config(
     connectivity_path: Path,
     selected_root_ids_path: Path,
     subset_output_dir: Path,
+    processed_coupling_dir: Path | None = None,
+    synapse_source_csv: Path | None = None,
 ) -> dict:
+    paths = {
+        "neuron_registry_csv": str(registry_path),
+        "connectivity_registry_csv": str(connectivity_path),
+        "selected_root_ids": str(selected_root_ids_path),
+        "subset_output_dir": str(subset_output_dir),
+    }
+    if processed_coupling_dir is not None:
+        paths["processed_coupling_dir"] = str(processed_coupling_dir)
+    if synapse_source_csv is not None:
+        paths["synapse_source_csv"] = str(synapse_source_csv)
+
     return {
         "paths": {
-            "neuron_registry_csv": str(registry_path),
-            "connectivity_registry_csv": str(connectivity_path),
-            "selected_root_ids": str(selected_root_ids_path),
-            "subset_output_dir": str(subset_output_dir),
+            **paths,
         },
         "selection": {
             "active_preset": "motion_medium",
@@ -253,6 +291,23 @@ def _write_fixture_registry(tmp_dir: Path) -> tuple[Path, Path]:
     )
 
     return registry_path, connectivity_path
+
+
+def _write_fixture_synapses(path: Path) -> Path:
+    path.write_text(
+        "\n".join(
+            [
+                "synapse_id,pre_root_id,post_root_id,x,y,z,neuropil",
+                "syn-1,1,2,1.0,2.0,3.0,LOP_R",
+                "syn-2,1,99,4.0,5.0,6.0,LOP_R",
+                "syn-3,99,2,7.0,8.0,9.0,LOP_R",
+                "syn-4,12,13,10.0,11.0,12.0,ME_R",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 if __name__ == "__main__":
