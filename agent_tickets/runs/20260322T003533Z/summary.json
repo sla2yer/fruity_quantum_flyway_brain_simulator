@@ -1,0 +1,156 @@
+[
+  {
+    "ticket_id": "FW-M8A-001",
+    "title": "Freeze a versioned stimulus bundle contract and canonical generator design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-001_Freeze_a_versioned_stimulus_bundle_contract_and_canonical_generator_design_note/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-001_Freeze_a_versioned_stimulus_bundle_contract_and_canonical_generator_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-001_Freeze_a_versioned_stimulus_bundle_contract_and_canonical_generator_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-001_Freeze_a_versioned_stimulus_bundle_contract_and_canonical_generator_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-001_Freeze_a_versioned_stimulus_bundle_contract_and_canonical_generator_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-001_Freeze_a_versioned_stimulus_bundle_contract_and_canonical_generator_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8A-002",
+    "title": "Build a typed stimulus specification, preset registry, and config normalization layer",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-002_Build_a_typed_stimulus_specification_preset_registry_and_config_normalization_layer/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-002_Build_a_typed_stimulus_specification_preset_registry_and_config_normalization_layer",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-002_Build_a_typed_stimulus_specification_preset_registry_and_config_normalization_layer/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-002_Build_a_typed_stimulus_specification_preset_registry_and_config_normalization_layer/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-002_Build_a_typed_stimulus_specification_preset_registry_and_config_normalization_layer/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-002_Build_a_typed_stimulus_specification_preset_registry_and_config_normalization_layer/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8A-003",
+    "title": "Implement flash, moving-bar, translated-edge, and drifting-grating generators with deterministic frame synthesis",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-003_Implement_flash_moving-bar_translated-edge_and_drifting-grating_generators_with_deterministic_frame_synthesis/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-003_Implement_flash_moving-bar_translated-edge_and_drifting-grating_generators_with_deterministic_frame_synthesis",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-003_Implement_flash_moving-bar_translated-edge_and_drifting-grating_generators_with_deterministic_frame_synthesis/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-003_Implement_flash_moving-bar_translated-edge_and_drifting-grating_generators_with_deterministic_frame_synthesis/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-003_Implement_flash_moving-bar_translated-edge_and_drifting-grating_generators_with_deterministic_frame_synthesis/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-003_Implement_flash_moving-bar_translated-edge_and_drifting-grating_generators_with_deterministic_frame_synthesis/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8A-004",
+    "title": "Implement looming, expansion-contraction flow, and rotating-flow generators on the same canonical visual field contract",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-004_Implement_looming_expansion-contraction_flow_and_rotating-flow_generators_on_the_same_canonical_visual_field_contract/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-004_Implement_looming_expansion-contraction_flow_and_rotating-flow_generators_on_the_same_canonical_visual_field_contract",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-004_Implement_looming_expansion-contraction_flow_and_rotating-flow_generators_on_the_same_canonical_visual_field_contract/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-004_Implement_looming_expansion-contraction_flow_and_rotating-flow_generators_on_the_same_canonical_visual_field_contract/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-004_Implement_looming_expansion-contraction_flow_and_rotating-flow_generators_on_the_same_canonical_visual_field_contract/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-004_Implement_looming_expansion-contraction_flow_and_rotating-flow_generators_on_the_same_canonical_visual_field_contract/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8A-005",
+    "title": "Integrate canonical stimuli with experiment manifests, schema validation, and config discovery",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-005_Integrate_canonical_stimuli_with_experiment_manifests_schema_validation_and_config_discovery/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-005_Integrate_canonical_stimuli_with_experiment_manifests_schema_validation_and_config_discovery",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-005_Integrate_canonical_stimuli_with_experiment_manifests_schema_validation_and_config_discovery/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-005_Integrate_canonical_stimuli_with_experiment_manifests_schema_validation_and_config_discovery/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-005_Integrate_canonical_stimuli_with_experiment_manifests_schema_validation_and_config_discovery/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-005_Integrate_canonical_stimuli_with_experiment_manifests_schema_validation_and_config_discovery/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8A-006",
+    "title": "Ship deterministic stimulus recording, replay, and offline preview tooling for reusable bundles",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-006_Ship_deterministic_stimulus_recording_replay_and_offline_preview_tooling_for_reusable_bundles/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-006_Ship_deterministic_stimulus_recording_replay_and_offline_preview_tooling_for_reusable_bundles",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-006_Ship_deterministic_stimulus_recording_replay_and_offline_preview_tooling_for_reusable_bundles/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-006_Ship_deterministic_stimulus_recording_replay_and_offline_preview_tooling_for_reusable_bundles/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-006_Ship_deterministic_stimulus_recording_replay_and_offline_preview_tooling_for_reusable_bundles/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-006_Ship_deterministic_stimulus_recording_replay_and_offline_preview_tooling_for_reusable_bundles/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8A-007",
+    "title": "Run a Milestone 8A integration verification pass and publish a readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-007_Run_a_Milestone_8A_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-007_Run_a_Milestone_8A_integration_verification_pass_and_publish_a_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-007_Run_a_Milestone_8A_integration_verification_pass_and_publish_a_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-007_Run_a_Milestone_8A_integration_verification_pass_and_publish_a_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-007_Run_a_Milestone_8A_integration_verification_pass_and_publish_a_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T003533Z/FW-M8A-007_Run_a_Milestone_8A_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+  }
+]

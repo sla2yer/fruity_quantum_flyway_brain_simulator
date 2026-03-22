@@ -17,7 +17,8 @@ The bundle owns:
   design-note version, replay semantics, and all deterministic reproduction
   fields
 - one optional cached frame archive for acceleration
-- one optional preview animation for human review
+- one reserved optional preview-animation slot plus deterministic static preview
+  sidecars for human review
 - zero or more compatibility-alias records that point old names at the same
   canonical bundle
 
@@ -26,10 +27,15 @@ The canonical layout is:
 - `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/stimulus_bundle.json`
 - `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/stimulus_frames.npz`
 - `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/stimulus_preview.gif`
+  (reserved optional animation slot; the current local recorder marks it as
+  skipped)
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/preview/index.html`
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/preview/summary.json`
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/preview/frames/frame-<index>.svg`
 - `data/processed/stimuli/aliases/<alias_family>/<alias_name>/<parameter_hash>.json`
 
 Later tickets may add more sidecars, but those paths are the stable discovery
-surface.
+surface for the current local recorder.
 
 ## Candidate representation families
 

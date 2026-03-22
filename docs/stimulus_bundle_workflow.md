@@ -34,6 +34,8 @@ Key artifacts:
   determinism, normalized parameters, and preview/report pointers
 - `stimulus_frames.npz`: deterministic cached frame archive used for cheap
   replay
+- `stimulus_preview.gif`: reserved optional animation slot in the contract
+  metadata; the current local recorder marks it as skipped
 - `preview/index.html`: static offline preview report with representative frames
 - `preview/summary.json`: machine-readable preview summary
 - `preview/frames/frame-<index>.svg`: deterministic preview images
@@ -62,3 +64,26 @@ python scripts/10_stimulus_bundle.py replay --config config/local.yaml --time-ms
 Replay uses the cached frame archive when it exists and falls back to descriptor
 regeneration only when the cache is missing. Either way, the recorded
 `stimulus_bundle.json` remains the source of truth.
+
+## Full readiness pass
+
+Run the complete Milestone 8A integration verification workflow with:
+
+```bash
+make milestone8a-readiness
+```
+
+Or directly:
+
+```bash
+python scripts/11_milestone8a_readiness.py --config config/milestone_8a_verification.yaml
+```
+
+The readiness pass records and replays one representative example from every
+required Milestone 8A family, validates the example manifest through the
+canonical registry, checks deterministic cache-versus-regeneration replay, and
+writes the readiness report under:
+
+```text
+data/processed/milestone_8a_verification/stimuli/readiness/milestone_8a/
+```

@@ -58,6 +58,8 @@ Optional offline inspection steps:
 7. `scripts/07_milestone6_readiness.py`
 8. `scripts/08_coupling_inspection.py`
 9. `scripts/09_milestone7_readiness.py`
+10. `scripts/10_stimulus_bundle.py`
+11. `scripts/11_milestone8a_readiness.py`
 
 ## Source-of-truth inputs
 
@@ -462,6 +464,31 @@ Equivalent explicit command sequence:
 ./.venv/bin/python scripts/08_coupling_inspection.py --config config/milestone_7_verification.yaml --edges-file config/milestone_7_verification_edges.txt
 ```
 
+### 15) Run the Milestone 8A readiness pass
+
+```bash
+make milestone8a-readiness
+```
+
+This uses [`config/milestone_8a_verification.yaml`](config/milestone_8a_verification.yaml)
+and writes isolated outputs under `data/processed/milestone_8a_verification/stimuli/`.
+It runs a focused Milestone 8A fixture suite, records and replays one
+representative bundle per required stimulus family, validates the example
+manifest through the canonical registry, audits the static preview outputs, and
+publishes:
+
+- `milestone_8a_readiness.md`
+- `milestone_8a_readiness.json`
+
+under the deterministic readiness report directory
+`data/processed/milestone_8a_verification/stimuli/readiness/milestone_8a/`.
+
+Equivalent explicit command:
+
+```bash
+./.venv/bin/python scripts/11_milestone8a_readiness.py --config config/milestone_8a_verification.yaml
+```
+
 ## What "wave-ready" means here
 
 For each selected root ID, the current asset builder can:
@@ -561,6 +588,8 @@ make assets CONFIG=config/local.yaml
 make preview CONFIG=config/local.yaml
 make operator-qa CONFIG=config/local.yaml
 make milestone6-readiness
+make milestone7-readiness
+make milestone8a-readiness
 make validate-manifest
 make all CONFIG=config/local.yaml
 ```
@@ -573,8 +602,8 @@ make all CONFIG=config/local.yaml
   if a filename differs;
 - `make verify` and `make meshes` require a valid FlyWire token and network
   access;
-- tests, manifest validation, geometry preview, operator QA, and the Milestone 6
-  readiness pass are all local workflows;
+- tests, manifest validation, geometry preview, operator QA, and the Milestone 6,
+  Milestone 7, and Milestone 8A readiness passes are all local workflows;
 - the default processed operator is now a cotangent-FEM-style surface operator,
   not just a starter graph Laplacian, but a graph-based fallback still exists
   for guarded cases;

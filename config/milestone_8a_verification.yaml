@@ -1,0 +1,9 @@
+paths:
+  processed_stimulus_dir: data/processed/milestone_8a_verification/stimuli
+
+stimulus_verification:
+  manifest_path: manifests/examples/milestone_1_demo.yaml
+  schema_path: schemas/milestone_1_experiment_manifest.schema.json
+  design_lock_path: config/milestone_1_design_lock.yaml
+  fixture_cases_path: tests/fixtures/stimulus_generator_cases.yaml
+  config_alias_fixture_path: tests/fixtures/stimulus_config_fixture.yaml

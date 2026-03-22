@@ -187,7 +187,13 @@ The library-owned default layout is:
 - `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/stimulus_frames.npz`:
   optional cached frame stack derived from the descriptor
 - `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/stimulus_preview.gif`:
-  optional human-review preview animation
+  reserved optional animation slot; the current local recorder marks it as skipped
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/preview/index.html`:
+  static offline preview report
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/preview/summary.json`:
+  machine-readable preview summary
+- `data/processed/stimuli/bundles/<stimulus_family>/<stimulus_name>/<parameter_hash>/preview/frames/frame-<index>.svg`:
+  deterministic preview frame images
 - `data/processed/stimuli/aliases/<alias_family>/<alias_name>/<parameter_hash>.json`:
   compatibility alias record pointing old names at the canonical bundle
 
@@ -201,6 +207,8 @@ Contract notes:
   luminance convention
 - the default representation family is `hybrid_descriptor_plus_cache`:
   descriptor metadata is authoritative and frame caches are optional
+- the shipped Milestone 8A recorder emits static offline preview sidecars
+  alongside the reserved GIF asset slot so preview inspection stays local and deterministic
 - timing is always expressed in milliseconds with `sample_hold` frame playback
 - the canonical spatial frame is `visual_field_degrees_centered` with origin at
   the aperture center, positive azimuth to the right, positive elevation up,
