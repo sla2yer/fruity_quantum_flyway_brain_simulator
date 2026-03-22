@@ -12,7 +12,11 @@ sys.path.insert(0, str(SRC))
 
 from flywire_wave.simulator_execution import execute_manifest_simulation
 from flywire_wave.simulator_visualization import generate_simulator_visualization_report
-from tests.test_simulator_execution import _materialize_execution_fixture
+
+try:
+    from test_simulator_execution import _materialize_execution_fixture
+except ModuleNotFoundError:
+    from tests.test_simulator_execution import _materialize_execution_fixture
 
 
 class SimulatorVisualizationReportTest(unittest.TestCase):

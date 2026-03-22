@@ -3,12 +3,12 @@ representative_root_limit: 1
 
 parameter_sets:
   - sweep_point_id: reference
-    label: Default Milestone 10 reference parameters
+    label: Exploratory default Milestone 10 reference parameters
     parameter_bundle:
       parameter_preset: m10_reference
 
   - sweep_point_id: recovery_probe
-    label: Recovery-enabled comparison point
+    label: Exploratory recovery-enabled comparison point
     parameter_bundle:
       parameter_preset: m10_recovery_probe
       recovery:

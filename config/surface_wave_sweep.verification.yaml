@@ -1,0 +1,16 @@
+version: surface_wave_sweep.v1
+representative_root_limit: 1
+
+parameter_sets:
+  - sweep_point_id: verification_reference
+    label: Verification-grade local non-runaway reference
+    parameter_bundle:
+      parameter_preset: m10_verification_reference
+      propagation:
+        wave_speed_sq_scale: 1.0
+        restoring_strength_per_ms2: 1.0
+      damping:
+        gamma_per_ms: 0.5
+      nonlinearity:
+        mode: tanh_soft_clip
+        activation_scale: 1.0

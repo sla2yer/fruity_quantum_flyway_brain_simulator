@@ -387,6 +387,10 @@ Contract notes:
   `config.paths.processed_simulator_results_dir/readiness/milestone_10/milestone_10_readiness.json`
 - `make milestone10-readiness` is the one-command entrypoint for the shipped
   Milestone 10 integration verification pass
+- that readiness gate uses `config/surface_wave_sweep.verification.yaml` as one
+  conservative non-runaway local reference bundle for stability review
+- `config/surface_wave_sweep.example.yaml` remains the broader exploratory
+  local sweep and is not the readiness gate
 - `scripts/14_milestone9_readiness.py` layers a focused fixture suite plus a
   deterministic manifest-driven baseline audit on top of
   `scripts/run_simulation.py` and writes `milestone_9_readiness.md` plus

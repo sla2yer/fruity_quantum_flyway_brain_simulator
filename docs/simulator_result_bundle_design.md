@@ -152,11 +152,14 @@ Milestones 10, 12, 13, and 14 must preserve these invariants:
 - `make milestone9-readiness` is the one-command entrypoint for that audit
 - `scripts/16_milestone10_readiness.py` is the shipped Milestone 10 follow-on
   audit path: it reruns the local `surface_wave` workflow plus the shipped
-  inspection sweep on fixture assets, checks bundle compatibility against a
-  representative baseline arm, and writes `milestone_10_readiness.md` plus
-  `milestone_10_readiness.json` under
+  verification-grade inspection sweep on fixture assets, checks bundle
+  compatibility against a representative baseline arm, and writes
+  `milestone_10_readiness.md` plus `milestone_10_readiness.json` under
   `config.paths.processed_simulator_results_dir/readiness/milestone_10/`
 - `make milestone10-readiness` is the one-command entrypoint for that audit
+- the shipped readiness gate uses `config/surface_wave_sweep.verification.yaml`
+  as a local non-runaway reference; the broader exploratory sweep remains at
+  `config/surface_wave_sweep.example.yaml`
 
 If a future ticket needs a different shared layout, different shared payload
 columns, or a different meaning for `P0`/`P1`, that is a new contract version,

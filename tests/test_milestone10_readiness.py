@@ -98,14 +98,21 @@ class Milestone10ReadinessReportTest(unittest.TestCase):
             self.assertTrue(baseline_audit["comparison_surface_aligned"])
 
             inspection_audit = report["surface_wave_inspection_audit"]
-            self.assertEqual(inspection_audit["overall_status"], "review")
+            self.assertEqual(inspection_audit["overall_status"], "pass")
+            self.assertEqual(inspection_audit["inspection_summary_status"], "pass")
             self.assertTrue(inspection_audit["summary_stable"])
             self.assertTrue(inspection_audit["artifact_hashes_stable"])
-            self.assertGreaterEqual(inspection_audit["run_count"], 2)
-            self.assertIn("reference", inspection_audit["sweep_point_ids"])
-            self.assertIn("recovery_probe", inspection_audit["sweep_point_ids"])
+            self.assertEqual(inspection_audit["run_count"], 1)
+            self.assertEqual(
+                inspection_audit["sweep_point_ids"],
+                ["verification_reference"],
+            )
+            self.assertEqual(
+                inspection_audit["passing_sweep_point_ids"],
+                ["verification_reference"],
+            )
 
-            self.assertEqual(report["follow_on_readiness"]["status"], "review")
+            self.assertEqual(report["follow_on_readiness"]["status"], "ready")
             self.assertTrue(report["follow_on_readiness"]["ready_for_follow_on_work"])
             self.assertEqual(
                 report["follow_on_readiness"]["ready_for_workstreams"],
@@ -116,9 +123,8 @@ class Milestone10ReadinessReportTest(unittest.TestCase):
             self.assertTrue(all(workflow_coverage.values()))
 
             follow_on_issues = report["follow_on_issues"]
-            self.assertEqual(len(follow_on_issues), 2)
+            self.assertEqual(len(follow_on_issues), 1)
             self.assertEqual(follow_on_issues[0]["ticket_id"], "FW-M10-FOLLOW-001")
-            self.assertEqual(follow_on_issues[1]["ticket_id"], "FW-M10-FOLLOW-002")
 
             markdown_text = markdown_path.read_text(encoding="utf-8")
             self.assertIn("Milestone 10 Readiness Report", markdown_text)

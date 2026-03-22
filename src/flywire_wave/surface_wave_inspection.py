@@ -34,7 +34,11 @@ from .surface_wave_contract import (
     write_surface_wave_model_metadata,
 )
 from .surface_wave_execution import resolve_surface_wave_execution_plan
-from .surface_wave_solver import SingleNeuronSurfaceWaveSolver
+from .surface_wave_solver import (
+    SURFACE_STATE_RESOLUTION,
+    SingleNeuronSurfaceWaveSolver,
+    SurfaceWaveState,
+)
 
 
 SURFACE_WAVE_INSPECTION_REPORT_VERSION = "surface_wave_inspection.v1"
@@ -892,13 +896,15 @@ def _run_pulse_probes(
         operator_bundle = next(
             bundle for bundle in resolved.operator_bundles if int(bundle.root_id) == root_id
         )
-        solver = SingleNeuronSurfaceWaveSolver(
+        (
+            solver,
+            initial_snapshot,
+            probe_initialization_mode,
+            probe_seed_vertex,
+        ) = _initialize_pulse_probe_solver(
             operator_bundle=operator_bundle,
-            surface_wave_model=resolved.surface_wave_model,
-            integration_timestep_ms=resolved.integration_timestep_ms,
-            shared_output_timestep_ms=resolved.shared_output_timestep_ms,
+            resolved=resolved,
         )
-        initial_snapshot = solver.initialize_localized_pulse()
         patch_history = [solver.current_patch_state().activation.copy()]
         time_ms = [0.0]
         activation_peak_abs = [float(initial_snapshot.diagnostics.activation_peak_abs)]
@@ -923,11 +929,8 @@ def _run_pulse_probes(
         probes.append(
             {
                 "root_id": int(root_id),
-                "seed_vertex": (
-                    None
-                    if result.initialization.seed_vertex is None
-                    else int(result.initialization.seed_vertex)
-                ),
+                "seed_vertex": int(probe_seed_vertex),
+                "probe_initialization_mode": probe_initialization_mode,
                 "patch_activation_history": patch_history_array,
                 "time_ms": time_ms_array,
                 "activation_peak_abs": activation_peak_abs_array,
@@ -954,6 +957,71 @@ def _run_pulse_probes(
     return probes
 
 
+def _initialize_pulse_probe_solver(
+    *,
+    operator_bundle: Any,
+    resolved: Any,
+) -> tuple[SingleNeuronSurfaceWaveSolver, Any, str, int]:
+    localized_solver = SingleNeuronSurfaceWaveSolver(
+        operator_bundle=operator_bundle,
+        surface_wave_model=resolved.surface_wave_model,
+        integration_timestep_ms=resolved.integration_timestep_ms,
+        shared_output_timestep_ms=resolved.shared_output_timestep_ms,
+    )
+    localized_initial_snapshot = localized_solver.initialize_localized_pulse()
+    localized_patch_activation = localized_solver.current_patch_state().activation.copy()
+    localized_seed_vertex = int(operator_bundle.select_default_seed_vertex())
+    if not _pulse_probe_initial_patch_support_is_too_broad(
+        localized_patch_activation
+    ):
+        return (
+            localized_solver,
+            localized_initial_snapshot,
+            "localized_pulse",
+            int(localized_seed_vertex),
+        )
+
+    onehot_solver = SingleNeuronSurfaceWaveSolver(
+        operator_bundle=operator_bundle,
+        surface_wave_model=resolved.surface_wave_model,
+        integration_timestep_ms=resolved.integration_timestep_ms,
+        shared_output_timestep_ms=resolved.shared_output_timestep_ms,
+    )
+    activation = np.zeros(
+        operator_bundle.surface_vertex_count,
+        dtype=np.float64,
+    )
+    activation[int(localized_seed_vertex)] = 1.0
+    initial_snapshot = onehot_solver.initialize_state(
+        SurfaceWaveState(
+            resolution=SURFACE_STATE_RESOLUTION,
+            activation=activation,
+            velocity=np.zeros_like(activation),
+            recovery=None,
+        )
+    )
+    return onehot_solver, initial_snapshot, "single_vertex_seed", int(localized_seed_vertex)
+
+
+def _pulse_probe_initial_patch_support_is_too_broad(
+    patch_activation: np.ndarray,
+) -> bool:
+    patch_values = np.asarray(patch_activation, dtype=np.float64)
+    if patch_values.size <= 1:
+        return False
+    seed_patch = int(np.argmax(np.abs(patch_values)))
+    threshold = max(
+        float(np.max(np.abs(patch_values))) * 0.25,
+        DEFAULT_DYNAMIC_RANGE_EPSILON,
+    )
+    initially_active_nonseed_count = sum(
+        1
+        for patch_index, value in enumerate(np.abs(patch_values))
+        if patch_index != seed_patch and float(value) >= threshold
+    )
+    return initially_active_nonseed_count >= patch_values.shape[0] - 1
+
+
 def _estimate_patch_wavefront_speed(
     *,
     operator_bundle: Any,
@@ -964,6 +1032,9 @@ def _estimate_patch_wavefront_speed(
     coarse_operator = operator_bundle.coarse_operator
     if coarse_operator is None:
         return {
+            "detected": False,
+            "detection_mode": "coarse_operator_unavailable",
+            "distance_degenerate": False,
             "speed_units_per_ms": None,
             "distance_units": "patch_hops",
             "fit_r2": None,
@@ -1002,6 +1073,9 @@ def _estimate_patch_wavefront_speed(
         arrival_distances.append(float(distance))
     if len(arrival_times) < 2:
         return {
+            "detected": False,
+            "detection_mode": "insufficient_arrivals",
+            "distance_degenerate": False,
             "speed_units_per_ms": None,
             "distance_units": "patch_hops",
             "fit_r2": None,
@@ -1010,8 +1084,22 @@ def _estimate_patch_wavefront_speed(
         }
     x = np.asarray(arrival_times, dtype=np.float64)
     y = np.asarray(arrival_distances, dtype=np.float64)
-    if np.allclose(x, x[0]) or np.allclose(y, y[0]):
+    if np.allclose(y, y[0]):
         return {
+            "detected": True,
+            "detection_mode": "equal_distance_arrivals",
+            "distance_degenerate": True,
+            "speed_units_per_ms": None,
+            "distance_units": "patch_hops",
+            "fit_r2": None,
+            "arrival_count": len(arrival_times),
+            "threshold": float(threshold),
+        }
+    if np.allclose(x, x[0]):
+        return {
+            "detected": False,
+            "detection_mode": "simultaneous_arrivals",
+            "distance_degenerate": False,
             "speed_units_per_ms": None,
             "distance_units": "patch_hops",
             "fit_r2": None,
@@ -1021,6 +1109,9 @@ def _estimate_patch_wavefront_speed(
     slope, intercept = np.polyfit(x, y, deg=1)
     if not np.isfinite(slope) or float(slope) <= 0.0:
         return {
+            "detected": False,
+            "detection_mode": "nonpositive_speed_fit",
+            "distance_degenerate": False,
             "speed_units_per_ms": None,
             "distance_units": "patch_hops",
             "fit_r2": None,
@@ -1032,6 +1123,9 @@ def _estimate_patch_wavefront_speed(
     centered_sum = float(np.sum((y - np.mean(y)) ** 2))
     fit_r2 = None if centered_sum <= 0.0 else float(1.0 - residual_sum / centered_sum)
     return {
+        "detected": True,
+        "detection_mode": "speed_fit",
+        "distance_degenerate": False,
         "speed_units_per_ms": float(slope),
         "distance_units": "patch_hops",
         "fit_r2": fit_r2,
@@ -1064,7 +1158,7 @@ def _build_diagnostics(
     pulse_wavefront_detected_count = sum(
         1
         for probe in pulse_probes
-        if probe["wavefront"]["speed_units_per_ms"] is not None
+        if bool(probe["wavefront"].get("detected"))
     )
     checks = [
         _check_record(

@@ -157,7 +157,7 @@ def execute_milestone10_readiness_pass(
     sweep_spec_path = _resolve_repo_path(
         verification_cfg.get("sweep_spec_path"),
         repo_root,
-        default=repo_root / "config" / "surface_wave_sweep.example.yaml",
+        default=repo_root / "config" / "surface_wave_sweep.verification.yaml",
     )
 
     readiness_paths = build_milestone10_readiness_paths(processed_simulator_results_dir)
@@ -266,23 +266,6 @@ def execute_milestone10_readiness_pass(
                 "`branching.mode=descriptor_scaled_damping` cannot yet be promoted into the shipped "
                 "manifest workflow without a richer local fixture."
             ),
-        },
-        {
-            "ticket_id": "FW-M10-FOLLOW-002",
-            "severity": "review",
-            "title": "Tune a verification-grade surface-wave sweep for the local readiness fixture",
-            "summary": (
-                "The shipped example sweep executes deterministically and produces the expected artifact bundle, "
-                "but the representative fixture currently drives fail-level diagnostics such as peak-to-drive "
-                "ratio inflation."
-            ),
-            "reproduction": (
-                "Run `make milestone10-readiness`, then inspect "
-                f"`{surface_wave_inspection_audit.get('runs_csv_path', '')}` and the per-run markdown reports under "
-                f"`{surface_wave_inspection_audit.get('output_dir', '')}`. The command succeeds, but the current "
-                "reference and recovery sweep points still trigger fail-level review checks on the local two-neuron "
-                "fixture."
-            ),
         }
     ]
     remaining_risks = [
@@ -296,9 +279,13 @@ def execute_milestone10_readiness_pass(
             "focused fixture suite rather than by the shipped manifest fixture."
         ),
         (
-            "The shipped example sweep currently lands in the inspection tool's `fail` bucket on the local "
-            "readiness fixture because the coupled peak-to-drive ratio remains too large. That is now an explicit "
-            "review item rather than a silent regression."
+            "The shipped verification sweep is a deterministic local stability reference, not a biological "
+            "calibration claim. It is intentionally conservative so later Milestones 11 through 13 can cite one "
+            "trusted non-runaway local anchor."
+        ),
+        (
+            "The broader exploratory sweep remains available via `config/surface_wave_sweep.example.yaml` for local "
+            "stress review, but it is no longer the readiness gate."
         ),
         (
             "Canonical input integration is presently comparison-ready because both model modes consume "
@@ -308,6 +295,7 @@ def execute_milestone10_readiness_pass(
         ),
     ]
 
+    fixture_config_path = str(Path(fixture["fixture_config_path"]).resolve())
     summary = {
         "report_version": MILESTONE10_READINESS_REPORT_VERSION,
         "generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
@@ -325,11 +313,13 @@ def execute_milestone10_readiness_pass(
         "json_path": str(readiness_paths["json_path"].resolve()),
         "commands_dir": str(commands_dir.resolve()),
         "generated_fixture_dir": str(generated_fixture_dir.resolve()),
+        "verification_fixture_config_path": fixture_config_path,
         "documented_verification_command": "make milestone10-readiness",
         "explicit_verification_command": "python scripts/16_milestone10_readiness.py --config config/milestone_10_verification.yaml",
         "representative_commands": [
-            "python scripts/run_simulation.py --config <fixture-config> --manifest manifests/examples/milestone_1_demo.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --model-mode surface_wave --arm-id surface_wave_intact",
-            "python scripts/15_surface_wave_inspection.py --config <fixture-config> --manifest manifests/examples/milestone_1_demo.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --arm-id surface_wave_intact --sweep-spec config/surface_wave_sweep.example.yaml",
+            f"python scripts/run_simulation.py --config {fixture_config_path} --manifest manifests/examples/milestone_1_demo.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --model-mode surface_wave --arm-id surface_wave_intact",
+            f"python scripts/15_surface_wave_inspection.py --config {fixture_config_path} --manifest manifests/examples/milestone_1_demo.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --arm-id surface_wave_intact --sweep-spec config/surface_wave_sweep.verification.yaml",
+            f"python scripts/15_surface_wave_inspection.py --config {fixture_config_path} --manifest manifests/examples/milestone_1_demo.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --arm-id surface_wave_intact --sweep-spec config/surface_wave_sweep.example.yaml",
         ],
         "fixture_verification": copy.deepcopy(dict(fixture_verification)),
         "fixture_suite_coverage": fixture_suite_coverage,
@@ -906,11 +896,30 @@ def _execute_surface_wave_inspection_audit(
         str(item["parameter_context"]["sweep_point_id"])
         for item in run_summaries
     ]
-    if "reference" not in sweep_point_ids or "recovery_probe" not in sweep_point_ids:
+    if "verification_reference" not in sweep_point_ids:
         issues.append(
             _issue(
                 "blocking",
-                "The shipped example sweep spec did not produce both the reference and recovery probe runs.",
+                "The shipped verification sweep spec did not produce the verification_reference run.",
+            )
+        )
+    passing_sweep_point_ids = [
+        str(item["parameter_context"]["sweep_point_id"])
+        for item in run_summaries
+        if str(item.get("overall_status", "")) == "pass"
+    ]
+    if not passing_sweep_point_ids:
+        issues.append(
+            _issue(
+                "blocking",
+                "The shipped verification sweep did not produce a pass-level inspection run on the local fixture.",
+            )
+        )
+    elif "verification_reference" not in passing_sweep_point_ids:
+        issues.append(
+            _issue(
+                "blocking",
+                "The shipped verification_reference run did not clear the inspection workflow at pass.",
             )
         )
     for run_summary in run_summaries:
@@ -928,26 +937,12 @@ def _execute_surface_wave_inspection_audit(
                         f"Inspection artifact {artifact_key!r} is missing for run {run_summary['run_id']!r}.",
                     )
                 )
-    review_issue_count = 0
-    if int(first_summary.get("status_counts", {}).get("fail", 0)) > 0:
-        issues.append(
-            _issue(
-                "review",
-                "The shipped surface-wave inspection sweep reported one or more failed runs that remain under scientific review.",
-            )
-        )
-        review_issue_count += 1
-
     blocking_issue_count = sum(
         1
         for issue in issues
         if str(issue.get("severity", "")) == "blocking"
     )
-    overall_status = "pass"
-    if blocking_issue_count:
-        overall_status = "fail"
-    elif review_issue_count:
-        overall_status = "review"
+    overall_status = "fail" if blocking_issue_count else "pass"
 
     audit = {
         "overall_status": overall_status,
@@ -966,6 +961,8 @@ def _execute_surface_wave_inspection_audit(
         "run_count": int(first_summary.get("run_count", 0)),
         "status_counts": copy.deepcopy(first_summary.get("status_counts", {})),
         "sweep_point_ids": sweep_point_ids,
+        "passing_sweep_point_ids": passing_sweep_point_ids,
+        "verification_reference_sweep_point_id": "verification_reference",
     }
     write_json(audit, commands_dir / "surface_wave_inspection_audit.json")
     return audit
@@ -1368,6 +1365,7 @@ def _render_milestone10_readiness_markdown(*, summary: Mapping[str, Any]) -> str
         f"- Focused fixture suite: `{summary['fixture_verification'].get('status', '')}`",
         f"- Representative manifest path: `{summary['manifest_path']}`",
         f"- Representative sweep spec: `{summary['sweep_spec_path']}`",
+        f"- Generated fixture config: `{summary.get('verification_fixture_config_path', '')}`",
         f"- Planned baseline arms: `{plan_audit['baseline_arm_count']}`",
         f"- Planned surface-wave arms: `{plan_audit['surface_wave_arm_count']}`",
         f"- Surface-wave seed-sweep run count discoverable from the same manifest: `{plan_audit['surface_wave_seed_sweep_run_count']}`",
@@ -1412,15 +1410,17 @@ def _render_milestone10_readiness_markdown(*, summary: Mapping[str, Any]) -> str
             f"- Shared comparison surface aligned: `{baseline_audit.get('comparison_surface_aligned', False)}`",
             f"- Baseline artifact inventory covers shared contract: `{baseline_audit.get('bundle_audit', {}).get('comparison_ready_bundle', False)}`",
             "",
-            "## Inspection Audit",
-            "",
-            f"- Inspection audit status: `{inspection_audit.get('overall_status', '')}`",
-            f"- Inspection summary status: `{inspection_audit.get('inspection_summary_status', '')}`",
-            f"- Inspection run count: `{inspection_audit.get('run_count', 0)}`",
-            f"- Sweep points: `{', '.join(inspection_audit.get('sweep_point_ids', []))}`",
-            f"- Inspection output dir: `{inspection_audit.get('output_dir', '')}`",
-            "",
-            "## Remaining Risks",
+        "## Inspection Audit",
+        "",
+        f"- Inspection audit status: `{inspection_audit.get('overall_status', '')}`",
+        f"- Inspection summary status: `{inspection_audit.get('inspection_summary_status', '')}`",
+        f"- Inspection run count: `{inspection_audit.get('run_count', 0)}`",
+        f"- Verification reference sweep point: `{inspection_audit.get('verification_reference_sweep_point_id', '')}`",
+        f"- Passing sweep points: `{', '.join(inspection_audit.get('passing_sweep_point_ids', []))}`",
+        f"- Sweep points: `{', '.join(inspection_audit.get('sweep_point_ids', []))}`",
+        f"- Inspection output dir: `{inspection_audit.get('output_dir', '')}`",
+        "",
+        "## Remaining Risks",
             "",
         ]
     )

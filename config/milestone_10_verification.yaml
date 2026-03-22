@@ -8,4 +8,4 @@ simulation_verification:
   manifest_path: manifests/examples/milestone_1_demo.yaml
   schema_path: schemas/milestone_1_experiment_manifest.schema.json
   design_lock_path: config/milestone_1_design_lock.yaml
-  sweep_spec_path: config/surface_wave_sweep.example.yaml
+  sweep_spec_path: config/surface_wave_sweep.verification.yaml

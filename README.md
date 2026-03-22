@@ -52,9 +52,18 @@ make milestone10-readiness
 
 That runs `scripts/16_milestone10_readiness.py` with
 `config/milestone_10_verification.yaml`, exercises the representative
-`surface_wave` execution and inspection workflow on local fixture assets, and
-writes `milestone_10_readiness.md` plus `milestone_10_readiness.json` under
+`surface_wave` execution and the shipped verification-grade inspection sweep on
+local fixture assets, and writes `milestone_10_readiness.md` plus
+`milestone_10_readiness.json` under
 `data/processed/milestone_10_verification/simulator_results/readiness/milestone_10/`.
+
+That local fixture is a readiness and stability probe, not a biological claim.
+The readiness gate uses `config/surface_wave_sweep.verification.yaml` as the
+non-runaway local reference; the broader exploratory sweep remains available at
+`config/surface_wave_sweep.example.yaml`.
+To rerun the shipped verification-grade inspection directly after readiness,
+point `scripts/15_surface_wave_inspection.py` at
+`data/processed/milestone_10_verification/simulator_results/readiness/milestone_10/generated_fixture/simulation_fixture_config.yaml`.
 
 ## Pipeline at a glance
 
@@ -125,8 +134,8 @@ per-neuron when configured.
 - `scripts/`: thin CLI entrypoints for the pipeline and offline review tools
 - `tests/`: local unit tests that do not require FlyWire network access
 - `config/`: example runtime config plus the tracked Milestone 1 and Milestone 6
-  through Milestone 10 verification configs and inputs, including the example
-  surface-wave sweep spec
+  through Milestone 10 verification configs and inputs, including the
+  verification-grade and exploratory surface-wave sweep specs
 - `manifests/`: example experiment manifests
 - `schemas/`: manifest schema files
 - `docs/milestones.md`: consolidated roadmap and milestone planning

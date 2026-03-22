@@ -32,7 +32,41 @@ No live FlyWire access is required.
 
 ## Run It
 
-Inspect the shipped example `surface_wave` arm with the example sweep spec:
+Inspect the shipped `surface_wave` arm with the verification-grade local sweep:
+
+```bash
+python scripts/15_surface_wave_inspection.py \
+  --config config/local.yaml \
+  --manifest manifests/examples/milestone_1_demo.yaml \
+  --schema schemas/milestone_1_experiment_manifest.schema.json \
+  --design-lock config/milestone_1_design_lock.yaml \
+  --arm-id surface_wave_intact \
+  --sweep-spec config/surface_wave_sweep.verification.yaml
+```
+
+Use the Make target:
+
+```bash
+make wave-inspect \
+  CONFIG=config/local.yaml \
+  WAVE_INSPECT_ARGS="--arm-id surface_wave_intact --sweep-spec config/surface_wave_sweep.verification.yaml"
+```
+
+For the shipped Milestone 10 local readiness fixture, first run
+`make milestone10-readiness`, then rerun the verification-grade inspection
+against the generated fixture config:
+
+```bash
+python scripts/15_surface_wave_inspection.py \
+  --config data/processed/milestone_10_verification/simulator_results/readiness/milestone_10/generated_fixture/simulation_fixture_config.yaml \
+  --manifest manifests/examples/milestone_1_demo.yaml \
+  --schema schemas/milestone_1_experiment_manifest.schema.json \
+  --design-lock config/milestone_1_design_lock.yaml \
+  --arm-id surface_wave_intact \
+  --sweep-spec config/surface_wave_sweep.verification.yaml
+```
+
+Run the broader exploratory local sweep separately:
 
 ```bash
 python scripts/15_surface_wave_inspection.py \
@@ -44,14 +78,6 @@ python scripts/15_surface_wave_inspection.py \
   --sweep-spec config/surface_wave_sweep.example.yaml
 ```
 
-Use the Make target:
-
-```bash
-make wave-inspect \
-  CONFIG=config/local.yaml \
-  WAVE_INSPECT_ARGS="--arm-id surface_wave_intact --sweep-spec config/surface_wave_sweep.example.yaml"
-```
-
 Expand the manifest seed sweep before inspecting:
 
 ```bash
@@ -61,7 +87,7 @@ python scripts/15_surface_wave_inspection.py \
   --schema schemas/milestone_1_experiment_manifest.schema.json \
   --design-lock config/milestone_1_design_lock.yaml \
   --use-manifest-seed-sweep \
-  --sweep-spec config/surface_wave_sweep.example.yaml
+  --sweep-spec config/surface_wave_sweep.verification.yaml
 ```
 
 ## Sweep Spec
@@ -97,6 +123,16 @@ grid:
 `parameter_sets` are preset-style explicit comparisons. `grid.axes` expands a
 deterministic cartesian product on top of the normalized base
 `surface_wave.parameter_bundle`.
+
+The repo ships two sweep files with that same format:
+
+- `config/surface_wave_sweep.verification.yaml`: one verification-grade local
+  reference point used by `make milestone10-readiness`
+- `config/surface_wave_sweep.example.yaml`: the broader exploratory local sweep
+  for offline review and stress probing
+
+The verification sweep is a local readiness and stability probe only. It is not
+evidence of biological calibration.
 
 If no sweep spec is provided, the workflow still runs one deterministic audit of
 the arm's declared parameter bundle and seed.
@@ -134,6 +170,7 @@ Each run records:
 - coupled-run metrics such as shared-output peak, dynamic range, coupling event
   count, root-to-root coherence, and spatial contrast
 - isolated single-neuron pulse metrics such as wavefront-speed estimate,
+  equal-distance arrival detection on coarse symmetric patch graphs,
   energy-growth factor, and activation-peak growth
 - deterministic `pass`, `warn`, or `fail` checks for finite values, runaway
   pulse amplification, missing wavefront detection, low driven dynamic range,
@@ -157,3 +194,10 @@ scientifically weak behavior, for example:
 `fail` means the run was not trustworthy enough for downstream metrics work,
 either because the execution itself raised an error or because the diagnostics
 detected non-finite values or large runaway growth.
+
+On very small symmetric coarse patch graphs, the pulse probe may report a
+detected front by observing delayed arrivals on multiple non-seed patches at
+the same graph distance even when a distance-versus-time speed fit is
+undefined. The local Milestone 10 readiness fixture relies on that narrower
+coarse-graph fallback so the inspection gate still tests propagation instead of
+starting with every coarse patch already above threshold at `t=0`.
