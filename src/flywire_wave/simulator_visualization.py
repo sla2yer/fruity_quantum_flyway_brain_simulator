@@ -5,6 +5,7 @@ import hashlib
 import html
 import json
 import math
+import textwrap
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -591,17 +592,20 @@ def _render_readout_sections(archives: Sequence[BundleVisualizationArchive]) -> 
                     "color": _PALETTE[color_index % len(_PALETTE)],
                     "time_ms": archive.trace_time_ms,
                     "values": archive.trace_values[:, trace_index],
+                    "peak_label": f"{archive.arm_id} peak {_format_float(_peak_time_ms(archive.trace_time_ms, archive.trace_values[:, trace_index]))} ms",
                 }
             )
         normalized_chart = _build_line_chart_svg(
             title=f"{readout_id} normalized overlay",
             traces=trace_series,
             transform="normalized",
+            annotation_lines=_build_overlay_annotation_lines(trace_series, mode="normalized"),
         )
         log_chart = _build_line_chart_svg(
             title=f"{readout_id} signed log10 overlay",
             traces=trace_series,
             transform="signed_log10",
+            annotation_lines=_build_overlay_annotation_lines(trace_series, mode="signed_log10"),
         )
         sections.append(
             "<section>"
@@ -654,9 +658,16 @@ def _render_bundle_section(archive: BundleVisualizationArchive) -> str:
                     "color": _PALETTE[idx % len(_PALETTE)],
                     "time_ms": archive.trace_time_ms,
                     "values": archive.trace_values[:, idx],
+                    "peak_label": f"peak {_format_float(_peak_time_ms(archive.trace_time_ms, archive.trace_values[:, idx]))} ms",
                 }
             ],
             transform="identity",
+            annotation_lines=_build_single_bundle_annotation_lines(
+                archive=archive,
+                readout_id=readout_id,
+                values=archive.trace_values[:, idx],
+                time_ms=archive.trace_time_ms,
+            ),
         )
         + "</div>"
         for idx, readout_id in enumerate(archive.trace_readout_ids)
@@ -774,6 +785,12 @@ def _render_patch_trace_charts(patch_traces: Mapping[str, np.ndarray]) -> str:
                 title=f"Root {root_id} patch activation (normalized)",
                 traces=traces,
                 transform="normalized",
+                annotation_lines=_build_patch_annotation_lines(
+                    root_id=root_id,
+                    substep_time_ms=substep_time,
+                    matrix=matrix,
+                ),
+                show_peak_labels=False,
             )
             + '</div><div class="chart-caption">Patch traces are normalized per root so local patch structure remains visible even when the absolute wave magnitude is very large.</div>'
         )
@@ -842,6 +859,8 @@ def _build_line_chart_svg(
     title: str,
     traces: Sequence[Mapping[str, Any]],
     transform: str,
+    annotation_lines: Sequence[str] = (),
+    show_peak_labels: bool = True,
     width: int = 820,
     height: int = 260,
 ) -> str:
@@ -876,6 +895,8 @@ def _build_line_chart_svg(
                 "x": x,
                 "y": transformed,
                 "detail": detail,
+                "peak_index": int(np.argmax(np.abs(y))) if y.size else 0,
+                "peak_label": str(trace.get("peak_label", "")),
             }
         )
     if not prepared:
@@ -908,6 +929,7 @@ def _build_line_chart_svg(
             f"<text x='8' y='{py + 4:.2f}' font-size='11' fill='#6b6259'>{html.escape(_format_float(y_value))}</text>"
         )
     path_elements = []
+    peak_elements = []
     legend = []
     for index, trace in enumerate(prepared):
         points = [
@@ -919,6 +941,22 @@ def _build_line_chart_svg(
         path_elements.append(
             f"<polyline fill='none' stroke='{trace['color']}' stroke-width='2.2' points='{' '.join(points)}' />"
         )
+        peak_index = int(trace["peak_index"])
+        peak_x = x_px(float(trace["x"][peak_index]))
+        peak_y = y_px(float(trace["y"][peak_index]))
+        peak_label = trace["peak_label"] or f"{trace['label']} peak"
+        peak_label_x = peak_x + 10.0 if peak_x < left + plot_width * 0.72 else peak_x - 118.0
+        peak_label_y = min(top + plot_height - 8.0, max(top + 18.0, peak_y - 10.0 + index * 12.0))
+        peak_elements.append(
+            f"<circle cx='{peak_x:.2f}' cy='{peak_y:.2f}' r='3.5' fill='{trace['color']}' stroke='#fffdf8' stroke-width='1.2' />"
+        )
+        if show_peak_labels and peak_label:
+            peak_elements.append(
+                f"<line x1='{peak_x:.2f}' y1='{peak_y:.2f}' x2='{peak_label_x:.2f}' y2='{peak_label_y - 4.0:.2f}' stroke='{trace['color']}' stroke-width='1.2' stroke-dasharray='3 3' />"
+            )
+            peak_elements.append(
+                f"<text x='{peak_label_x:.2f}' y='{peak_label_y:.2f}' font-size='11' fill='{trace['color']}' font-weight='700'>{html.escape(peak_label)}</text>"
+            )
         legend_y = 16 + index * 16
         legend.append(
             f"<line x1='{width - 210:.2f}' y1='{legend_y:.2f}' x2='{width - 186:.2f}' y2='{legend_y:.2f}' stroke='{trace['color']}' stroke-width='3' />"
@@ -933,6 +971,12 @@ def _build_line_chart_svg(
         "normalized": "normalized to each series max |value|",
         "signed_log10": "signed log10(1 + |value|)",
     }[transform]
+    annotation_box = _render_chart_annotation_box(
+        lines=annotation_lines,
+        left=left + 10.0,
+        top=top + 12.0,
+        max_width=min(360.0, plot_width - 20.0),
+    )
     return (
         f"<svg viewBox='0 0 {width} {height}' role='img' aria-label='{html.escape(title)}'>"
         f"<text x='{left:.2f}' y='18' font-size='15' font-weight='700' fill='#1c1917'>{html.escape(title)}</text>"
@@ -940,7 +984,9 @@ def _build_line_chart_svg(
         f"<rect x='{left:.2f}' y='{top:.2f}' width='{plot_width:.2f}' height='{plot_height:.2f}' fill='#fffaf2' stroke='#d7c6ae' rx='10' />"
         + "".join(grid_lines)
         + f"<line x1='{left:.2f}' y1='{top + plot_height:.2f}' x2='{left + plot_width:.2f}' y2='{top + plot_height:.2f}' stroke='#6b6259' stroke-width='1.1' />"
+        + annotation_box
         + "".join(path_elements)
+        + "".join(peak_elements)
         + "".join(legend)
         + "".join(x_labels)
         + "</svg>"
@@ -974,6 +1020,131 @@ def _downsample_series(
     sample_indices = np.linspace(0, x_values.size - 1, num=max_points, dtype=np.int64)
     sample_indices = np.unique(sample_indices)
     return x_values[sample_indices], y_values[sample_indices]
+
+
+def _build_overlay_annotation_lines(
+    traces: Sequence[Mapping[str, Any]],
+    *,
+    mode: str,
+) -> list[str]:
+    peaks = [
+        (
+            str(trace["label"]),
+            _peak_time_ms(
+                np.asarray(trace["time_ms"], dtype=np.float64),
+                np.asarray(trace["values"], dtype=np.float64),
+            ),
+            _peak_abs_value(np.asarray(trace["values"], dtype=np.float64)),
+        )
+        for trace in traces
+    ]
+    lines: list[str] = []
+    if mode == "normalized" and peaks:
+        peak_text = "; ".join(
+            f"{label} { _format_float(peak_time)} ms"
+            for label, peak_time, _ in peaks
+        )
+        lines.append(f"Peak timing: {peak_text}.")
+        lines.append("Normalization removes size so this panel compares shape and timing.")
+    elif mode == "signed_log10" and peaks:
+        positive_peaks = [peak for _, _, peak in peaks if peak > 0.0]
+        if len(positive_peaks) >= 2:
+            ratio = max(positive_peaks) / min(positive_peaks)
+            lines.append(f"Log view needed: largest peak is {_format_float(ratio)}x the smallest peak.")
+        else:
+            lines.append("Log view compresses large dynamic range so small and large runs stay visible.")
+        lines.append("Curves with similar shape but very different size separate vertically here.")
+    return lines
+
+
+def _build_single_bundle_annotation_lines(
+    *,
+    archive: BundleVisualizationArchive,
+    readout_id: str,
+    values: np.ndarray,
+    time_ms: np.ndarray,
+) -> list[str]:
+    peak_time = _peak_time_ms(time_ms, values)
+    peak_value = _peak_abs_value(values)
+    if archive.model_mode == "baseline":
+        return [
+            "Bounded response on the local fixture.",
+            f"{readout_id} peaks at {_format_float(peak_time)} ms with max {_format_float(peak_value)}.",
+        ]
+    if archive.model_mode == "surface_wave":
+        if peak_value >= 1_000_000.0:
+            return [
+                "Runaway-scale response on this fixture.",
+                "Treat this as instability, not a subtle wave effect.",
+            ]
+        return [
+            "Wave run stays in a finite range on this fixture.",
+            f"{readout_id} peaks at {_format_float(peak_time)} ms.",
+        ]
+    return [f"{readout_id} peaks at {_format_float(peak_time)} ms."]
+
+
+def _build_patch_annotation_lines(
+    *,
+    root_id: int,
+    substep_time_ms: np.ndarray,
+    matrix: np.ndarray,
+) -> list[str]:
+    if matrix.size == 0 or substep_time_ms.size == 0:
+        return []
+    peak_indices = np.argmax(np.abs(matrix), axis=0)
+    peak_times = substep_time_ms[peak_indices]
+    peak_spread_ms = float(np.max(peak_times) - np.min(peak_times))
+    total_duration_ms = float(substep_time_ms[-1] - substep_time_ms[0]) if substep_time_ms.size > 1 else 0.0
+    if total_duration_ms > 0.0 and peak_spread_ms <= 0.1 * total_duration_ms:
+        peak_note = "Patch peaks are tightly aligned, suggesting late synchronized growth."
+    else:
+        peak_note = "Patch peaks are staggered across patches, suggesting uneven spread."
+    return [
+        f"Root {root_id}: {matrix.shape[1]} normalized patch traces.",
+        peak_note,
+    ]
+
+
+def _render_chart_annotation_box(
+    *,
+    lines: Sequence[str],
+    left: float,
+    top: float,
+    max_width: float,
+) -> str:
+    max_chars = max(24, int((max_width - 22.0) / 6.3))
+    visible_lines: list[str] = []
+    for line in lines:
+        if not line:
+            continue
+        wrapped = textwrap.wrap(line, width=max_chars) or [line]
+        visible_lines.extend(wrapped)
+    if not visible_lines:
+        return ""
+    height = 12.0 + len(visible_lines) * 14.0
+    width = max(190.0, min(max_width, max(len(line) for line in visible_lines) * 6.3 + 22.0))
+    text_elements = [
+        f"<text x='{left + 10.0:.2f}' y='{top + 18.0 + index * 14.0:.2f}' font-size='11' fill='#1c1917'>{html.escape(line)}</text>"
+        for index, line in enumerate(visible_lines)
+    ]
+    return (
+        f"<rect x='{left:.2f}' y='{top:.2f}' width='{width:.2f}' height='{height:.2f}' rx='10' fill='rgba(255, 250, 242, 0.9)' stroke='#d7c6ae' />"
+        + "".join(text_elements)
+    )
+
+
+def _peak_time_ms(time_ms: np.ndarray, values: np.ndarray) -> float:
+    if time_ms.size == 0 or values.size == 0:
+        return 0.0
+    index = int(np.argmax(np.abs(values)))
+    return float(time_ms[index])
+
+
+def _peak_abs_value(values: np.ndarray) -> float:
+    if values.size == 0:
+        return 0.0
+    return float(np.max(np.abs(values)))
 
 
 def _resolve_processed_simulator_results_dir(bundle_directory: Path) -> Path:

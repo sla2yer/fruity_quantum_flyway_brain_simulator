@@ -48,3 +48,4 @@ data/raw/codex/connections_filtered.csv
 data/raw/codex/neurotransmitter_type_predictions.csv
 data/raw/codex/visual _neuron_annotations.csv
 data/raw/codex/visual_neuron_columns.csv
+static/data/783/neuron_db.pickle.gz

@@ -64,6 +64,9 @@ class SimulatorVisualizationReportTest(unittest.TestCase):
             self.assertIn("surface_wave_intact", report_html)
             self.assertIn("signed log10 overlay", report_html)
             self.assertIn("Wave Detail: surface_wave_intact", report_html)
+            self.assertIn("Peak timing:", report_html)
+            self.assertIn("Log view needed:", report_html)
+            self.assertIn("Runaway-scale response on this fixture.", report_html)
 
             persisted_summary = json.loads(summary_path.read_text(encoding="utf-8"))
             self.assertEqual(persisted_summary["report_version"], first["report_version"])
