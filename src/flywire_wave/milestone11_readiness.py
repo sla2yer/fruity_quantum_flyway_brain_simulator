@@ -127,6 +127,7 @@ DEFAULT_DOCUMENTATION_SNIPPETS: dict[str, tuple[str, ...]] = {
         "config/milestone_11_verification.yaml",
         "scripts/18_mixed_fidelity_inspection.py",
         "scripts/17_visualize_simulator_results.py",
+        "no local server is required",
     ),
     "docs/pipeline_notes.md": (
         "make milestone11-readiness",
@@ -135,18 +136,21 @@ DEFAULT_DOCUMENTATION_SNIPPETS: dict[str, tuple[str, ...]] = {
         "milestone_11_readiness.json",
         "scripts/18_mixed_fidelity_inspection.py",
         "scripts/17_visualize_simulator_results.py",
+        "no local server is required",
     ),
     "docs/simulator_result_bundle_design.md": (
         "make milestone11-readiness",
         "scripts/19_milestone11_readiness.py",
         "milestone_11_readiness.md",
         "milestone_11_readiness.json",
+        "no local server is required",
     ),
     "docs/mixed_fidelity_inspection.md": (
         "make milestone11-readiness",
         "scripts/19_milestone11_readiness.py",
         "scripts/18_mixed_fidelity_inspection.py",
         "scripts/17_visualize_simulator_results.py",
+        "no local server is required",
     ),
 }
 
@@ -384,6 +388,15 @@ def execute_milestone11_readiness_pass(
         "json_path": str(readiness_paths["json_path"].resolve()),
         "commands_dir": str(commands_dir.resolve()),
         "generated_fixture_dir": str(generated_fixture_dir.resolve()),
+        "visualization_report_path": str(visualization_audit.get("report_path", "")),
+        "visualization_report_file_url": str(visualization_audit.get("report_file_url", "")),
+        "visualization_summary_path": str(visualization_audit.get("summary_path", "")),
+        "visualization_open_hint": str(
+            visualization_audit.get(
+                "viewer_open_hint",
+                "Open the generated visualization index.html directly in your browser; no local server is required.",
+            )
+        ),
         "verification_fixture_config_path": fixture_config_path,
         "verification_fixture_manifest_path": fixture_manifest_path,
         "documented_verification_command": "make milestone11-readiness",
@@ -1070,8 +1083,17 @@ def _execute_visualization_audit(
         "artifact_hashes_stable": artifact_hashes_stable,
         "output_dir": str(output_dir.resolve()),
         "report_path": str(report_path),
+        "report_file_url": str(first_summary.get("report_file_url", report_path.as_uri())),
         "summary_path": str(summary_path),
+        "summary_file_url": str(first_summary.get("summary_file_url", summary_path.as_uri())),
         "root_morphology_classes": root_classes,
+        "viewer_is_self_contained": bool(first_summary.get("viewer_is_self_contained", True)),
+        "viewer_open_hint": str(
+            first_summary.get(
+                "viewer_open_hint",
+                "Open report_file_url directly in your browser; no local server is required.",
+            )
+        ),
         "command": str(first["command"]),
     }
     write_json(audit, commands_dir / "visualization_audit.json")
@@ -1941,6 +1963,9 @@ def _render_milestone11_readiness_markdown(*, summary: Mapping[str, Any]) -> str
         f"- Planned mixed root classes: `{intact_plan.get('resolved_class_counts', {})}`",
         f"- Executed mixed routes: `{execution_audit.get('projection_routes', [])}`",
         f"- Visualization audit: `{visualization_audit.get('overall_status', '')}`",
+        f"- Visualization report: `{visualization_audit.get('report_path', '')}`",
+        f"- Visualization open URL: `{visualization_audit.get('report_file_url', '')}`",
+        f"- Visualization open hint: {visualization_audit.get('viewer_open_hint', '')}",
         f"- Inspection audit: `{inspection_audit.get('inspection_summary_status', inspection_audit.get('overall_status', ''))}`",
         f"- Documentation audit: `{documentation_audit.get('overall_status', '')}`",
         "",

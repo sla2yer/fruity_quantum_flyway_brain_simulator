@@ -276,7 +276,11 @@ def _build_summary(
         "report_version": SIMULATOR_VISUALIZATION_REPORT_VERSION,
         "output_dir": str(output_dir),
         "report_path": str(report_path),
+        "report_file_url": report_path.as_uri(),
         "summary_path": str(summary_path),
+        "summary_file_url": summary_path.as_uri(),
+        "viewer_is_self_contained": True,
+        "viewer_open_hint": "Open report_file_url directly in your browser; no local server is required.",
         "experiment_id": archives[0].experiment_id,
         "bundle_count": len(archives),
         "bundle_ids": [archive.bundle_id for archive in archives],
@@ -379,6 +383,7 @@ def _render_report_html(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Ccircle%20cx='32'%20cy='32'%20r='28'%20fill='%230f766e'/%3E%3Cpath%20d='M18%2032h28M32%2018v28'%20stroke='white'%20stroke-width='6'%20stroke-linecap='round'/%3E%3C/svg%3E">
   <title>Simulator Result Viewer</title>
   <style>
     :root {{

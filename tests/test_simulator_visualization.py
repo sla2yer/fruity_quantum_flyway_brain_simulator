@@ -80,6 +80,10 @@ class SimulatorVisualizationReportTest(unittest.TestCase):
             self.assertTrue(report_path.exists())
             self.assertTrue(summary_path.exists())
             self.assertEqual(first, second)
+            self.assertEqual(first["report_file_url"], report_path.resolve().as_uri())
+            self.assertEqual(first["summary_file_url"], summary_path.resolve().as_uri())
+            self.assertTrue(first["viewer_is_self_contained"])
+            self.assertIn("no local server is required", first["viewer_open_hint"])
 
             report_html = report_path.read_text(encoding="utf-8")
             self.assertIn("Simulator Result Viewer", report_html)
@@ -90,10 +94,12 @@ class SimulatorVisualizationReportTest(unittest.TestCase):
             self.assertIn("Peak timing:", report_html)
             self.assertIn("Log view needed:", report_html)
             self.assertIn("Runaway-scale response on this fixture.", report_html)
+            self.assertIn("rel=\"icon\"", report_html)
 
             persisted_summary = json.loads(summary_path.read_text(encoding="utf-8"))
             self.assertEqual(persisted_summary["report_version"], first["report_version"])
             self.assertEqual(persisted_summary["bundle_count"], 2)
+            self.assertEqual(persisted_summary["report_file_url"], first["report_file_url"])
             self.assertEqual(
                 [item["arm_id"] for item in persisted_summary["compared_bundles"]],
                 ["baseline_p0_intact", "surface_wave_intact"],

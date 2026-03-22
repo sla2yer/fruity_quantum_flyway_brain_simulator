@@ -435,6 +435,9 @@ Contract notes:
   `config.paths.processed_simulator_results_dir/readiness/milestone_11/milestone_11_readiness.md`
   and
   `config.paths.processed_simulator_results_dir/readiness/milestone_11/milestone_11_readiness.json`
+- the generated visualization under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_11/visualization/index.html`
+  is self-contained HTML, so no local server is required to review it
 - `make milestone11-readiness` is the one-command entrypoint for the shipped
   Milestone 11 integration verification pass
 - that readiness gate uses `config/surface_wave_sweep.verification.yaml` as one

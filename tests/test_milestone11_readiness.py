@@ -56,6 +56,12 @@ class Milestone11ReadinessReportTest(unittest.TestCase):
             self.assertEqual(report["report_dir"], str(report_dir.resolve()))
             self.assertEqual(report["markdown_path"], str(markdown_path.resolve()))
             self.assertEqual(report["json_path"], str(json_path.resolve()))
+            self.assertTrue(report["visualization_report_path"].endswith("/visualization/index.html"))
+            self.assertEqual(
+                report["visualization_report_file_url"],
+                Path(report["visualization_report_path"]).resolve().as_uri(),
+            )
+            self.assertIn("no local server is required", report["visualization_open_hint"])
 
             plan_audit = report["manifest_plan_audit"]
             self.assertEqual(plan_audit["overall_status"], "pass")
@@ -106,6 +112,8 @@ class Milestone11ReadinessReportTest(unittest.TestCase):
             self.assertEqual(visualization_audit["overall_status"], "pass")
             self.assertTrue(visualization_audit["summary_stable"])
             self.assertTrue(visualization_audit["artifact_hashes_stable"])
+            self.assertTrue(visualization_audit["viewer_is_self_contained"])
+            self.assertIn("no local server is required", visualization_audit["viewer_open_hint"])
             self.assertEqual(
                 visualization_audit["root_morphology_classes"],
                 [
@@ -157,9 +165,15 @@ class Milestone11ReadinessReportTest(unittest.TestCase):
             self.assertIn("Milestone 11 Readiness Report", markdown_text)
             self.assertIn("Inspection audit: `blocking`", markdown_text)
             self.assertIn("FW-M11-FOLLOW-002", markdown_text)
+            self.assertIn("Visualization open URL:", markdown_text)
+            self.assertIn("no local server is required", markdown_text)
 
             persisted = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(persisted["markdown_path"], report["markdown_path"])
+            self.assertEqual(
+                persisted["visualization_report_file_url"],
+                report["visualization_report_file_url"],
+            )
 
 
 if __name__ == "__main__":

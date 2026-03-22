@@ -5,6 +5,7 @@ import argparse
 import json
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,11 @@ def main() -> int:
         action="store_true",
         help="Skip the focused Milestone 11 fixture verification suite.",
     )
+    parser.add_argument(
+        "--open-visualization",
+        action="store_true",
+        help="Open the generated static visualization directly from disk after the readiness pass finishes.",
+    )
     args = parser.parse_args()
 
     fixture_targets = list(DEFAULT_FIXTURE_TEST_TARGETS)
@@ -63,6 +69,8 @@ def main() -> int:
         python_executable=sys.executable,
         root_dir=ROOT,
     )
+    if args.open_visualization and summary.get("visualization_report_file_url"):
+        webbrowser.open(str(summary["visualization_report_file_url"]), new=2)
     print(
         json.dumps(
             {
@@ -73,6 +81,8 @@ def main() -> int:
                 ],
                 "markdown_path": summary["markdown_path"],
                 "json_path": summary["json_path"],
+                "visualization_report_path": summary.get("visualization_report_path", ""),
+                "visualization_report_file_url": summary.get("visualization_report_file_url", ""),
             },
             indent=2,
         )

@@ -82,6 +82,14 @@ workflow, and writes `milestone_11_readiness.md` plus
 `milestone_11_readiness.json` under
 `data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/`.
 
+The generated visualization at
+`data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/visualization/index.html`
+is fully static, so no local server is required. Open that file directly in
+your browser, or run `make milestone11-readiness M11_READINESS_ARGS=--open-visualization`
+to launch it after the readiness pass. If you do serve it with
+`python -m http.server`, a browser with HTTPS-first behavior may log a harmless
+`400` before it falls back to plain HTTP.
+
 To rerun the shipped mixed-fidelity verification flow directly after readiness,
 use the generated fixture config and manifest from that report directory:
 

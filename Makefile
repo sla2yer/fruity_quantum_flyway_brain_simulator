@@ -12,6 +12,7 @@ M8B_CONFIG ?= config/milestone_8b_verification.yaml
 M9_CONFIG ?= config/milestone_9_verification.yaml
 M10_CONFIG ?= config/milestone_10_verification.yaml
 M11_CONFIG ?= config/milestone_11_verification.yaml
+M11_READINESS_ARGS ?=
 
 .PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate wave-inspect mixed-fidelity-inspect milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness validate-manifest test smoke all
 
@@ -103,7 +104,7 @@ milestone10-readiness:
 	$(PYTHON) scripts/16_milestone10_readiness.py --config $(M10_CONFIG)
 
 milestone11-readiness:
-	$(PYTHON) scripts/19_milestone11_readiness.py --config $(M11_CONFIG)
+	$(PYTHON) scripts/19_milestone11_readiness.py --config $(M11_CONFIG) $(M11_READINESS_ARGS)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

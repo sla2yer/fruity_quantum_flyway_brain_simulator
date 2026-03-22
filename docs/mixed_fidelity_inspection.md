@@ -71,6 +71,12 @@ It reruns the same fixture through `scripts/run_simulation.py`,
 `scripts/17_visualize_simulator_results.py`, and
 `scripts/18_mixed_fidelity_inspection.py` before publishing the report.
 
+The readiness-generated visualization lives at
+`config.paths.processed_simulator_results_dir/readiness/milestone_11/visualization/index.html`.
+That viewer is fully static, so no local server is required. Open the file
+directly in your browser if you want to inspect the mixed bundle after the
+readiness pass.
+
 That command writes the generated fixture config and manifest under
 `config.paths.processed_simulator_results_dir/readiness/milestone_11/generated_fixture/`
 so the exact same local mixed-fidelity arm can be rerun directly through

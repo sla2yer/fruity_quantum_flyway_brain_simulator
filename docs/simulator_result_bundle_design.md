@@ -163,6 +163,9 @@ Milestones 10, 12, 13, and 14 must preserve these invariants:
   back through the shared result-contract helpers and offline viewer, and
   writes `milestone_11_readiness.md` plus `milestone_11_readiness.json` under
   `config.paths.processed_simulator_results_dir/readiness/milestone_11/`
+- the readiness-generated mixed-bundle viewer under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_11/visualization/index.html`
+  is self-contained HTML, so no local server is required when reviewing it
 - `make milestone11-readiness` is the one-command entrypoint for that audit
 - the shipped readiness gate uses `config/surface_wave_sweep.verification.yaml`
   as a local non-runaway reference; the broader exploratory sweep remains at

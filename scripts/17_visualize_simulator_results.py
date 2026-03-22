@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,12 +33,19 @@ def main(argv: list[str] | None = None) -> int:
         "--output-dir",
         help="Optional output directory override for the generated viewer.",
     )
+    parser.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open the generated static report directly from disk after writing it.",
+    )
     args = parser.parse_args(argv)
 
     summary = generate_simulator_visualization_report(
         bundle_metadata_paths=args.bundle_metadata,
         output_dir=args.output_dir,
     )
+    if args.open_browser:
+        webbrowser.open(summary["report_file_url"], new=2)
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
