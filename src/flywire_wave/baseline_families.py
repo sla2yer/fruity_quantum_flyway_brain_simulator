@@ -334,12 +334,15 @@ def resolve_baseline_neuron_family_from_arm_plan(
         raise ValueError(
             "arm_plan.model_configuration.baseline_parameters must be a mapping."
         )
-    readout_catalog = runtime.get("readout_catalog")
+    readout_catalog = runtime.get("shared_readout_catalog", runtime.get("readout_catalog"))
     if not isinstance(readout_catalog, Sequence) or isinstance(
         readout_catalog,
         (str, bytes),
     ):
-        raise ValueError("arm_plan.runtime.readout_catalog must be a sequence.")
+        raise ValueError(
+            "arm_plan.runtime.shared_readout_catalog must be a sequence when "
+            "provided, or arm_plan.runtime.readout_catalog must be present."
+        )
     return resolve_baseline_neuron_family(
         baseline_parameters,
         readout_catalog=readout_catalog,

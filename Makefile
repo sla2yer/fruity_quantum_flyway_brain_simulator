@@ -10,9 +10,10 @@ M7_EDGE_FILE ?= config/milestone_7_verification_edges.txt
 M8A_CONFIG ?= config/milestone_8a_verification.yaml
 M8B_CONFIG ?= config/milestone_8b_verification.yaml
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
+SIMULATE_ARGS ?=
 
 help:
 	@printf '%s\n' \
@@ -27,6 +28,7 @@ help:
 		'preview            Build static offline geometry preview report(s)' \
 		'coupling-inspect   Build static offline coupling inspection report(s)' \
 		'operator-qa        Build static offline operator QA report(s)' \
+		'simulate           Execute manifest-driven simulator runs and write result bundles' \
 		'milestone6-readiness Run the Milestone 6 verification pass and publish a readiness report' \
 		'milestone7-readiness Run the Milestone 7 integration verification pass and publish a readiness report' \
 		'milestone8a-readiness Run the Milestone 8A canonical stimulus integration verification pass and publish a readiness report' \
@@ -62,6 +64,9 @@ coupling-inspect:
 
 operator-qa:
 	$(PYTHON) scripts/06_operator_qa.py --config $(CONFIG)
+
+simulate:
+	$(PYTHON) scripts/run_simulation.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(SIMULATE_ARGS)
 
 milestone6-readiness:
 	$(PYTHON) scripts/07_milestone6_readiness.py --config $(M6_CONFIG)

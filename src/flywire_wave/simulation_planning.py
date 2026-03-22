@@ -70,6 +70,7 @@ DEFAULT_REQUIRE_RECORDED_INPUT_BUNDLE = False
 DEFAULT_SEED_SCOPE = "all_stochastic_simulator_components"
 DEFAULT_STABLE_ARM_ORDERING = "manifest_declaration_order"
 DEFAULT_SEED_SWEEP_ORDERING = "manifest_declared_seed_order"
+SHARED_READOUT_VALUE_SEMANTICS = "shared_downstream_activation"
 
 SELECTED_ROOT_IDS_ASSET_ROLE = "selected_root_ids"
 INPUT_BUNDLE_ASSET_ROLE = "input_bundle"
@@ -216,6 +217,9 @@ def normalize_simulation_runtime_config(
     normalized_readout_catalog = _normalize_readout_catalog(
         raw_payload.get("readout_catalog")
     )
+    normalized_shared_readout_catalog = _normalize_shared_readout_catalog(
+        normalized_readout_catalog
+    )
     normalized_baseline_families = _normalize_baseline_family_configs(
         raw_payload.get("baseline_families")
     )
@@ -227,6 +231,7 @@ def normalize_simulation_runtime_config(
         "input": normalized_input,
         "determinism": normalized_determinism,
         "readout_catalog": normalized_readout_catalog,
+        "shared_readout_catalog": normalized_shared_readout_catalog,
         "baseline_families": normalized_baseline_families,
     }
 
@@ -329,7 +334,7 @@ def resolve_manifest_simulation_plan(
             determinism=determinism,
             timebase=runtime_config["timebase"],
             selected_assets=selected_assets,
-            readout_catalog=runtime_config["readout_catalog"],
+            readout_catalog=runtime_config["shared_readout_catalog"],
             processed_simulator_results_dir=cfg["paths"]["processed_simulator_results_dir"],
         )
         result_bundle_reference = build_simulator_result_bundle_reference(
@@ -372,6 +377,9 @@ def resolve_manifest_simulation_plan(
                     "time_unit": runtime_config["time_unit"],
                     "timebase": copy.deepcopy(runtime_config["timebase"]),
                     "readout_catalog": copy.deepcopy(runtime_config["readout_catalog"]),
+                    "shared_readout_catalog": copy.deepcopy(
+                        runtime_config["shared_readout_catalog"]
+                    ),
                     "determinism_defaults": copy.deepcopy(runtime_config["determinism"]),
                     "processed_simulator_results_dir": str(
                         Path(cfg["paths"]["processed_simulator_results_dir"]).resolve()
@@ -602,6 +610,22 @@ def _normalize_readout_catalog(payload: Any) -> list[dict[str, Any]]:
             )
         seen_ids.add(readout_id)
     return sorted_catalog
+
+
+def _normalize_shared_readout_catalog(
+    readout_catalog: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    shared_readouts = [
+        copy.deepcopy(dict(readout))
+        for readout in readout_catalog
+        if str(readout.get("value_semantics")) == SHARED_READOUT_VALUE_SEMANTICS
+    ]
+    if not shared_readouts:
+        raise ValueError(
+            "simulation.readout_catalog must contain at least one shared readout with "
+            f"value_semantics {SHARED_READOUT_VALUE_SEMANTICS!r}."
+        )
+    return shared_readouts
 
 
 def _normalize_baseline_family_configs(payload: Any) -> dict[str, dict[str, Any]]:
@@ -1249,7 +1273,7 @@ def _expand_arm_plan_for_seed(arm_plan: Mapping[str, Any], seed: int) -> dict[st
         seed_scope=runtime["determinism_defaults"]["seed_scope"],
         timebase=runtime["timebase"],
         selected_assets=expanded["selected_assets"],
-        readout_catalog=runtime["readout_catalog"],
+        readout_catalog=runtime.get("shared_readout_catalog", runtime["readout_catalog"]),
         processed_simulator_results_dir=runtime["processed_simulator_results_dir"],
     )
     result_bundle_reference = build_simulator_result_bundle_reference(result_bundle_metadata)

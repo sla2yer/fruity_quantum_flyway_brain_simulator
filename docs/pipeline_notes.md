@@ -5,6 +5,7 @@
 1. Use FlyWire Codex bulk exports for stable metadata snapshots.
 2. Use CAVE / fafbseg for programmatic per-neuron access.
 3. Build local preprocessed assets so the simulator does not talk to FlyWire live during runtime.
+4. Use `make simulate` for the manifest-driven local simulator execution path.
 
 ## Why this repo uses selective meshing
 
@@ -291,7 +292,8 @@ The library-owned default layout is:
 - `data/processed/simulator_results/bundles/<experiment_id>/<arm_id>/<run_spec_hash>/metrics.csv`:
   comparison-ready metric rows keyed by stable readout IDs
 - `data/processed/simulator_results/bundles/<experiment_id>/<arm_id>/<run_spec_hash>/extensions/<file_name>`:
-  reserved model-specific diagnostics or wave-only state archives
+  deterministic execution logs, provenance, UI comparison payloads, and any
+  later model-specific diagnostics
 
 Contract notes:
 
@@ -314,6 +316,10 @@ Contract notes:
 - extra wave diagnostics may be written under `extensions/`, but shared
   baseline-versus-wave comparison artifacts keep the same top-level filenames
   and payload conventions
+- `scripts/run_simulation.py` is the public Milestone 9 local execution path:
+  it resolves manifest arms, runs the supported model mode, writes the
+  canonical bundle, and emits bundle-discovered `structured_log.jsonl`,
+  `execution_provenance.json`, and `ui_comparison_payload.json` handoff files
 
 `docs/simulator_result_bundle_design.md` is the authoritative Milestone 9
 decision note; later tickets should cite it instead of re-litigating baseline

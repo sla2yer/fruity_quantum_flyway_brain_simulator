@@ -63,6 +63,15 @@ The wave model is allowed to add the Milestone 1 surface-specific content:
 
 Wave-only additions must stay out of the shared comparison surface.
 
+The extension directory may also hold deterministic handoff sidecars such as:
+
+- structured execution logs
+- provenance snapshots for local audit
+- bundle-discovered UI comparison payloads
+
+Those sidecars are still discovered from `simulator_result_bundle.json`, not by
+guessing filenames directly.
+
 ## Shared Timebase
 
 All comparison-ready outputs use one shared timebase:
@@ -133,6 +142,8 @@ Milestones 10, 12, 13, and 14 must preserve these invariants:
   mutate the shared artifact filenames or schemas
 - UI code discovers artifacts from the metadata inventory, not hardcoded file
   guesses
+- `scripts/run_simulation.py` is the public local execution path for
+  manifest-driven baseline result bundles in Milestone 9
 
 If a future ticket needs a different shared layout, different shared payload
 columns, or a different meaning for `P0`/`P1`, that is a new contract version,

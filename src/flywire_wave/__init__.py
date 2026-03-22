@@ -22,6 +22,7 @@ __all__ = [
     "scene_playback",
     "selection",
     "simulation_planning",
+    "simulator_execution",
     "simulator_result_contract",
     "simulator_runtime",
     "stimulus_contract",

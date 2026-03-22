@@ -681,9 +681,9 @@ def parse_simulator_extension_artifact_record(
         raise ValueError(
             "model_artifacts paths must live under the canonical bundle extension directory."
         )
-    if normalized["artifact_scope"] in {CONTRACT_METADATA_SCOPE, SHARED_COMPARISON_SCOPE}:
+    if normalized["artifact_scope"] == CONTRACT_METADATA_SCOPE:
         raise ValueError(
-            "model_artifacts entries must use model-specific scopes, not shared contract scopes."
+            "model_artifacts entries may not use the contract_metadata scope."
         )
     if model_mode == BASELINE_MODEL_MODE and normalized["artifact_scope"] == WAVE_MODEL_EXTENSION_SCOPE:
         raise ValueError("Baseline bundles may not declare wave_model_extension artifacts.")

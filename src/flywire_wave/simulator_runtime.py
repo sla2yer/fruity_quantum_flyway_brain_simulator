@@ -868,8 +868,8 @@ def build_simulation_run_blueprint_from_arm_plan(
         timebase=_require_mapping(runtime.get("timebase"), field_name="arm_plan.runtime.timebase"),
         determinism=_require_mapping(arm_plan.get("determinism"), field_name="arm_plan.determinism"),
         readout_catalog=_require_sequence(
-            runtime.get("readout_catalog"),
-            field_name="arm_plan.runtime.readout_catalog",
+            runtime.get("shared_readout_catalog", runtime.get("readout_catalog")),
+            field_name="arm_plan.runtime.shared_readout_catalog",
         ),
         result_bundle_reference=result_bundle_reference,
         metadata={

@@ -1,0 +1,16 @@
+Implemented the ticket end-to-end in code.
+
+**Changed**
+- Added the public manifest runner at [scripts/run_simulation.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/run_simulation.py) backed by [src/flywire_wave/simulator_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py). It resolves `model_mode=baseline` arms, executes them, and writes deterministic result bundles plus `structured_log.jsonl`, `execution_provenance.json`, and `ui_comparison_payload.json`.
+- Updated planning/runtime so baseline execution uses a shared trace catalog even when manifests/configs also declare derived comparison metrics. That change is in [src/flywire_wave/simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py), [src/flywire_wave/simulator_runtime.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_runtime.py), [src/flywire_wave/baseline_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/baseline_execution.py), and [src/flywire_wave/baseline_families.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/baseline_families.py).
+- Added deterministic JSONL/CSV/NPZ writers in [src/flywire_wave/io_utils.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/io_utils.py), relaxed bundle extension scope handling in [src/flywire_wave/simulator_result_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_result_contract.py), documented the workflow in [Makefile](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile), [docs/pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md), and [docs/simulator_result_bundle_design.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/simulator_result_bundle_design.md).
+- Added regression coverage in [tests/test_simulator_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py) and updated related contract/planning tests in [tests/test_simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py) and [tests/test_simulator_result_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_result_contract.py).
+
+**Verified**
+- `make test` passed.
+- `.venv/bin/python -m unittest tests.test_simulator_execution -v` passed.
+- The smoke test runs a baseline manifest arm through the public CLI, checks deterministic bundle identity, metrics/state outputs, UI payload discovery, and byte-stable rewrites.
+
+**Commit**
+- I could not stage or create the requested commit because Git is read-only in this sandbox: `fatal: Unable to create '.git/index.lock': Read-only file system`.
+- Current `HEAD` is `83a7507`. The code changes are present in the working tree.

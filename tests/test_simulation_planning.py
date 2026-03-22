@@ -90,6 +90,10 @@ class SimulationPlanningTest(unittest.TestCase):
                 "shared_output_mean",
             )
             self.assertEqual(
+                [item["readout_id"] for item in baseline_plan["runtime"]["shared_readout_catalog"]],
+                ["shared_output_mean"],
+            )
+            self.assertEqual(
                 baseline_plan["model_configuration"]["baseline_parameters"]["parameters"][
                     "membrane_time_constant_ms"
                 ],

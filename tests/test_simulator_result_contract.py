@@ -18,6 +18,7 @@ from flywire_wave.simulator_result_contract import (
     MODEL_DIAGNOSTIC_SCOPE,
     P0_BASELINE_FAMILY,
     READOUT_TRACES_KEY,
+    SHARED_COMPARISON_SCOPE,
     SIMULATOR_RESULT_BUNDLE_CONTRACT_VERSION,
     SIMULATOR_RESULT_BUNDLE_DESIGN_NOTE,
     STATE_SUMMARY_KEY,
@@ -183,6 +184,15 @@ class SimulatorResultContractTest(unittest.TestCase):
                 artifact_scope=MODEL_DIAGNOSTIC_SCOPE,
                 description="Optional baseline-side solver diagnostics that are not comparison-ready outputs.",
             )
+            ui_payload_artifact = build_simulator_extension_artifact_record(
+                bundle_paths=bundle_paths,
+                artifact_id="ui_comparison_payload",
+                file_name="ui_comparison_payload.json",
+                format="json_simulator_ui_comparison_payload.v1",
+                status=ASSET_STATUS_READY,
+                artifact_scope=SHARED_COMPARISON_SCOPE,
+                description="Shared UI-facing comparison payload discovered from bundle metadata.",
+            )
 
             metadata_a = build_simulator_result_bundle_metadata(
                 manifest_reference=manifest_reference,
@@ -195,7 +205,7 @@ class SimulatorResultContractTest(unittest.TestCase):
                 state_summary_status=ASSET_STATUS_READY,
                 readout_traces_status=ASSET_STATUS_READY,
                 metrics_table_status=ASSET_STATUS_READY,
-                model_artifacts=[diagnostic_artifact],
+                model_artifacts=[diagnostic_artifact, ui_payload_artifact],
             )
             metadata_b = build_simulator_result_bundle_metadata(
                 manifest_reference=manifest_reference,
@@ -208,7 +218,7 @@ class SimulatorResultContractTest(unittest.TestCase):
                 state_summary_status=ASSET_STATUS_READY,
                 readout_traces_status=ASSET_STATUS_READY,
                 metrics_table_status=ASSET_STATUS_READY,
-                model_artifacts=[diagnostic_artifact],
+                model_artifacts=[ui_payload_artifact, diagnostic_artifact],
             )
             contract_manifest_metadata = build_simulator_contract_manifest_metadata(
                 processed_simulator_results_dir=simulator_results_dir
@@ -319,6 +329,12 @@ class SimulatorResultContractTest(unittest.TestCase):
                         "path": bundle_paths.extension_root_directory / "solver_diagnostics.json",
                         "format": "json_solver_diagnostics.v1",
                         "artifact_scope": MODEL_DIAGNOSTIC_SCOPE,
+                    },
+                    {
+                        "artifact_id": "ui_comparison_payload",
+                        "path": bundle_paths.extension_root_directory / "ui_comparison_payload.json",
+                        "format": "json_simulator_ui_comparison_payload.v1",
+                        "artifact_scope": SHARED_COMPARISON_SCOPE,
                     }
                 ],
             )

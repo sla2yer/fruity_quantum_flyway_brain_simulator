@@ -1,0 +1,466 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+sys.path.insert(0, str(SRC))
+
+from flywire_wave.geometry_contract import (
+    build_geometry_bundle_paths,
+    build_geometry_manifest_record,
+    default_asset_statuses,
+    write_geometry_manifest,
+)
+from flywire_wave.manifests import load_json
+from flywire_wave.mesh_pipeline import process_mesh_into_wave_assets
+from flywire_wave.simulation_planning import resolve_manifest_simulation_plan
+from flywire_wave.simulator_result_contract import (
+    METRICS_TABLE_KEY,
+    READOUT_TRACES_KEY,
+    STATE_SUMMARY_KEY,
+    discover_simulator_extension_artifacts,
+    discover_simulator_result_bundle_paths,
+    load_simulator_result_bundle_metadata,
+)
+from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
+from flywire_wave.synapse_mapping import materialize_synapse_anchor_maps
+
+
+class SimulatorExecutionSmokeTest(unittest.TestCase):
+    def test_cli_executes_baseline_manifest_arm_and_writes_deterministic_bundle(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_execution_fixture(Path(tmp_dir_str))
+            command = [
+                sys.executable,
+                str(ROOT / "scripts" / "run_simulation.py"),
+                "--config",
+                str(fixture["config_path"]),
+                "--manifest",
+                str(fixture["manifest_path"]),
+                "--schema",
+                str(fixture["schema_path"]),
+                "--design-lock",
+                str(fixture["design_lock_path"]),
+                "--model-mode",
+                "baseline",
+                "--arm-id",
+                "baseline_p0_intact",
+            ]
+            first = subprocess.run(
+                command,
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            first_summary = json.loads(first.stdout)
+            self.assertEqual(first_summary["executed_run_count"], 1)
+
+            run_summary = first_summary["executed_runs"][0]
+            metadata_path = Path(run_summary["metadata_path"])
+            metadata = load_simulator_result_bundle_metadata(metadata_path)
+            discovered_paths = discover_simulator_result_bundle_paths(metadata)
+            discovered_extensions = discover_simulator_extension_artifacts(metadata)
+            extension_paths = {
+                item["artifact_id"]: Path(item["path"])
+                for item in discovered_extensions
+            }
+            ui_payload_path = extension_paths["ui_comparison_payload"]
+            structured_log_path = extension_paths["structured_log"]
+            provenance_path = extension_paths["execution_provenance"]
+
+            self.assertEqual(metadata["arm_reference"]["arm_id"], "baseline_p0_intact")
+            self.assertEqual(metadata["arm_reference"]["model_mode"], "baseline")
+            self.assertEqual(metadata["arm_reference"]["baseline_family"], "P0")
+            self.assertEqual(
+                [item["readout_id"] for item in metadata["readout_catalog"]],
+                ["shared_output_mean"],
+            )
+
+            with Path(discovered_paths[STATE_SUMMARY_KEY]).open("r", encoding="utf-8") as handle:
+                state_summary_rows = json.load(handle)
+            self.assertIsInstance(state_summary_rows, list)
+            self.assertTrue(any(row["state_id"] == "circuit_membrane_state" for row in state_summary_rows))
+
+            metrics_table = Path(discovered_paths[METRICS_TABLE_KEY]).read_text(encoding="utf-8")
+            self.assertIn("metric_id,readout_id,scope,window_id,statistic,value,units", metrics_table)
+            self.assertIn("shared_output_mean", metrics_table)
+            self.assertIn("final_endpoint_value", metrics_table)
+
+            ui_payload = load_json(ui_payload_path)
+            self.assertEqual(
+                ui_payload["format_version"],
+                "json_simulator_ui_comparison_payload.v1",
+            )
+            self.assertEqual(
+                ui_payload["trace_payload"]["path"],
+                str(discovered_paths[READOUT_TRACES_KEY]),
+            )
+            self.assertEqual(
+                [item["readout_id"] for item in ui_payload["readout_summaries"]],
+                ["shared_output_mean"],
+            )
+            self.assertEqual(
+                ui_payload["declared_output_targets"]["metrics_json"],
+                str(fixture["metrics_json_path"]),
+            )
+            self.assertTrue(
+                any(item["output_id"] == "surface_vs_baseline_split_view" for item in ui_payload["declared_output_targets"]["views"])
+            )
+
+            provenance_payload = load_json(provenance_path)
+            self.assertEqual(
+                provenance_payload["workflow_version"],
+                "simulator_manifest_execution.v1",
+            )
+            self.assertEqual(
+                provenance_payload["artifact_counts"]["metric_row_count"],
+                run_summary["metric_row_count"],
+            )
+            self.assertGreater(run_summary["structured_log_event_count"], 0)
+            self.assertIn('"event_type":"initialized"', structured_log_path.read_text(encoding="utf-8"))
+
+            compared_files = [
+                metadata_path,
+                Path(run_summary["state_summary_path"]),
+                Path(run_summary["readout_traces_path"]),
+                Path(run_summary["metrics_table_path"]),
+                structured_log_path,
+                provenance_path,
+                ui_payload_path,
+            ]
+            first_run_bytes = {
+                str(path): path.read_bytes()
+                for path in compared_files
+            }
+
+            second = subprocess.run(
+                command,
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            second_summary = json.loads(second.stdout)
+            self.assertEqual(first_summary, second_summary)
+            for path in compared_files:
+                self.assertEqual(path.read_bytes(), first_run_bytes[str(path)])
+
+            plan = resolve_manifest_simulation_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+            planned_bundle_id = (
+                plan["arm_plans"][0]["result_bundle"]["reference"]["bundle_id"]
+            )
+            self.assertEqual(planned_bundle_id, metadata["bundle_id"])
+
+
+def _materialize_execution_fixture(tmp_dir: Path) -> dict[str, Path]:
+    output_dir = tmp_dir / "out"
+    manifest_path = ROOT / "manifests" / "examples" / "milestone_1_demo.yaml"
+    schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+    design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+
+    stimulus = resolve_stimulus_input(
+        manifest_path=manifest_path,
+        schema_path=schema_path,
+        design_lock_path=design_lock_path,
+        processed_stimulus_dir=output_dir / "stimuli",
+    )
+    record_stimulus_bundle(stimulus)
+
+    selected_root_ids_path = output_dir / "selected_root_ids.txt"
+    selected_root_ids_path.parent.mkdir(parents=True, exist_ok=True)
+    selected_root_ids_path.write_text("101\n202\n", encoding="utf-8")
+
+    subset_manifest_path = output_dir / "subsets" / "motion_minimal" / "subset_manifest.json"
+    subset_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    subset_manifest_path.write_text(
+        json.dumps(
+            {
+                "subset_manifest_version": "1",
+                "preset_name": "motion_minimal",
+                "root_ids": [101, 202],
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    geometry_manifest_path = output_dir / "asset_manifest.json"
+    _write_execution_geometry_manifest(output_dir, geometry_manifest_path)
+
+    metrics_json_path = (ROOT / "outputs" / "milestone_1" / "milestone_1_demo_motion_patch" / "metrics" / "summary_metrics.json").resolve()
+    config_path = tmp_dir / "simulation_config.yaml"
+    config_path.write_text(
+        textwrap.dedent(
+            f"""
+            paths:
+              selected_root_ids: {selected_root_ids_path}
+              subset_output_dir: {output_dir / "subsets"}
+              manifest_json: {geometry_manifest_path}
+              processed_stimulus_dir: {output_dir / "stimuli"}
+              processed_retinal_dir: {output_dir / "retinal"}
+              processed_simulator_results_dir: {output_dir / "simulator_results"}
+            selection:
+              active_preset: motion_minimal
+            simulation:
+              input:
+                source_kind: stimulus_bundle
+                require_recorded_bundle: true
+              readout_catalog:
+                - readout_id: shared_output_mean
+                  scope: circuit_output
+                  aggregation: mean_over_root_ids
+                  units: activation_au
+                  value_semantics: shared_downstream_activation
+                  description: Shared downstream output mean for matched comparisons.
+                - readout_id: direction_selectivity_index
+                  scope: comparison_panel
+                  aggregation: identity
+                  units: unitless
+                  value_semantics: direction_selectivity_index
+                  description: Derived comparison summary routed through metric tables and UI payloads.
+              baseline_families:
+                P0:
+                  membrane_time_constant_ms: 12.5
+                  recurrent_gain: 0.9
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "config_path": config_path.resolve(),
+        "manifest_path": manifest_path.resolve(),
+        "schema_path": schema_path.resolve(),
+        "design_lock_path": design_lock_path.resolve(),
+        "metrics_json_path": metrics_json_path,
+    }
+
+
+def _write_execution_geometry_manifest(output_dir: Path, manifest_path: Path) -> None:
+    meshes_raw_dir = output_dir / "meshes_raw"
+    skeletons_raw_dir = output_dir / "skeletons_raw"
+    processed_mesh_dir = output_dir / "processed_meshes"
+    processed_graph_dir = output_dir / "processed_graphs"
+    processed_coupling_dir = output_dir / "processed_coupling"
+
+    bundle_paths_101 = build_geometry_bundle_paths(
+        101,
+        meshes_raw_dir=meshes_raw_dir,
+        skeletons_raw_dir=skeletons_raw_dir,
+        processed_mesh_dir=processed_mesh_dir,
+        processed_graph_dir=processed_graph_dir,
+    )
+    _write_octahedron_mesh(bundle_paths_101.raw_mesh_path)
+    process_mesh_into_wave_assets(
+        root_id=101,
+        bundle_paths=bundle_paths_101,
+        simplify_target_faces=8,
+        patch_hops=1,
+        patch_vertex_cap=2,
+        registry_metadata={"cell_type": "T4a", "project_role": "surface_simulated"},
+    )
+
+    bundle_paths_202 = build_geometry_bundle_paths(
+        202,
+        meshes_raw_dir=meshes_raw_dir,
+        skeletons_raw_dir=skeletons_raw_dir,
+        processed_mesh_dir=processed_mesh_dir,
+        processed_graph_dir=processed_graph_dir,
+    )
+    _write_stub_swc(bundle_paths_202.raw_skeleton_path)
+
+    synapse_registry_path = processed_coupling_dir / "synapse_registry.csv"
+    _write_execution_synapse_registry(synapse_registry_path)
+    coupling_summary = materialize_synapse_anchor_maps(
+        root_ids=[101, 202],
+        processed_coupling_dir=processed_coupling_dir,
+        meshes_raw_dir=meshes_raw_dir,
+        skeletons_raw_dir=skeletons_raw_dir,
+        processed_mesh_dir=processed_mesh_dir,
+        processed_graph_dir=processed_graph_dir,
+        neuron_registry=pd.DataFrame(
+            {
+                "root_id": [101, 202],
+                "project_role": ["surface_simulated", "skeleton_simulated"],
+            }
+        ),
+        synapse_registry_path=synapse_registry_path,
+        coupling_assembly={
+            "delay_model": {
+                "mode": "constant_zero_ms",
+                "base_delay_ms": 0.0,
+                "velocity_distance_units_per_ms": 1.0,
+                "delay_bin_size_ms": 0.0,
+            }
+        },
+    )
+
+    bundle_records = {
+        101: build_geometry_manifest_record(
+            bundle_paths=bundle_paths_101,
+            asset_statuses=default_asset_statuses(fetch_skeletons=True),
+            dataset_name="flywire_fafb_public",
+            materialization_version=783,
+            meshing_config_snapshot=_meshing_config_snapshot(),
+            registry_metadata={
+                "cell_type": "T4a",
+                "project_role": "surface_simulated",
+                "materialization_version": "783",
+                "snapshot_version": "783",
+            },
+            processed_coupling_dir=processed_coupling_dir,
+            coupling_bundle_metadata=coupling_summary["bundle_metadata_by_root"][101],
+        ),
+        202: build_geometry_manifest_record(
+            bundle_paths=bundle_paths_202,
+            asset_statuses=default_asset_statuses(fetch_skeletons=True),
+            dataset_name="flywire_fafb_public",
+            materialization_version=783,
+            meshing_config_snapshot=_meshing_config_snapshot(),
+            registry_metadata={
+                "cell_type": "Mi1",
+                "project_role": "skeleton_simulated",
+                "materialization_version": "783",
+                "snapshot_version": "783",
+            },
+            processed_coupling_dir=processed_coupling_dir,
+            coupling_bundle_metadata=coupling_summary["bundle_metadata_by_root"][202],
+        ),
+    }
+    write_geometry_manifest(
+        manifest_path=manifest_path,
+        bundle_records=bundle_records,
+        dataset_name="flywire_fafb_public",
+        materialization_version=783,
+        meshing_config_snapshot=_meshing_config_snapshot(),
+        processed_coupling_dir=processed_coupling_dir,
+    )
+
+
+def _meshing_config_snapshot() -> dict[str, object]:
+    return {
+        "operator_assembly": {
+            "version": "operator_assembly.v1",
+            "boundary_condition": {"mode": "closed_surface_zero_flux"},
+            "anisotropy": {"model": "isotropic"},
+        }
+    }
+
+
+def _write_execution_synapse_registry(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "synapse_row_id": "fixture.csv#1",
+                "source_row_number": 1,
+                "synapse_id": "edge-a",
+                "pre_root_id": 202,
+                "post_root_id": 101,
+                "x": 0.0,
+                "y": 0.5,
+                "z": 0.5,
+                "pre_x": 0.0,
+                "pre_y": 1.0,
+                "pre_z": 0.0,
+                "post_x": 0.0,
+                "post_y": 0.0,
+                "post_z": 1.0,
+                "neuropil": "LOP_R",
+                "nt_type": "ACH",
+                "sign": "excitatory",
+                "confidence": 0.99,
+                "weight": 1.0,
+                "snapshot_version": "783",
+                "materialization_version": "783",
+                "source_file": "fixture.csv",
+            },
+            {
+                "synapse_row_id": "fixture.csv#2",
+                "source_row_number": 2,
+                "synapse_id": "edge-b",
+                "pre_root_id": 101,
+                "post_root_id": 202,
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0,
+                "pre_x": 0.0,
+                "pre_y": 0.0,
+                "pre_z": 1.0,
+                "post_x": 0.0,
+                "post_y": 1.0,
+                "post_z": 0.0,
+                "neuropil": "ME_R",
+                "nt_type": "ACH",
+                "sign": "excitatory",
+                "confidence": 0.95,
+                "weight": 0.5,
+                "snapshot_version": "783",
+                "materialization_version": "783",
+                "source_file": "fixture.csv",
+            },
+        ]
+    ).to_csv(path, index=False)
+
+
+def _write_octahedron_mesh(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        textwrap.dedent(
+            """
+            ply
+            format ascii 1.0
+            element vertex 6
+            property float x
+            property float y
+            property float z
+            element face 8
+            property list uchar int vertex_indices
+            end_header
+            0 0 1
+            1 0 0
+            0 1 0
+            -1 0 0
+            0 -1 0
+            0 0 -1
+            3 0 1 2
+            3 0 2 3
+            3 0 3 4
+            3 0 4 1
+            3 5 2 1
+            3 5 3 2
+            3 5 4 3
+            3 5 1 4
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_stub_swc(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "1 1 0 0 0 1 -1\n2 3 0 1 0 1 1\n",
+        encoding="utf-8",
+    )
+
+
+if __name__ == "__main__":
+    unittest.main()
