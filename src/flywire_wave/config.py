@@ -5,6 +5,7 @@ from typing import Any
 
 import yaml
 
+from .retinal_geometry import has_retinal_geometry_reference, resolve_retinal_geometry_spec
 from .stimulus_registry import has_stimulus_reference, resolve_stimulus_spec
 
 
@@ -26,6 +27,7 @@ DEFAULT_PATHS = {
     "geometry_preview_dir": Path("data/processed/previews"),
     "operator_qa_dir": Path("data/processed/operator_qa"),
     "processed_stimulus_dir": Path("data/processed/stimuli"),
+    "processed_retinal_dir": Path("data/processed/retinal"),
     "manifest_json": Path("data/processed/asset_manifest.json"),
 }
 
@@ -63,6 +65,10 @@ def load_config(path: str | Path, *, project_root: str | Path | None = None) -> 
         loaded_cfg["stimulus_bundle_metadata_path"] = resolved_stimulus.resolve_bundle_metadata_path(
             processed_stimulus_dir=processed_stimulus_dir
         )
+    if has_retinal_geometry_reference(loaded_cfg):
+        resolved_retinal_geometry = resolve_retinal_geometry_spec(loaded_cfg)
+        loaded_cfg["retinal_geometry"] = resolved_retinal_geometry.retinal_geometry
+        loaded_cfg["retinal_geometry_registry_entry"] = resolved_retinal_geometry.registry_entry
     return loaded_cfg
 
 

@@ -1,0 +1,76 @@
+valid_cases:
+  alias_driven_fixture:
+    retinal_geometry:
+      geometry_family: ommatidial_lattice
+      geometry_name: fixture
+
+  mirrored_override_fixture:
+    retinal_geometry:
+      geometry_family: compound_eye_geometry
+      geometry_name: fixture_hex_19
+      lattice:
+        ring_count: 2
+        interommatidial_angle_deg: 5.5
+      body_to_head:
+        translation_body_mm: [0.4, 0.0, 0.14]
+      eyes:
+        left:
+          center_head_mm: [0.17, 0.28, 0.04]
+          optical_axis_head: [0.25881904510252074, 0.9659258262890683, 0.0]
+          torsion_deg: 3.0
+
+  explicit_both_eyes:
+    retinal_geometry:
+      geometry_name: fixture_hex_19
+      eyes:
+        symmetry:
+          mode: explicit_per_eye
+        left:
+          center_head_mm: [0.16, 0.27, 0.03]
+          optical_axis_head: [0.3090169943749474, 0.9510565162951535, 0.0]
+          torsion_deg: 2.5
+        right:
+          center_head_mm: [0.16, -0.27, 0.03]
+          optical_axis_head: [0.3090169943749474, -0.9510565162951535, 0.0]
+          torsion_deg: 2.5
+
+invalid_cases:
+  unknown_geometry_name:
+    retinal_geometry:
+      geometry_name: not_a_real_geometry
+    error_substring: Unsupported retinal_geometry.geometry_name
+
+  ambiguous_eye_frame:
+    retinal_geometry:
+      geometry_name: fixture_hex_19
+      eyes:
+        left:
+          optical_axis_head: [0.0, 0.0, 1.0]
+          dorsal_reference_head: [0.0, 0.0, 1.0]
+    error_substring: would be ambiguous
+
+  duplicate_eye_order:
+    retinal_geometry:
+      geometry_name: fixture_hex_19
+      eye_order: [left, left]
+    error_substring: may not contain duplicate
+
+  mirrored_mode_with_explicit_right:
+    retinal_geometry:
+      geometry_name: fixture_hex_19
+      eyes:
+        left:
+          center_head_mm: [0.16, 0.27, 0.03]
+        right:
+          center_head_mm: [0.16, -0.27, 0.03]
+    error_substring: may not be provided when symmetry.mode mirrors
+
+  explicit_mode_missing_right:
+    retinal_geometry:
+      geometry_name: fixture_hex_19
+      eyes:
+        symmetry:
+          mode: explicit_per_eye
+        left:
+          center_head_mm: [0.16, 0.27, 0.03]
+    error_substring: must be provided when symmetry.mode is explicit_per_eye

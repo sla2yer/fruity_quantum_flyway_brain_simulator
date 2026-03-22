@@ -1,0 +1,11 @@
+paths:
+  processed_retinal_dir: data/processed/test_retinal
+
+retinal_geometry:
+  geometry_family: ommatidial_lattice
+  geometry_name: fixture
+  eyes:
+    left:
+      center_head_mm: [0.17, 0.28, 0.04]
+      optical_axis_head: [0.25881904510252074, 0.9659258262890683, 0.0]
+      torsion_deg: 3.0

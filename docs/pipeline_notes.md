@@ -228,6 +228,53 @@ stimuli through the library contract instead of hardcoded frame filenames.
 note; later tickets should cite it instead of re-litigating the representation
 family, replay semantics, or coordinate/luminance conventions.
 
+### Retinal input bundle contract
+
+Milestone 8B now reserves one explicit retinal-input discovery surface under
+the versioned contract `retinal_input_bundle.v1`.
+
+The library-owned default layout is:
+
+- `config.paths.processed_retinal_dir/bundles/<source_kind>/<source_family>/<source_name>/<source_hash>/<retinal_spec_hash>/retinal_input_bundle.json`:
+  authoritative retinal descriptor and replay metadata
+- `config.paths.processed_retinal_dir/bundles/<source_kind>/<source_family>/<source_name>/<source_hash>/<retinal_spec_hash>/retinal_frames.npz`:
+  optional sampled-frame archive derived from that descriptor
+
+Contract notes:
+
+- bundle paths, deterministic retinal-spec hashing, metadata serialization, and
+  artifact discovery now live in `flywire_wave.retinal_contract` rather than
+  ad hoc script code
+- bundle identity is the tuple `(contract_version, source_kind, source_family,
+  source_name, source_hash, retinal_spec_hash)`
+- the bundle records an explicit upstream `source_reference` so later tooling
+  can trace the retinal recording back to the canonical stimulus or scene that
+  produced it
+- `retinal_input_bundle.v1` freezes one canonical frame meaning:
+  dense `time x eye x ommatidium` arrays with explicit eye order and stable
+  eye-local ommatidial indexing
+- the same bundle also records one default simulator-facing
+  `early_visual_unit_stack` mapping with dense `time x eye x unit x channel`
+  layout, one `irradiance` channel, identity aggregation from ommatidium to
+  unit index, no adaptation, and explicit normalization semantics
+- the default and only supported v1 representation family is
+  `direct_per_ommatidium_irradiance`; eye-image rasters and higher-level
+  feature maps are downstream derived views rather than the source-of-truth
+  contract
+- timing is always expressed in milliseconds with `sample_hold` semantics
+- detector values use linear irradiance in `[0.0, 1.0]` with neutral `0.5` and
+  signed contrast interpreted relative to that neutral point
+- the coordinate block records one canonical right-handed world, body, head,
+  and eye frame convention so later scene, simulator, and UI work do not
+  silently disagree about orientation
+- the sampling-kernel block records the realized acceptance model, support
+  radius, normalization, and out-of-field fill behavior needed for
+  deterministic replay
+
+`docs/retinal_bundle_design.md` is the authoritative Milestone 8B decision
+note; later tickets should cite it instead of re-litigating the retinal
+abstraction family, coordinate frames, or what one retinal frame means.
+
 ### Offline coupling inspection contract
 
 Milestone 7 now also defines one deterministic offline inspection workflow for

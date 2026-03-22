@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 from jsonschema import Draft202012Validator
 
+from .retinal_geometry import ResolvedRetinalGeometry, resolve_retinal_geometry_spec
 from .stimulus_contract import DEFAULT_PROCESSED_STIMULUS_DIR
 from .stimulus_registry import ResolvedStimulusSpec, resolve_stimulus_spec
 
@@ -144,6 +145,12 @@ def resolve_manifest_stimulus(manifest: Mapping[str, Any]) -> ResolvedStimulusSp
     if not isinstance(manifest, Mapping):
         raise ValueError("manifest must be a mapping.")
     return resolve_stimulus_spec(manifest)
+
+
+def resolve_manifest_retinal_geometry(manifest: Mapping[str, Any]) -> ResolvedRetinalGeometry:
+    if not isinstance(manifest, Mapping):
+        raise ValueError("manifest must be a mapping.")
+    return resolve_retinal_geometry_spec(manifest)
 
 
 def _resolve_processed_stimulus_dir(processed_stimulus_dir: str | Path | None) -> Path:

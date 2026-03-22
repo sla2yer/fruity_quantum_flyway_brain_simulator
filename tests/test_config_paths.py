@@ -51,6 +51,10 @@ class ConfigPathResolutionTest(unittest.TestCase):
                 str((tmp_dir / "data/raw/codex/classification.csv").resolve()),
             )
             self.assertEqual(
+                cfg["paths"]["processed_retinal_dir"],
+                str((tmp_dir / "data/processed/retinal").resolve()),
+            )
+            self.assertEqual(
                 cfg["paths"]["synapse_source_csv"],
                 str((tmp_dir / "data/raw/codex/synapses.csv").resolve()),
             )
