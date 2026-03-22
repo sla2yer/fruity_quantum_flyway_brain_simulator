@@ -1,0 +1,156 @@
+[
+  {
+    "ticket_id": "FW-M8B-001",
+    "title": "Freeze a versioned retinal input bundle contract and ommatidial sampling design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-001_Freeze_a_versioned_retinal_input_bundle_contract_and_ommatidial_sampling_design_note/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-001_Freeze_a_versioned_retinal_input_bundle_contract_and_ommatidial_sampling_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-001_Freeze_a_versioned_retinal_input_bundle_contract_and_ommatidial_sampling_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-001_Freeze_a_versioned_retinal_input_bundle_contract_and_ommatidial_sampling_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-001_Freeze_a_versioned_retinal_input_bundle_contract_and_ommatidial_sampling_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-001_Freeze_a_versioned_retinal_input_bundle_contract_and_ommatidial_sampling_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8B-002",
+    "title": "Build a canonical retinotopic lattice spec, eye-geometry config layer, and coordinate-transform API",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-002_Build_a_canonical_retinotopic_lattice_spec_eye-geometry_config_layer_and_coordinate-transform_API/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-002_Build_a_canonical_retinotopic_lattice_spec_eye-geometry_config_layer_and_coordinate-transform_API",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-002_Build_a_canonical_retinotopic_lattice_spec_eye-geometry_config_layer_and_coordinate-transform_API/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-002_Build_a_canonical_retinotopic_lattice_spec_eye-geometry_config_layer_and_coordinate-transform_API/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-002_Build_a_canonical_retinotopic_lattice_spec_eye-geometry_config_layer_and_coordinate-transform_API/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-002_Build_a_canonical_retinotopic_lattice_spec_eye-geometry_config_layer_and_coordinate-transform_API/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8B-003",
+    "title": "Implement world-to-eye projection and deterministic ommatidial sampling kernels for fixture scenes and canonical stimuli",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-003_Implement_world-to-eye_projection_and_deterministic_ommatidial_sampling_kernels_for_fixture_scenes_and_canonical_stimuli/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-003_Implement_world-to-eye_projection_and_deterministic_ommatidial_sampling_kernels_for_fixture_scenes_and_canonical_stimuli",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-003_Implement_world-to-eye_projection_and_deterministic_ommatidial_sampling_kernels_for_fixture_scenes_and_canonical_stimuli/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-003_Implement_world-to-eye_projection_and_deterministic_ommatidial_sampling_kernels_for_fixture_scenes_and_canonical_stimuli/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-003_Implement_world-to-eye_projection_and_deterministic_ommatidial_sampling_kernels_for_fixture_scenes_and_canonical_stimuli/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-003_Implement_world-to-eye_projection_and_deterministic_ommatidial_sampling_kernels_for_fixture_scenes_and_canonical_stimuli/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8B-004",
+    "title": "Add temporal retinal frame generation and early-visual channel mapping on top of sampled ommatidia",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-004_Add_temporal_retinal_frame_generation_and_early-visual_channel_mapping_on_top_of_sampled_ommatidia/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-004_Add_temporal_retinal_frame_generation_and_early-visual_channel_mapping_on_top_of_sampled_ommatidia",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-004_Add_temporal_retinal_frame_generation_and_early-visual_channel_mapping_on_top_of_sampled_ommatidia/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-004_Add_temporal_retinal_frame_generation_and_early-visual_channel_mapping_on_top_of_sampled_ommatidia/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-004_Add_temporal_retinal_frame_generation_and_early-visual_channel_mapping_on_top_of_sampled_ommatidia/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-004_Add_temporal_retinal_frame_generation_and_early-visual_channel_mapping_on_top_of_sampled_ommatidia/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8B-005",
+    "title": "Integrate the retinal sampler with canonical stimulus playback and scene-generator entrypoints",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-005_Integrate_the_retinal_sampler_with_canonical_stimulus_playback_and_scene-generator_entrypoints/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-005_Integrate_the_retinal_sampler_with_canonical_stimulus_playback_and_scene-generator_entrypoints",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-005_Integrate_the_retinal_sampler_with_canonical_stimulus_playback_and_scene-generator_entrypoints/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-005_Integrate_the_retinal_sampler_with_canonical_stimulus_playback_and_scene-generator_entrypoints/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-005_Integrate_the_retinal_sampler_with_canonical_stimulus_playback_and_scene-generator_entrypoints/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-005_Integrate_the_retinal_sampler_with_canonical_stimulus_playback_and_scene-generator_entrypoints/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8B-006",
+    "title": "Ship offline retinal preview and QA tooling for world-view versus fly-view inspection",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-006_Ship_offline_retinal_preview_and_QA_tooling_for_world-view_versus_fly-view_inspection/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-006_Ship_offline_retinal_preview_and_QA_tooling_for_world-view_versus_fly-view_inspection",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-006_Ship_offline_retinal_preview_and_QA_tooling_for_world-view_versus_fly-view_inspection/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-006_Ship_offline_retinal_preview_and_QA_tooling_for_world-view_versus_fly-view_inspection/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-006_Ship_offline_retinal_preview_and_QA_tooling_for_world-view_versus_fly-view_inspection/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-006_Ship_offline_retinal_preview_and_QA_tooling_for_world-view_versus_fly-view_inspection/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M8B-007",
+    "title": "Run a Milestone 8B integration verification pass and publish a readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-007_Run_a_Milestone_8B_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-007_Run_a_Milestone_8B_integration_verification_pass_and_publish_a_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-007_Run_a_Milestone_8B_integration_verification_pass_and_publish_a_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-007_Run_a_Milestone_8B_integration_verification_pass_and_publish_a_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-007_Run_a_Milestone_8B_integration_verification_pass_and_publish_a_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260322T023042Z/FW-M8B-007_Run_a_Milestone_8B_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+  }
+]

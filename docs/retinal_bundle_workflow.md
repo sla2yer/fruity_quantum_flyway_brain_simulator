@@ -126,3 +126,27 @@ the offline review artifacts from the bundle metadata alone.
 
 See `docs/retinal_inspection.md` for the reviewer checklist and the meaning of
 `pass`, `warn`, and `fail` checks.
+
+## Full readiness pass
+
+Run the complete Milestone 8B integration verification workflow with:
+
+```bash
+make milestone8b-readiness
+```
+
+Or directly:
+
+```bash
+python scripts/13_milestone8b_readiness.py --config config/milestone_8b_verification.yaml
+```
+
+The readiness pass runs a focused retinal fixture suite, exercises the shipped
+record/replay/inspect commands through the stimulus-config, manifest, and scene
+entrypoints, checks direct bundle discovery against canonical source-path
+resolution, audits documentation, and writes `milestone_8b_readiness.md` plus
+`milestone_8b_readiness.json` under:
+
+```text
+data/processed/milestone_8b_verification/retinal/readiness/milestone_8b/
+```

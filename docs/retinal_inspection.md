@@ -61,3 +61,25 @@ can refer to the same report directory without guessing filenames.
 - `fail`: the bundle has an obvious integrity or coverage problem. Treat it as a
   stop sign for Milestone 8B review until the source setup or sampler behavior
   is fixed.
+
+## Full readiness pass
+
+Run the shipped Milestone 8B integration audit with:
+
+```bash
+make milestone8b-readiness
+```
+
+Or directly:
+
+```bash
+python scripts/13_milestone8b_readiness.py --config config/milestone_8b_verification.yaml
+```
+
+That workflow exercises the full local world-to-retina surface on fixture
+assets and writes `milestone_8b_readiness.md` plus
+`milestone_8b_readiness.json` under:
+
+```text
+data/processed/milestone_8b_verification/retinal/readiness/milestone_8b/
+```

@@ -1,0 +1,66 @@
+paths:
+  processed_stimulus_dir: data/processed/milestone_8b_verification/stimuli
+  processed_retinal_dir: data/processed/milestone_8b_verification/retinal
+
+retinal_verification:
+  manifest_path: manifests/examples/milestone_1_demo.yaml
+  schema_path: schemas/milestone_1_experiment_manifest.schema.json
+  design_lock_path: config/milestone_1_design_lock.yaml
+
+  stimulus:
+    stimulus_family: translated_edge
+    stimulus_name: simple_translated_edge
+    determinism:
+      seed: 11
+    temporal_sampling:
+      time_origin_ms: 0.0
+      dt_ms: 20.0
+      duration_ms: 80.0
+    spatial_frame:
+      width_px: 96
+      height_px: 64
+      width_deg: 180.0
+      height_deg: 120.0
+    stimulus_overrides:
+      onset_ms: 0.0
+      offset_ms: 80.0
+      background_level: 0.25
+      contrast: 0.6
+      velocity_deg_per_s: 24.0
+      edge_width_deg: 10.0
+
+  scene:
+    scene_family: analytic_panorama
+    scene_name: yaw_gradient_panorama
+    temporal_sampling:
+      time_origin_ms: 0.0
+      dt_ms: 20.0
+      duration_ms: 80.0
+    scene_parameters:
+      background_level: 0.45
+      azimuth_gain_per_deg: 0.001
+      elevation_gain_per_deg: 0.0005
+      temporal_modulation_amplitude: 0.1
+      temporal_frequency_hz: 2.0
+      phase_deg: 15.0
+
+  retinal_geometry:
+    geometry_name: fixture
+    eyes:
+      left:
+        optical_axis_head: [1.0, 0.0, 0.0]
+        torsion_deg: 0.0
+      symmetry:
+        mode: mirror_across_head_sagittal_plane
+
+  retinal_recording:
+    sampling_kernel:
+      acceptance_angle_deg: 0.5
+      support_radius_deg: 1.0
+      background_fill_value: 0.25
+    body_pose:
+      translation_world_mm: [0.0, 0.0, 0.0]
+      yaw_pitch_roll_deg: [2.0, 0.0, 0.0]
+    head_pose:
+      translation_body_mm: [0.32, 0.0, 0.1]
+      yaw_pitch_roll_deg: [2.0, 0.0, 0.0]

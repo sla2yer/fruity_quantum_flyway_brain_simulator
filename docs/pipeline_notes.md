@@ -292,6 +292,13 @@ world-view versus fly-view review:
 - the workflow writes deterministic inspection pointers back into
   `retinal_input_bundle.json` under `inspection` so later simulator and UI code
   can discover the offline review artifacts from bundle metadata alone
+- `scripts/13_milestone8b_readiness.py` layers a focused fixture suite plus a
+  config/manifest/scene integration audit on top of the record/replay/inspect
+  workflow and writes `milestone_8b_readiness.md` plus
+  `milestone_8b_readiness.json` under
+  `config.paths.processed_retinal_dir/readiness/milestone_8b/`
+- `make milestone8b-readiness` is the one-command entrypoint for the shipped
+  Milestone 8B readiness pass
 
 See `docs/retinal_inspection.md` for the reviewer checklist and failure
 interpretation.
