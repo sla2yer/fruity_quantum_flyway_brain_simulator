@@ -21,6 +21,7 @@ from .geometry_contract import (
     COARSE_OPERATOR_KEY,
     FINE_OPERATOR_KEY,
     OPERATOR_METADATA_KEY,
+    SIMPLIFIED_MESH_KEY,
     TRANSFER_OPERATORS_KEY,
     build_geometry_bundle_paths,
     build_geometry_manifest_record,
@@ -1074,6 +1075,7 @@ def _surface_ready_asset_statuses() -> dict[str, str]:
     asset_statuses = default_asset_statuses(fetch_skeletons=False)
     asset_statuses.update(
         {
+            SIMPLIFIED_MESH_KEY: "ready",
             FINE_OPERATOR_KEY: "ready",
             COARSE_OPERATOR_KEY: "ready",
             TRANSFER_OPERATORS_KEY: "ready",

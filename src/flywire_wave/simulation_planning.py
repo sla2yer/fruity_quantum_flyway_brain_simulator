@@ -15,11 +15,15 @@ import scipy.sparse.linalg as spla
 from .config import get_config_path, get_project_root, load_config
 from .coupling_contract import (
     ASSET_STATUS_READY,
+    COUPLING_INDEX_KEY,
     COUPLING_BUNDLE_CONTRACT_VERSION,
     DISTRIBUTED_PATCH_CLOUD_TOPOLOGY,
     INCOMING_ANCHOR_MAP_KEY,
     LOCAL_SYNAPSE_REGISTRY_KEY,
     OUTGOING_ANCHOR_MAP_KEY,
+    POINT_NEURON_LUMPED_MODE,
+    POINT_TO_POINT_TOPOLOGY,
+    SKELETON_SEGMENT_CLOUD_MODE,
     SURFACE_PATCH_CLOUD_MODE,
     discover_coupling_bundle_paths,
     discover_edge_coupling_bundle_paths,
@@ -27,15 +31,30 @@ from .coupling_contract import (
 )
 from .geometry_contract import (
     COARSE_OPERATOR_KEY,
+    DESCRIPTOR_SIDECAR_KEY,
     FINE_OPERATOR_KEY,
     OPERATOR_BUNDLE_CONTRACT_VERSION,
     OPERATOR_METADATA_KEY,
+    PATCH_GRAPH_KEY,
+    QA_SIDECAR_KEY,
+    RAW_MESH_KEY,
+    RAW_SKELETON_KEY,
+    SIMPLIFIED_MESH_KEY,
+    SURFACE_GRAPH_KEY,
     TRANSFER_OPERATORS_KEY,
     discover_operator_bundle_paths,
     load_geometry_manifest,
     load_geometry_manifest_records,
     load_operator_bundle_metadata,
     parse_operator_bundle_metadata,
+)
+from .hybrid_morphology_contract import (
+    HYBRID_MORPHOLOGY_PROMOTION_ORDER,
+    POINT_NEURON_CLASS,
+    SKELETON_NEURON_CLASS,
+    SURFACE_NEURON_CLASS,
+    build_hybrid_morphology_plan_metadata,
+    normalize_hybrid_morphology_class,
 )
 from .io_utils import read_root_ids
 from .manifests import (
@@ -60,6 +79,11 @@ from .simulator_result_contract import (
     normalize_simulator_timebase,
     parse_simulator_readout_definition,
 )
+from .skeleton_runtime_assets import (
+    SKELETON_RUNTIME_ASSET_KEY,
+    build_skeleton_runtime_asset_paths,
+    build_skeleton_runtime_asset_record,
+)
 from .stimulus_contract import (
     DEFAULT_RNG_FAMILY,
     DEFAULT_TIME_UNIT,
@@ -81,6 +105,8 @@ from .surface_operators import deserialize_sparse_matrix
 
 SIMULATION_PLAN_VERSION = "simulation_plan.v1"
 SIMULATION_RUNTIME_CONFIG_VERSION = "simulation_runtime.v1"
+MIXED_FIDELITY_CONFIG_VERSION = "mixed_fidelity_config.v1"
+MIXED_FIDELITY_PLAN_VERSION = "mixed_fidelity_plan.v1"
 
 STIMULUS_BUNDLE_INPUT_SOURCE = "stimulus_bundle"
 RETINAL_BUNDLE_INPUT_SOURCE = "retinal_bundle"
@@ -94,6 +120,16 @@ DEFAULT_SEED_SCOPE = "all_stochastic_simulator_components"
 DEFAULT_STABLE_ARM_ORDERING = "manifest_declaration_order"
 DEFAULT_SEED_SWEEP_ORDERING = "manifest_declared_seed_order"
 SHARED_READOUT_VALUE_SEMANTICS = "shared_downstream_activation"
+DEFAULT_MIXED_FIDELITY_ASSIGNMENT_ORDERING = "selected_root_id_ascending"
+DEFAULT_MIXED_FIDELITY_DEFAULT_SOURCE = "registry_project_role"
+SUPPORTED_MIXED_FIDELITY_DEFAULT_SOURCES = (
+    DEFAULT_MIXED_FIDELITY_DEFAULT_SOURCE,
+)
+SUPPORTED_MIXED_FIDELITY_PROMOTION_MODES = ("disabled",)
+SUPPORTED_MIXED_FIDELITY_DEMOTION_MODES = ("disabled",)
+REGISTRY_PROJECT_ROLE_ASSIGNMENT_SOURCE = "registry_project_role"
+ARM_DEFAULT_CLASS_ASSIGNMENT_SOURCE = "arm_default_morphology_class"
+ARM_ROOT_OVERRIDE_ASSIGNMENT_SOURCE = "arm_root_override"
 
 SELECTED_ROOT_IDS_ASSET_ROLE = "selected_root_ids"
 INPUT_BUNDLE_ASSET_ROLE = "input_bundle"
@@ -109,6 +145,7 @@ ALLOWED_SIMULATION_CONFIG_KEYS = {
     "timebase",
     "readout_catalog",
     "baseline_families",
+    "mixed_fidelity",
     "surface_wave",
     "determinism",
 }
@@ -120,6 +157,23 @@ ALLOWED_INPUT_CONFIG_KEYS = {
 ALLOWED_DETERMINISM_CONFIG_KEYS = {
     "rng_family",
     "seed_scope",
+}
+ALLOWED_MIXED_FIDELITY_CONFIG_KEYS = {
+    "version",
+    "assignment_policy",
+}
+ALLOWED_MIXED_FIDELITY_POLICY_KEYS = {
+    "default_source",
+    "promotion_mode",
+    "demotion_mode",
+}
+ALLOWED_ARM_FIDELITY_ASSIGNMENT_KEYS = {
+    "default_morphology_class",
+    "root_overrides",
+}
+ALLOWED_ARM_FIDELITY_OVERRIDE_KEYS = {
+    "root_id",
+    "morphology_class",
 }
 
 _P0_ALLOWED_KEYS = {
@@ -158,6 +212,8 @@ SUPPORTED_SURFACE_WAVE_AGGREGATION_SEMANTICS = (
 SUPPORTED_SURFACE_WAVE_SPATIAL_SUPPORT = ("postsynaptic_patch_cloud",)
 SURFACE_WAVE_STATE_RESOLUTION = "fine_surface_vertices"
 SURFACE_WAVE_COUPLING_ANCHOR_RESOLUTION = "surface_patch_cloud"
+MIXED_FIDELITY_STATE_RESOLUTION = "per_root_morphology_class"
+MIXED_FIDELITY_COUPLING_ANCHOR_RESOLUTION = "per_root_morphology_class"
 SURFACE_WAVE_MAX_INTERNAL_SUBSTEPS_PER_OUTPUT_STEP = 256
 SURFACE_WAVE_STABILITY_TOLERANCE_MS = 1.0e-9
 
@@ -269,6 +325,9 @@ def normalize_simulation_runtime_config(
     normalized_baseline_families = _normalize_baseline_family_configs(
         raw_payload.get("baseline_families")
     )
+    normalized_mixed_fidelity = _normalize_mixed_fidelity_config(
+        raw_payload.get("mixed_fidelity")
+    )
     normalized_surface_wave_model = build_surface_wave_model_metadata(
         processed_surface_wave_dir=resolved_project_root / DEFAULT_PROCESSED_SURFACE_WAVE_DIR,
         parameter_bundle=raw_payload.get("surface_wave"),
@@ -283,6 +342,7 @@ def normalize_simulation_runtime_config(
         "readout_catalog": normalized_readout_catalog,
         "shared_readout_catalog": normalized_shared_readout_catalog,
         "baseline_families": normalized_baseline_families,
+        "mixed_fidelity": normalized_mixed_fidelity,
         "surface_wave_model": normalized_surface_wave_model,
     }
 
@@ -384,6 +444,7 @@ def resolve_manifest_simulation_plan(
         )
         model_configuration = _build_model_configuration(
             arm_reference=arm_reference,
+            arm_payload=arm,
             runtime_config=runtime_config,
             circuit_assets=circuit_assets,
             topology_condition=topology_condition,
@@ -554,6 +615,48 @@ def resolve_simulation_arm_plan(plan: Mapping[str, Any], arm_id: str) -> dict[st
     return matches[0]
 
 
+def resolve_manifest_mixed_fidelity_plan(
+    *,
+    manifest_path: str | Path,
+    config_path: str | Path,
+    schema_path: str | Path,
+    design_lock_path: str | Path,
+    arm_id: str,
+) -> dict[str, Any]:
+    arm_plan = resolve_simulation_arm_plan(
+        resolve_manifest_simulation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+        ),
+        arm_id=arm_id,
+    )
+    arm_reference = _require_mapping(
+        arm_plan.get("arm_reference"),
+        field_name="arm_plan.arm_reference",
+    )
+    if str(arm_reference["model_mode"]) != SURFACE_WAVE_MODEL_MODE:
+        raise ValueError(
+            "Mixed-fidelity planning only applies to surface_wave arms, got "
+            f"{arm_reference['model_mode']!r} for arm {arm_reference['arm_id']!r}."
+        )
+    model_configuration = _require_mapping(
+        arm_plan.get("model_configuration"),
+        field_name="arm_plan.model_configuration",
+    )
+    execution_plan = _require_mapping(
+        model_configuration.get("surface_wave_execution_plan"),
+        field_name="arm_plan.model_configuration.surface_wave_execution_plan",
+    )
+    return copy.deepcopy(
+        _require_mapping(
+            execution_plan.get("mixed_fidelity"),
+            field_name="surface_wave_execution_plan.mixed_fidelity",
+        )
+    )
+
+
 def _normalize_runtime_timebase(
     payload: Mapping[str, Any] | None,
     *,
@@ -619,6 +722,92 @@ def _normalize_input_config(
         "source_kind": source_kind,
         "require_recorded_bundle": require_recorded_bundle,
         "retinal_config_path": retinal_config_path,
+    }
+
+
+def _normalize_mixed_fidelity_config(
+    payload: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    raw_payload = dict(payload or {})
+    unknown_keys = sorted(set(raw_payload) - ALLOWED_MIXED_FIDELITY_CONFIG_KEYS)
+    if unknown_keys:
+        raise ValueError(
+            "simulation.mixed_fidelity contains unsupported keys: "
+            f"{unknown_keys!r}."
+        )
+
+    version = _normalize_nonempty_string(
+        raw_payload.get("version", MIXED_FIDELITY_CONFIG_VERSION),
+        field_name="simulation.mixed_fidelity.version",
+    )
+    if version != MIXED_FIDELITY_CONFIG_VERSION:
+        raise ValueError(
+            "simulation.mixed_fidelity.version must be "
+            f"{MIXED_FIDELITY_CONFIG_VERSION!r}."
+        )
+
+    assignment_policy_payload = raw_payload.get("assignment_policy")
+    if assignment_policy_payload is None:
+        assignment_policy_payload = {}
+    if not isinstance(assignment_policy_payload, Mapping):
+        raise ValueError(
+            "simulation.mixed_fidelity.assignment_policy must be a mapping when "
+            "provided."
+        )
+    assignment_policy = dict(assignment_policy_payload)
+    unknown_policy_keys = sorted(
+        set(assignment_policy) - ALLOWED_MIXED_FIDELITY_POLICY_KEYS
+    )
+    if unknown_policy_keys:
+        raise ValueError(
+            "simulation.mixed_fidelity.assignment_policy contains unsupported "
+            f"keys: {unknown_policy_keys!r}."
+        )
+
+    default_source = _normalize_identifier(
+        assignment_policy.get(
+            "default_source",
+            DEFAULT_MIXED_FIDELITY_DEFAULT_SOURCE,
+        ),
+        field_name="simulation.mixed_fidelity.assignment_policy.default_source",
+    )
+    if default_source not in SUPPORTED_MIXED_FIDELITY_DEFAULT_SOURCES:
+        raise ValueError(
+            "simulation.mixed_fidelity.assignment_policy.default_source must be "
+            f"one of {list(SUPPORTED_MIXED_FIDELITY_DEFAULT_SOURCES)!r}, got "
+            f"{default_source!r}."
+        )
+
+    promotion_mode = _normalize_identifier(
+        assignment_policy.get("promotion_mode", "disabled"),
+        field_name="simulation.mixed_fidelity.assignment_policy.promotion_mode",
+    )
+    if promotion_mode not in SUPPORTED_MIXED_FIDELITY_PROMOTION_MODES:
+        raise ValueError(
+            "simulation.mixed_fidelity.assignment_policy.promotion_mode must be "
+            f"one of {list(SUPPORTED_MIXED_FIDELITY_PROMOTION_MODES)!r}, got "
+            f"{promotion_mode!r}."
+        )
+
+    demotion_mode = _normalize_identifier(
+        assignment_policy.get("demotion_mode", "disabled"),
+        field_name="simulation.mixed_fidelity.assignment_policy.demotion_mode",
+    )
+    if demotion_mode not in SUPPORTED_MIXED_FIDELITY_DEMOTION_MODES:
+        raise ValueError(
+            "simulation.mixed_fidelity.assignment_policy.demotion_mode must be "
+            f"one of {list(SUPPORTED_MIXED_FIDELITY_DEMOTION_MODES)!r}, got "
+            f"{demotion_mode!r}."
+        )
+
+    return {
+        "version": version,
+        "assignment_ordering": DEFAULT_MIXED_FIDELITY_ASSIGNMENT_ORDERING,
+        "assignment_policy": {
+            "default_source": default_source,
+            "promotion_mode": promotion_mode,
+            "demotion_mode": demotion_mode,
+        },
     }
 
 
@@ -814,6 +1003,89 @@ def _normalize_p1_delay_handling(payload: Any) -> dict[str, Any]:
             field_name="simulation.baseline_families.P1.delay_handling.max_supported_delay_steps",
         )
     return defaults
+
+
+def _normalize_arm_fidelity_assignment(
+    payload: Any,
+    *,
+    field_name: str,
+) -> dict[str, Any]:
+    if payload is None:
+        return {
+            "default_morphology_class": None,
+            "root_overrides": [],
+            "root_overrides_by_root": {},
+        }
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{field_name} must be a mapping when provided.")
+
+    raw_payload = dict(payload)
+    unknown_keys = sorted(set(raw_payload) - ALLOWED_ARM_FIDELITY_ASSIGNMENT_KEYS)
+    if unknown_keys:
+        raise ValueError(
+            f"{field_name} contains unsupported keys: {unknown_keys!r}."
+        )
+
+    default_morphology_class = None
+    if raw_payload.get("default_morphology_class") is not None:
+        default_morphology_class = normalize_hybrid_morphology_class(
+            raw_payload["default_morphology_class"],
+            field_name=f"{field_name}.default_morphology_class",
+        )
+
+    root_overrides_payload = raw_payload.get("root_overrides", ())
+    if root_overrides_payload is None:
+        root_overrides_payload = ()
+    root_overrides: list[dict[str, Any]] = []
+    root_overrides_by_root: dict[int, str] = {}
+    for index, item in enumerate(
+        _require_sequence(
+            root_overrides_payload,
+            field_name=f"{field_name}.root_overrides",
+        )
+    ):
+        override = _require_mapping(
+            item,
+            field_name=f"{field_name}.root_overrides[{index}]",
+        )
+        override_unknown_keys = sorted(
+            set(override) - ALLOWED_ARM_FIDELITY_OVERRIDE_KEYS
+        )
+        if override_unknown_keys:
+            raise ValueError(
+                f"{field_name}.root_overrides[{index}] contains unsupported keys: "
+                f"{override_unknown_keys!r}."
+            )
+        if "root_id" not in override:
+            raise ValueError(
+                f"{field_name}.root_overrides[{index}] requires root_id."
+            )
+        if "morphology_class" not in override:
+            raise ValueError(
+                f"{field_name}.root_overrides[{index}] requires morphology_class."
+            )
+        root_id = int(override["root_id"])
+        if root_id in root_overrides_by_root:
+            raise ValueError(
+                f"{field_name}.root_overrides contains duplicate root_id {root_id}."
+            )
+        morphology_class = normalize_hybrid_morphology_class(
+            override["morphology_class"],
+            field_name=f"{field_name}.root_overrides[{index}].morphology_class",
+        )
+        root_overrides_by_root[root_id] = morphology_class
+        root_overrides.append(
+            {
+                "root_id": root_id,
+                "morphology_class": morphology_class,
+            }
+        )
+    root_overrides.sort(key=lambda item: int(item["root_id"]))
+    return {
+        "default_morphology_class": default_morphology_class,
+        "root_overrides": root_overrides,
+        "root_overrides_by_root": root_overrides_by_root,
+    }
 
 
 def _resolve_selection_reference(
@@ -1091,22 +1363,41 @@ def _resolve_circuit_assets(
     selected_root_set = set(selected_root_ids)
     for root_id in selected_root_ids:
         record = geometry_manifest_records[str(root_id)]
-        operator_bundle = parse_operator_bundle_metadata(record.get("operator_bundle", {}))
-        operator_paths = {
-            asset_key: str(Path(asset_path).resolve())
-            for asset_key, asset_path in discover_operator_bundle_paths(record).items()
-        }
-        missing_ready_operator_assets = [
-            asset_key
-            for asset_key, asset_record in operator_bundle["assets"].items()
-            if str(asset_record["status"]) == ASSET_STATUS_READY
-            and not Path(str(asset_record["path"])).exists()
-        ]
-        if missing_ready_operator_assets:
-            raise ValueError(
-                f"Selected root {root_id} is missing ready operator assets "
-                f"{missing_ready_operator_assets!r} under {geometry_manifest_path}."
+        geometry_asset_records = {
+            asset_key: _asset_record_reference(
+                _require_mapping(
+                    _require_mapping(
+                        record.get("assets"),
+                        field_name=f"geometry_manifest[{root_id}].assets",
+                    ).get(asset_key),
+                    field_name=f"geometry_manifest[{root_id}].assets.{asset_key}",
+                ),
+                field_name=f"geometry_manifest[{root_id}].assets.{asset_key}",
             )
+            for asset_key in (
+                RAW_MESH_KEY,
+                RAW_SKELETON_KEY,
+                SIMPLIFIED_MESH_KEY,
+                SURFACE_GRAPH_KEY,
+                PATCH_GRAPH_KEY,
+                DESCRIPTOR_SIDECAR_KEY,
+                QA_SIDECAR_KEY,
+            )
+        }
+        operator_bundle = parse_operator_bundle_metadata(record.get("operator_bundle", {}))
+        operator_paths = discover_operator_bundle_paths(record)
+        operator_asset_records = {
+            asset_key: _asset_record_reference(
+                {
+                    "path": str(Path(asset_path).resolve()),
+                    "status": str(operator_bundle["assets"][asset_key]["status"]),
+                },
+                field_name=(
+                    f"geometry_manifest[{root_id}].operator_bundle.assets.{asset_key}"
+                ),
+            )
+            for asset_key, asset_path in operator_paths.items()
+        }
         coupling_bundle = parse_coupling_bundle_metadata(record.get("coupling_bundle", {}))
         if coupling_bundle["status"] != ASSET_STATUS_READY:
             raise ValueError(
@@ -1114,10 +1405,22 @@ def _resolve_circuit_assets(
                 f"{coupling_bundle['status']!r}, expected 'ready'."
             )
         bundle_paths = discover_coupling_bundle_paths(record)
+        coupling_asset_records = {
+            asset_key: _asset_record_reference(
+                {
+                    "path": str(Path(asset_path).resolve()),
+                    "status": str(coupling_bundle["assets"][asset_key]["status"]),
+                },
+                field_name=(
+                    f"geometry_manifest[{root_id}].coupling_bundle.assets.{asset_key}"
+                ),
+            )
+            for asset_key, asset_path in bundle_paths.items()
+        }
         missing_required_assets = [
             asset_key
-            for asset_key, asset_path in bundle_paths.items()
-            if not Path(asset_path).exists()
+            for asset_key, asset_record in coupling_asset_records.items()
+            if not bool(asset_record["exists"])
         ]
         if missing_required_assets:
             raise ValueError(
@@ -1125,11 +1428,24 @@ def _resolve_circuit_assets(
                 f"{missing_required_assets!r} under {geometry_manifest_path}."
             )
         edge_bundles = discover_edge_coupling_bundle_paths(record)
+        edge_bundle_records = [
+            {
+                "pre_root_id": int(edge_bundle["pre_root_id"]),
+                "post_root_id": int(edge_bundle["post_root_id"]),
+                "peer_root_id": int(edge_bundle["peer_root_id"]),
+                "relation_to_root": str(edge_bundle["relation_to_root"]),
+                "path": str(Path(edge_bundle["path"]).resolve()),
+                "status": str(edge_bundle["status"]),
+                "exists": Path(edge_bundle["path"]).exists(),
+                "selected_peer": int(edge_bundle["peer_root_id"]) in selected_root_set,
+            }
+            for edge_bundle in edge_bundles
+        ]
         missing_edge_paths = [
             str(edge_bundle["path"])
-            for edge_bundle in edge_bundles
+            for edge_bundle in edge_bundle_records
             if str(edge_bundle["status"]) == ASSET_STATUS_READY
-            and not Path(edge_bundle["path"]).exists()
+            and not bool(edge_bundle["exists"])
         ]
         if missing_edge_paths:
             raise ValueError(
@@ -1141,8 +1457,13 @@ def _resolve_circuit_assets(
                 "root_id": root_id,
                 "cell_type": str(record.get("cell_type", "")),
                 "project_role": str(record.get("project_role", "")),
+                "geometry_asset_records": geometry_asset_records,
                 "operator_bundle_status": str(operator_bundle["status"]),
-                "required_operator_assets": operator_paths,
+                "operator_asset_records": operator_asset_records,
+                "required_operator_assets": {
+                    asset_key: str(operator_asset_records[asset_key]["path"])
+                    for asset_key in operator_asset_records
+                },
                 "descriptor_sidecar_path": str(
                     Path(str(record.get("descriptor_sidecar_path", ""))).resolve()
                 ),
@@ -1150,24 +1471,22 @@ def _resolve_circuit_assets(
                     Path(str(record.get("qa_sidecar_path", ""))).resolve()
                 ),
                 "coupling_bundle_status": str(coupling_bundle["status"]),
+                "coupling_asset_records": coupling_asset_records,
                 "required_coupling_assets": {
-                    LOCAL_SYNAPSE_REGISTRY_KEY: str(bundle_paths[LOCAL_SYNAPSE_REGISTRY_KEY]),
-                    INCOMING_ANCHOR_MAP_KEY: str(bundle_paths[INCOMING_ANCHOR_MAP_KEY]),
-                    OUTGOING_ANCHOR_MAP_KEY: str(bundle_paths[OUTGOING_ANCHOR_MAP_KEY]),
-                    "coupling_index": str(bundle_paths["coupling_index"]),
+                    LOCAL_SYNAPSE_REGISTRY_KEY: str(
+                        coupling_asset_records[LOCAL_SYNAPSE_REGISTRY_KEY]["path"]
+                    ),
+                    INCOMING_ANCHOR_MAP_KEY: str(
+                        coupling_asset_records[INCOMING_ANCHOR_MAP_KEY]["path"]
+                    ),
+                    OUTGOING_ANCHOR_MAP_KEY: str(
+                        coupling_asset_records[OUTGOING_ANCHOR_MAP_KEY]["path"]
+                    ),
+                    COUPLING_INDEX_KEY: str(
+                        coupling_asset_records[COUPLING_INDEX_KEY]["path"]
+                    ),
                 },
-                "edge_bundle_paths": [
-                    {
-                        "pre_root_id": int(edge_bundle["pre_root_id"]),
-                        "post_root_id": int(edge_bundle["post_root_id"]),
-                        "peer_root_id": int(edge_bundle["peer_root_id"]),
-                        "relation_to_root": str(edge_bundle["relation_to_root"]),
-                        "path": str(Path(edge_bundle["path"]).resolve()),
-                        "status": str(edge_bundle["status"]),
-                        "selected_peer": int(edge_bundle["peer_root_id"]) in selected_root_set,
-                    }
-                    for edge_bundle in edge_bundles
-                ],
+                "edge_bundle_paths": edge_bundle_records,
                 "operator_bundle": operator_bundle,
                 "coupling_bundle": coupling_bundle,
             }
@@ -1283,6 +1602,7 @@ def _resolve_arm_seed_handling(
 def _build_model_configuration(
     *,
     arm_reference: Mapping[str, Any],
+    arm_payload: Mapping[str, Any],
     runtime_config: Mapping[str, Any],
     circuit_assets: Mapping[str, Any],
     topology_condition: str,
@@ -1307,10 +1627,12 @@ def _build_model_configuration(
         "surface_wave_reference": build_surface_wave_model_reference(surface_wave_model),
         "surface_wave_execution_plan": _build_surface_wave_execution_plan(
             arm_reference=arm_reference,
+            arm_payload=arm_payload,
             topology_condition=topology_condition,
             runtime_timebase=runtime_config["timebase"],
             circuit_assets=circuit_assets,
             surface_wave_model=surface_wave_model,
+            mixed_fidelity_config=runtime_config["mixed_fidelity"],
         ),
     }
 
@@ -1397,10 +1719,22 @@ def _build_model_configuration_asset_reference(
         }
     else:
         artifact_type = "surface_wave_model_configuration"
+        surface_wave_execution_plan = _require_mapping(
+            model_configuration.get("surface_wave_execution_plan"),
+            field_name="model_configuration.surface_wave_execution_plan",
+        )
         artifact_payload = {
             "model_mode": model_mode,
             "surface_wave_reference": model_configuration["surface_wave_reference"],
             "surface_wave_model": model_configuration["surface_wave_model"],
+            "topology_condition": surface_wave_execution_plan["topology_condition"],
+            "resolution": copy.deepcopy(surface_wave_execution_plan["resolution"]),
+            "hybrid_morphology": copy.deepcopy(
+                surface_wave_execution_plan["hybrid_morphology"]
+            ),
+            "mixed_fidelity": copy.deepcopy(
+                surface_wave_execution_plan["mixed_fidelity"]
+            ),
         }
     return build_selected_asset_reference(
         asset_role=MODEL_CONFIGURATION_ASSET_ROLE,
@@ -1415,10 +1749,12 @@ def _build_model_configuration_asset_reference(
 def _build_surface_wave_execution_plan(
     *,
     arm_reference: Mapping[str, Any],
+    arm_payload: Mapping[str, Any] | None = None,
     topology_condition: str,
     runtime_timebase: Mapping[str, Any],
     circuit_assets: Mapping[str, Any],
     surface_wave_model: Mapping[str, Any],
+    mixed_fidelity_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     arm_id = str(arm_reference["arm_id"])
     parameter_bundle = _require_mapping(
@@ -1561,11 +1897,19 @@ def _build_surface_wave_execution_plan(
             f"{list(SUPPORTED_SURFACE_WAVE_SPATIAL_SUPPORT)!r}, got {spatial_support!r}."
         )
 
-    selected_root_operator_assets = _resolve_surface_wave_operator_assets(
+    selected_root_assets = _require_sequence(
+        circuit_assets.get("selected_root_assets"),
+        field_name="circuit_assets.selected_root_assets",
+    )
+    mixed_fidelity_resolution = _resolve_surface_wave_mixed_fidelity_plan(
         arm_id=arm_id,
-        selected_root_assets=_require_sequence(
-            circuit_assets.get("selected_root_assets"),
-            field_name="circuit_assets.selected_root_assets",
+        arm_payload={} if arm_payload is None else arm_payload,
+        arm_reference=arm_reference,
+        selected_root_assets=selected_root_assets,
+        mixed_fidelity_config=(
+            _normalize_mixed_fidelity_config(None)
+            if mixed_fidelity_config is None
+            else mixed_fidelity_config
         ),
         anisotropy_mode=_normalize_identifier(
             anisotropy.get("mode"),
@@ -1576,13 +1920,17 @@ def _build_surface_wave_execution_plan(
             field_name="surface_wave_model.parameter_bundle.branching.mode",
         ),
     )
-    selected_root_coupling_assets = _resolve_surface_wave_coupling_assets(
-        arm_id=arm_id,
-        selected_root_assets=_require_sequence(
-            circuit_assets.get("selected_root_assets"),
-            field_name="circuit_assets.selected_root_assets",
-        ),
-    )
+    hybrid_morphology = mixed_fidelity_resolution["hybrid_morphology"]
+    selected_root_operator_assets = mixed_fidelity_resolution[
+        "selected_root_operator_assets"
+    ]
+    selected_root_coupling_assets = mixed_fidelity_resolution[
+        "selected_root_coupling_assets"
+    ]
+    selected_root_skeleton_assets = mixed_fidelity_resolution[
+        "selected_root_skeleton_assets"
+    ]
+    mixed_fidelity = mixed_fidelity_resolution["mixed_fidelity"]
 
     stability_guardrails = _build_surface_wave_stability_guardrails(
         arm_id=arm_id,
@@ -1593,6 +1941,9 @@ def _build_surface_wave_execution_plan(
         recovery_coupling_strength_per_ms2=recovery_coupling_strength_per_ms2,
         operator_assets=selected_root_operator_assets,
     )
+    all_surface_roots = (
+        hybrid_morphology["discovered_morphology_classes"] == [SURFACE_NEURON_CLASS]
+    )
 
     return {
         "topology_condition": topology_condition,
@@ -1600,11 +1951,26 @@ def _build_surface_wave_execution_plan(
         "coupling_inventory_hash": str(circuit_assets["circuit_asset_hash"]),
         "resolution": {
             "operator_family": operator_family,
-            "state_space": SURFACE_WAVE_STATE_RESOLUTION,
-            "coupling_anchor_resolution": SURFACE_WAVE_COUPLING_ANCHOR_RESOLUTION,
+            "state_space": (
+                SURFACE_WAVE_STATE_RESOLUTION
+                if all_surface_roots
+                else MIXED_FIDELITY_STATE_RESOLUTION
+            ),
+            "coupling_anchor_resolution": (
+                SURFACE_WAVE_COUPLING_ANCHOR_RESOLUTION
+                if all_surface_roots
+                else MIXED_FIDELITY_COUPLING_ANCHOR_RESOLUTION
+            ),
             "synaptic_spatial_support": spatial_support,
-            "transfer_operator_required": True,
+            "transfer_operator_required": bool(selected_root_operator_assets),
+            "transfer_operator_requirement_scope": (
+                "all_selected_roots"
+                if all_surface_roots
+                else "surface_neuron_roots_only"
+            ),
         },
+        "hybrid_morphology": hybrid_morphology,
+        "mixed_fidelity": mixed_fidelity,
         "solver": {
             "family": solver_family,
             "shared_timebase_mode": shared_timebase_mode,
@@ -1617,10 +1983,907 @@ def _build_surface_wave_execution_plan(
                 SURFACE_WAVE_MAX_INTERNAL_SUBSTEPS_PER_OUTPUT_STEP
             ),
         },
+        "selected_root_operator_assets_scope": (
+            "all_selected_roots"
+            if all_surface_roots
+            else "surface_neuron_roots_only"
+        ),
         "selected_root_operator_assets": selected_root_operator_assets,
+        "selected_root_coupling_assets_scope": (
+            "all_selected_roots"
+            if all_surface_roots
+            else "surface_neuron_roots_only"
+        ),
         "selected_root_coupling_assets": selected_root_coupling_assets,
+        "selected_root_skeleton_assets_scope": (
+            "skeleton_neuron_roots_only"
+            if selected_root_skeleton_assets
+            else "none"
+        ),
+        "selected_root_skeleton_assets": selected_root_skeleton_assets,
         "stability_guardrails": stability_guardrails,
     }
+
+
+def _resolve_surface_wave_mixed_fidelity_plan(
+    *,
+    arm_id: str,
+    arm_payload: Mapping[str, Any],
+    arm_reference: Mapping[str, Any],
+    selected_root_assets: Sequence[Mapping[str, Any]],
+    mixed_fidelity_config: Mapping[str, Any],
+    anisotropy_mode: str,
+    branching_mode: str,
+) -> dict[str, Any]:
+    normalized_config = _require_mapping(
+        mixed_fidelity_config,
+        field_name="simulation.mixed_fidelity",
+    )
+    assignment_policy = _require_mapping(
+        normalized_config.get("assignment_policy"),
+        field_name="simulation.mixed_fidelity.assignment_policy",
+    )
+    arm_fidelity_assignment = _normalize_arm_fidelity_assignment(
+        arm_payload.get("fidelity_assignment"),
+        field_name=f"surface_wave arm {arm_id!r} fidelity_assignment",
+    )
+    selected_root_ids = [
+        int(
+            _require_mapping(
+                item,
+                field_name=f"surface_wave arm {arm_id!r} selected_root_assets",
+            )["root_id"]
+        )
+        for item in selected_root_assets
+    ]
+    unknown_override_roots = sorted(
+        set(arm_fidelity_assignment["root_overrides_by_root"]) - set(selected_root_ids)
+    )
+    if unknown_override_roots:
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} fidelity_assignment.root_overrides "
+            f"references unselected roots {unknown_override_roots!r}."
+        )
+
+    registry_default_class_by_root: dict[int, str] = {}
+    resolved_source_by_root: dict[int, str] = {}
+    root_records: list[dict[str, Any]] = []
+    for index, root_asset in enumerate(selected_root_assets):
+        root_mapping = _require_mapping(
+            root_asset,
+            field_name=f"circuit_assets.selected_root_assets[{index}]",
+        )
+        root_id = int(root_mapping["root_id"])
+        registry_default_class = normalize_hybrid_morphology_class(
+            root_mapping.get("project_role"),
+            field_name=f"circuit_assets.selected_root_assets[{index}].project_role",
+        )
+        registry_default_class_by_root[root_id] = registry_default_class
+        root_override = arm_fidelity_assignment["root_overrides_by_root"].get(root_id)
+        default_override = arm_fidelity_assignment["default_morphology_class"]
+        if root_override is not None:
+            realized_class = root_override
+            resolved_from = ARM_ROOT_OVERRIDE_ASSIGNMENT_SOURCE
+        elif default_override is not None:
+            realized_class = default_override
+            resolved_from = ARM_DEFAULT_CLASS_ASSIGNMENT_SOURCE
+        else:
+            realized_class = registry_default_class
+            resolved_from = REGISTRY_PROJECT_ROLE_ASSIGNMENT_SOURCE
+        resolved_source_by_root[root_id] = resolved_from
+        root_records.append(
+            {
+                "root_id": root_id,
+                "cell_type": str(root_mapping.get("cell_type", "")),
+                "morphology_class": realized_class,
+            }
+        )
+
+    hybrid_morphology = build_hybrid_morphology_plan_metadata(
+        root_records=root_records,
+        model_mode=str(arm_reference["model_mode"]),
+    )
+    hybrid_morphology_by_root = {
+        int(item["root_id"]): item
+        for item in hybrid_morphology["per_root_class_metadata"]
+    }
+
+    per_root_assignments: list[dict[str, Any]] = []
+    surface_operator_assets: list[dict[str, Any]] = []
+    surface_coupling_assets: list[dict[str, Any]] = []
+    skeleton_runtime_assets: list[dict[str, Any]] = []
+    class_counts = {
+        class_name: 0
+        for class_name in HYBRID_MORPHOLOGY_PROMOTION_ORDER
+    }
+    for index, root_asset in enumerate(selected_root_assets):
+        root_mapping = _require_mapping(
+            root_asset,
+            field_name=f"circuit_assets.selected_root_assets[{index}]",
+        )
+        root_id = int(root_mapping["root_id"])
+        hybrid_record = copy.deepcopy(hybrid_morphology_by_root[root_id])
+        morphology_class = str(hybrid_record["morphology_class"])
+        class_counts[morphology_class] += 1
+
+        required_local_assets = _build_local_asset_reference_map(
+            root_mapping=root_mapping,
+            asset_keys=hybrid_record["required_local_assets"],
+        )
+        optional_local_assets = _build_local_asset_reference_map(
+            root_mapping=root_mapping,
+            asset_keys=hybrid_record["optional_local_assets"],
+        )
+        _validate_required_local_assets(
+            arm_id=arm_id,
+            root_id=root_id,
+            morphology_class=morphology_class,
+            asset_references=required_local_assets,
+        )
+
+        operator_asset = None
+        skeleton_runtime_asset = None
+        if morphology_class == SURFACE_NEURON_CLASS:
+            operator_asset = _resolve_surface_wave_operator_asset(
+                arm_id=arm_id,
+                root_mapping=root_mapping,
+                anisotropy_mode=anisotropy_mode,
+                branching_mode=branching_mode,
+                hybrid_morphology=hybrid_record,
+            )
+            coupling_asset = _resolve_surface_wave_coupling_asset(
+                arm_id=arm_id,
+                root_mapping=root_mapping,
+                hybrid_morphology=hybrid_record,
+            )
+            surface_operator_assets.append(copy.deepcopy(operator_asset))
+            surface_coupling_assets.append(copy.deepcopy(coupling_asset))
+            realized_anchor_mode = SURFACE_PATCH_CLOUD_MODE
+        elif morphology_class == SKELETON_NEURON_CLASS:
+            coupling_asset = _resolve_skeleton_neuron_coupling_asset(
+                arm_id=arm_id,
+                root_mapping=root_mapping,
+                hybrid_morphology=hybrid_record,
+            )
+            skeleton_runtime_asset = _resolve_skeleton_runtime_asset(
+                arm_id=arm_id,
+                root_mapping=root_mapping,
+                hybrid_morphology=hybrid_record,
+            )
+            skeleton_runtime_assets.append(
+                {
+                    **copy.deepcopy(skeleton_runtime_asset),
+                    "hybrid_morphology": copy.deepcopy(hybrid_record),
+                    "selected_edge_bundle_paths": copy.deepcopy(
+                        coupling_asset["selected_edge_bundle_paths"]
+                    ),
+                }
+            )
+            realized_anchor_mode = SKELETON_SEGMENT_CLOUD_MODE
+        else:
+            coupling_asset = _resolve_point_neuron_coupling_asset(
+                arm_id=arm_id,
+                root_mapping=root_mapping,
+                hybrid_morphology=hybrid_record,
+            )
+            realized_anchor_mode = POINT_NEURON_LUMPED_MODE
+
+        per_root_assignments.append(
+            {
+                "root_id": root_id,
+                "cell_type": str(root_mapping.get("cell_type", "")),
+                "source_project_role": str(root_mapping.get("project_role", "")),
+                "canonical_project_role": str(hybrid_record["canonical_project_role"]),
+                "registry_default_morphology_class": registry_default_class_by_root[root_id],
+                "realized_morphology_class": morphology_class,
+                "assignment_provenance": _build_assignment_provenance(
+                    registry_default_morphology_class=registry_default_class_by_root[
+                        root_id
+                    ],
+                    arm_default_morphology_class=arm_fidelity_assignment[
+                        "default_morphology_class"
+                    ],
+                    arm_root_override_morphology_class=arm_fidelity_assignment[
+                        "root_overrides_by_root"
+                    ].get(root_id),
+                    assignment_policy=assignment_policy,
+                    resolved_from=resolved_source_by_root[root_id],
+                ),
+                "approximation_route": _build_approximation_route(
+                    registry_default_morphology_class=registry_default_class_by_root[
+                        root_id
+                    ],
+                    realized_morphology_class=morphology_class,
+                ),
+                "state_resolution": copy.deepcopy(
+                    hybrid_record["realized_state_space"]
+                ),
+                "readout_surface": copy.deepcopy(hybrid_record["readout_surface"]),
+                "coupling_resolution": {
+                    **copy.deepcopy(hybrid_record["coupling_anchor_resolution"]),
+                    "realized_anchor_mode": realized_anchor_mode,
+                    "topology_family": str(coupling_asset["topology_family"]),
+                    "fallback_hierarchy": copy.deepcopy(
+                        coupling_asset["fallback_hierarchy"]
+                    ),
+                },
+                "required_local_assets": required_local_assets,
+                "optional_local_assets": optional_local_assets,
+                "surface_operator_asset": (
+                    None if operator_asset is None else copy.deepcopy(operator_asset)
+                ),
+                "skeleton_runtime_asset": (
+                    None
+                    if skeleton_runtime_asset is None
+                    else copy.deepcopy(skeleton_runtime_asset)
+                ),
+                "coupling_asset": copy.deepcopy(coupling_asset),
+            }
+        )
+
+    return {
+        "hybrid_morphology": hybrid_morphology,
+        "mixed_fidelity": {
+            "plan_version": MIXED_FIDELITY_PLAN_VERSION,
+            "assignment_ordering": normalized_config["assignment_ordering"],
+            "assignment_policy": copy.deepcopy(assignment_policy),
+            "arm_overrides": {
+                "default_morphology_class": arm_fidelity_assignment[
+                    "default_morphology_class"
+                ],
+                "root_overrides": copy.deepcopy(
+                    arm_fidelity_assignment["root_overrides"]
+                ),
+            },
+            "resolved_class_counts": {
+                class_name: int(class_counts[class_name])
+                for class_name in HYBRID_MORPHOLOGY_PROMOTION_ORDER
+                if class_counts[class_name] > 0
+            },
+            "per_root_assignments": per_root_assignments,
+        },
+        "selected_root_operator_assets": surface_operator_assets,
+        "selected_root_coupling_assets": surface_coupling_assets,
+        "selected_root_skeleton_assets": skeleton_runtime_assets,
+    }
+
+
+def _build_assignment_provenance(
+    *,
+    registry_default_morphology_class: str,
+    arm_default_morphology_class: str | None,
+    arm_root_override_morphology_class: str | None,
+    assignment_policy: Mapping[str, Any],
+    resolved_from: str,
+) -> dict[str, Any]:
+    return {
+        "default_source": str(assignment_policy["default_source"]),
+        "registry_default_morphology_class": registry_default_morphology_class,
+        "arm_default_morphology_class": arm_default_morphology_class,
+        "arm_root_override_morphology_class": arm_root_override_morphology_class,
+        "promotion_mode": str(assignment_policy["promotion_mode"]),
+        "demotion_mode": str(assignment_policy["demotion_mode"]),
+        "policy_applied": False,
+        "resolved_from": resolved_from,
+    }
+
+
+def _build_approximation_route(
+    *,
+    registry_default_morphology_class: str,
+    realized_morphology_class: str,
+) -> dict[str, Any]:
+    rank_delta = (
+        _morphology_class_rank(realized_morphology_class)
+        - _morphology_class_rank(registry_default_morphology_class)
+    )
+    if rank_delta == 0:
+        relation = "same_as_registry_default"
+    elif rank_delta > 0:
+        relation = "promoted_from_registry_default"
+    else:
+        relation = "demoted_from_registry_default"
+    return {
+        "route_id": (
+            f"{registry_default_morphology_class}_to_"
+            f"{realized_morphology_class}"
+        ),
+        "registry_default_morphology_class": registry_default_morphology_class,
+        "realized_morphology_class": realized_morphology_class,
+        "relation_to_registry_default": relation,
+        "promotion_rank_delta": rank_delta,
+        "policy_action": "none",
+    }
+
+
+def _morphology_class_rank(value: str) -> int:
+    return HYBRID_MORPHOLOGY_PROMOTION_ORDER.index(value)
+
+
+def _build_local_asset_reference_map(
+    *,
+    root_mapping: Mapping[str, Any],
+    asset_keys: Sequence[Any],
+) -> dict[str, Any]:
+    return {
+        str(asset_key): copy.deepcopy(
+            _resolve_local_asset_reference(
+                root_mapping=root_mapping,
+                asset_key=str(asset_key),
+            )
+        )
+        for asset_key in asset_keys
+    }
+
+
+def _resolve_local_asset_reference(
+    *,
+    root_mapping: Mapping[str, Any],
+    asset_key: str,
+) -> Any:
+    geometry_asset_records = _require_mapping(
+        root_mapping.get("geometry_asset_records"),
+        field_name="selected_root_asset.geometry_asset_records",
+    )
+    operator_asset_records = _require_mapping(
+        root_mapping.get("operator_asset_records"),
+        field_name="selected_root_asset.operator_asset_records",
+    )
+    coupling_asset_records = _require_mapping(
+        root_mapping.get("coupling_asset_records"),
+        field_name="selected_root_asset.coupling_asset_records",
+    )
+    if asset_key == "raw_mesh":
+        return _require_mapping(
+            geometry_asset_records[RAW_MESH_KEY],
+            field_name="selected_root_asset.raw_mesh",
+        )
+    if asset_key == "raw_swc_skeleton":
+        return _require_mapping(
+            geometry_asset_records[RAW_SKELETON_KEY],
+            field_name="selected_root_asset.raw_skeleton",
+        )
+    if asset_key == SKELETON_RUNTIME_ASSET_KEY:
+        return _resolve_skeleton_runtime_asset_reference(
+            root_mapping=root_mapping,
+        )
+    if asset_key == "processed_surface_mesh":
+        return _require_mapping(
+            geometry_asset_records[SIMPLIFIED_MESH_KEY],
+            field_name="selected_root_asset.processed_surface_mesh",
+        )
+    if asset_key == "geometry_descriptors":
+        return _require_mapping(
+            geometry_asset_records[DESCRIPTOR_SIDECAR_KEY],
+            field_name="selected_root_asset.geometry_descriptors",
+        )
+    if asset_key == "geometry_qa":
+        return _require_mapping(
+            geometry_asset_records[QA_SIDECAR_KEY],
+            field_name="selected_root_asset.geometry_qa",
+        )
+    if asset_key == "fine_surface_operator":
+        return _require_mapping(
+            operator_asset_records[FINE_OPERATOR_KEY],
+            field_name="selected_root_asset.fine_surface_operator",
+        )
+    if asset_key == "coarse_patch_operator":
+        return _require_mapping(
+            operator_asset_records[COARSE_OPERATOR_KEY],
+            field_name="selected_root_asset.coarse_patch_operator",
+        )
+    if asset_key == "surface_transfer_operators":
+        return _require_mapping(
+            operator_asset_records[TRANSFER_OPERATORS_KEY],
+            field_name="selected_root_asset.surface_transfer_operators",
+        )
+    if asset_key == "surface_operator_metadata":
+        return _require_mapping(
+            operator_asset_records[OPERATOR_METADATA_KEY],
+            field_name="selected_root_asset.surface_operator_metadata",
+        )
+    if asset_key == "root_local_synapse_registry":
+        return _require_mapping(
+            coupling_asset_records[LOCAL_SYNAPSE_REGISTRY_KEY],
+            field_name="selected_root_asset.root_local_synapse_registry",
+        )
+    if asset_key == "incoming_anchor_map":
+        return _require_mapping(
+            coupling_asset_records[INCOMING_ANCHOR_MAP_KEY],
+            field_name="selected_root_asset.incoming_anchor_map",
+        )
+    if asset_key == "outgoing_anchor_map":
+        return _require_mapping(
+            coupling_asset_records[OUTGOING_ANCHOR_MAP_KEY],
+            field_name="selected_root_asset.outgoing_anchor_map",
+        )
+    if asset_key == "root_coupling_index":
+        return _require_mapping(
+            coupling_asset_records[COUPLING_INDEX_KEY],
+            field_name="selected_root_asset.root_coupling_index",
+        )
+    if asset_key == "selected_edge_coupling_bundles":
+        return [
+            copy.deepcopy(item)
+            for item in _selected_peer_edge_bundles(root_mapping)
+        ]
+    raise ValueError(f"Unsupported local asset key {asset_key!r}.")
+
+
+def _validate_required_local_assets(
+    *,
+    arm_id: str,
+    root_id: int,
+    morphology_class: str,
+    asset_references: Mapping[str, Any],
+) -> None:
+    for asset_key, asset_reference in asset_references.items():
+        if asset_key == "selected_edge_coupling_bundles":
+            missing_paths = [
+                str(item["path"])
+                for item in _require_sequence(
+                    asset_reference,
+                    field_name=(
+                        f"surface_wave arm {arm_id!r} required "
+                        f"selected_edge_coupling_bundles"
+                    ),
+                )
+                if str(item["status"]) != ASSET_STATUS_READY or not bool(item["exists"])
+            ]
+            if missing_paths:
+                raise ValueError(
+                    f"surface_wave arm {arm_id!r} requested morphology_class "
+                    f"{morphology_class!r} for root {root_id}, but selected edge "
+                    f"coupling bundles are unavailable at {missing_paths!r}."
+                )
+            continue
+        asset_record = _require_mapping(
+            asset_reference,
+            field_name=(
+                f"surface_wave arm {arm_id!r} required local asset {asset_key!r}"
+            ),
+        )
+        if str(asset_record["status"]) != ASSET_STATUS_READY or not bool(
+            asset_record["exists"]
+        ):
+            raise ValueError(
+                f"surface_wave arm {arm_id!r} requested morphology_class "
+                f"{morphology_class!r} for root {root_id}, but required local asset "
+                f"{asset_key!r} is unavailable at {asset_record['path']} with status "
+                f"{asset_record['status']!r}."
+            )
+
+
+def _selected_peer_edge_bundles(
+    root_mapping: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    return [
+        copy.deepcopy(_require_mapping(item, field_name="edge_bundle_paths"))
+        for item in _require_sequence(
+            root_mapping.get("edge_bundle_paths"),
+            field_name="selected_root_asset.edge_bundle_paths",
+        )
+        if bool(_require_mapping(item, field_name="edge_bundle_paths").get("selected_peer"))
+    ]
+
+
+def _resolve_surface_wave_operator_asset(
+    *,
+    arm_id: str,
+    root_mapping: Mapping[str, Any],
+    anisotropy_mode: str,
+    branching_mode: str,
+    hybrid_morphology: Mapping[str, Any],
+) -> dict[str, Any]:
+    root_id = int(root_mapping["root_id"])
+    operator_bundle = _require_mapping(
+        root_mapping.get("operator_bundle"),
+        field_name=f"circuit_assets.selected_root_assets[{root_id}].operator_bundle",
+    )
+    operator_status = _normalize_nonempty_string(
+        root_mapping.get("operator_bundle_status", operator_bundle.get("status")),
+        field_name=f"circuit_assets.selected_root_assets[{root_id}].operator_bundle_status",
+    )
+    if operator_status != ASSET_STATUS_READY:
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requires ready operator bundles for "
+            f"selected root {root_id}, found status {operator_status!r}."
+        )
+    operator_asset_records = _require_mapping(
+        root_mapping.get("operator_asset_records"),
+        field_name=f"circuit_assets.selected_root_assets[{root_id}].operator_asset_records",
+    )
+    missing_operator_paths = [
+        asset_key
+        for asset_key in (
+            FINE_OPERATOR_KEY,
+            COARSE_OPERATOR_KEY,
+            TRANSFER_OPERATORS_KEY,
+            OPERATOR_METADATA_KEY,
+        )
+        if not bool(
+            _require_mapping(
+                operator_asset_records.get(asset_key),
+                field_name=(
+                    f"circuit_assets.selected_root_assets[{root_id}]."
+                    f"operator_asset_records.{asset_key}"
+                ),
+            ).get("exists")
+        )
+    ]
+    if missing_operator_paths:
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} is missing local operator assets "
+            f"{missing_operator_paths!r} for selected root {root_id}."
+        )
+
+    metadata_path = Path(
+        str(
+            _require_mapping(
+                operator_asset_records[OPERATOR_METADATA_KEY],
+                field_name=f"operator_asset_records[{root_id}].operator_metadata",
+            )["path"]
+        )
+    ).resolve()
+    loaded_operator_metadata = load_operator_bundle_metadata(metadata_path)
+    if loaded_operator_metadata != dict(operator_bundle):
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} found operator metadata drift for root "
+            f"{root_id}: manifest record does not match {metadata_path}."
+        )
+
+    normalization = _normalize_nonempty_string(
+        operator_bundle.get("normalization"),
+        field_name=f"operator_bundle[{root_id}].normalization",
+    )
+    if normalization != "mass_normalized":
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requires mass_normalized operators, but "
+            f"root {root_id} exposes normalization {normalization!r}."
+        )
+    transfer_operators = _require_mapping(
+        operator_bundle.get("transfer_operators"),
+        field_name=f"operator_bundle[{root_id}].transfer_operators",
+    )
+    surface_membership = _require_mapping(
+        transfer_operators.get("surface_to_patch_membership"),
+        field_name=(
+            f"operator_bundle[{root_id}].transfer_operators.surface_to_patch_membership"
+        ),
+    )
+    fine_to_coarse = _require_mapping(
+        transfer_operators.get("fine_to_coarse_restriction"),
+        field_name=(
+            f"operator_bundle[{root_id}].transfer_operators.fine_to_coarse_restriction"
+        ),
+    )
+    if not bool(surface_membership.get("available")) or not bool(
+        fine_to_coarse.get("available")
+    ):
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requires surface-to-patch transfer "
+            f"operators for root {root_id}, but the operator bundle does not "
+            "expose them as available."
+        )
+
+    anisotropy_model = _normalize_nonempty_string(
+        operator_bundle.get("anisotropy_model"),
+        field_name=f"operator_bundle[{root_id}].anisotropy_model",
+    )
+    if anisotropy_mode == "operator_embedded" and anisotropy_model == "isotropic":
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requested anisotropy.mode "
+            "'operator_embedded' but root "
+            f"{root_id} operator bundle only exposes anisotropy_model 'isotropic'."
+        )
+
+    descriptor_sidecar = _require_mapping(
+        _resolve_local_asset_reference(
+            root_mapping=root_mapping,
+            asset_key="geometry_descriptors",
+        ),
+        field_name=f"surface_wave arm {arm_id!r} geometry_descriptors",
+    )
+    descriptor_sidecar_path = Path(str(descriptor_sidecar["path"])).resolve()
+    if branching_mode != "disabled" and not descriptor_sidecar_path.exists():
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requested branching.mode {branching_mode!r} "
+            f"but root {root_id} is missing geometry descriptors at "
+            f"{descriptor_sidecar_path}."
+        )
+
+    spectral_radius = _estimate_surface_wave_operator_spectral_radius(
+        operator_path=Path(
+            str(
+                _require_mapping(
+                    operator_asset_records[FINE_OPERATOR_KEY],
+                    field_name=f"operator_asset_records[{root_id}].fine_operator",
+                )["path"]
+            )
+        ).resolve(),
+        arm_id=arm_id,
+        root_id=root_id,
+    )
+    return {
+        "root_id": root_id,
+        "hybrid_morphology": copy.deepcopy(hybrid_morphology),
+        "operator_bundle_status": operator_status,
+        "preferred_discretization_family": str(
+            operator_bundle["preferred_discretization_family"]
+        ),
+        "discretization_family": str(operator_bundle["discretization_family"]),
+        "mass_treatment": str(operator_bundle["mass_treatment"]),
+        "normalization": normalization,
+        "boundary_condition_mode": str(operator_bundle["boundary_condition_mode"]),
+        "anisotropy_model": anisotropy_model,
+        "fallback_policy": copy.deepcopy(operator_bundle["fallback_policy"]),
+        "fine_operator_path": str(
+            Path(str(operator_asset_records[FINE_OPERATOR_KEY]["path"])).resolve()
+        ),
+        "coarse_operator_path": str(
+            Path(str(operator_asset_records[COARSE_OPERATOR_KEY]["path"])).resolve()
+        ),
+        "transfer_operator_path": str(
+            Path(str(operator_asset_records[TRANSFER_OPERATORS_KEY]["path"])).resolve()
+        ),
+        "operator_metadata_path": str(metadata_path),
+        "descriptor_sidecar_path": str(descriptor_sidecar_path),
+        "surface_to_patch_membership_available": True,
+        "fine_to_coarse_restriction_available": True,
+        "coarse_to_fine_prolongation_available": bool(
+            _require_mapping(
+                transfer_operators.get("coarse_to_fine_prolongation"),
+                field_name=(
+                    "operator_bundle"
+                    f"[{root_id}].transfer_operators.coarse_to_fine_prolongation"
+                ),
+            ).get("available")
+        ),
+        "normalized_state_transfer_available": bool(
+            _require_mapping(
+                transfer_operators.get("normalized_state_transfer"),
+                field_name=(
+                    "operator_bundle"
+                    f"[{root_id}].transfer_operators.normalized_state_transfer"
+                ),
+            ).get("available")
+        ),
+        "spectral_radius": spectral_radius,
+    }
+
+
+def _resolve_skeleton_runtime_asset_reference(
+    *,
+    root_mapping: Mapping[str, Any],
+) -> dict[str, Any]:
+    geometry_asset_records = _require_mapping(
+        root_mapping.get("geometry_asset_records"),
+        field_name="selected_root_asset.geometry_asset_records",
+    )
+    raw_skeleton_record = _require_mapping(
+        geometry_asset_records[RAW_SKELETON_KEY],
+        field_name="selected_root_asset.raw_skeleton",
+    )
+    root_id = int(root_mapping["root_id"])
+    processed_graph_dir = Path(
+        str(
+            _require_mapping(
+                geometry_asset_records[DESCRIPTOR_SIDECAR_KEY],
+                field_name="selected_root_asset.geometry_descriptors",
+            )["path"]
+        )
+    ).resolve().parent
+    if str(raw_skeleton_record["status"]) != ASSET_STATUS_READY or not bool(
+        raw_skeleton_record["exists"]
+    ):
+        paths = build_skeleton_runtime_asset_paths(
+            root_id,
+            processed_graph_dir=processed_graph_dir,
+        )
+        return {
+            "root_id": root_id,
+            "contract_version": None,
+            "approximation_family": None,
+            "graph_operator_family": None,
+            "state_layout": None,
+            "projection_surface": None,
+            "projection_layout": None,
+            "source_injection_strategy": None,
+            "raw_skeleton_path": str(Path(str(raw_skeleton_record["path"])).resolve()),
+            "data_path": str(paths.data_path),
+            "metadata_path": str(paths.metadata_path),
+            "path": str(paths.metadata_path),
+            "status": str(raw_skeleton_record["status"]),
+            "exists": bool(paths.metadata_path.exists()),
+            "asset_hash": None,
+            "node_count": 0,
+            "edge_count": 0,
+            "branch_point_count": 0,
+            "leaf_count": 0,
+            "readout_semantics": {},
+            "operator": {},
+        }
+    return build_skeleton_runtime_asset_record(
+        root_id=root_id,
+        raw_skeleton_path=raw_skeleton_record["path"],
+        processed_graph_dir=processed_graph_dir,
+    )
+
+
+def _resolve_root_coupling_asset_record(
+    *,
+    arm_id: str,
+    root_mapping: Mapping[str, Any],
+    hybrid_morphology: Mapping[str, Any],
+) -> dict[str, Any]:
+    root_id = int(root_mapping["root_id"])
+    coupling_bundle = _require_mapping(
+        root_mapping.get("coupling_bundle"),
+        field_name=f"circuit_assets.selected_root_assets[{root_id}].coupling_bundle",
+    )
+    topology_family = _normalize_nonempty_string(
+        coupling_bundle.get("topology_family"),
+        field_name=f"coupling_bundle[{root_id}].topology_family",
+    )
+    fallback_hierarchy = [
+        _normalize_nonempty_string(
+            item,
+            field_name=f"coupling_bundle[{root_id}].fallback_hierarchy[{index}]",
+        )
+        for index, item in enumerate(
+            _require_sequence(
+                coupling_bundle.get("fallback_hierarchy"),
+                field_name=f"coupling_bundle[{root_id}].fallback_hierarchy",
+            )
+        )
+    ]
+    selected_edge_bundle_paths = _selected_peer_edge_bundles(root_mapping)
+    blocked_selected_edges = [
+        str(edge_bundle["path"])
+        for edge_bundle in selected_edge_bundle_paths
+        if str(edge_bundle["status"]) != ASSET_STATUS_READY or not bool(edge_bundle["exists"])
+    ]
+    if blocked_selected_edges:
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requires ready edge coupling bundles "
+            f"for selected peers of root {root_id}, but found non-ready entries "
+            f"{blocked_selected_edges!r}."
+        )
+
+    coupling_asset_records = _require_mapping(
+        root_mapping.get("coupling_asset_records"),
+        field_name=f"circuit_assets.selected_root_assets[{root_id}].coupling_asset_records",
+    )
+    return {
+        "root_id": root_id,
+        "hybrid_morphology": copy.deepcopy(hybrid_morphology),
+        "topology_family": topology_family,
+        "fallback_hierarchy": fallback_hierarchy,
+        "kernel_family": str(coupling_bundle["kernel_family"]),
+        "sign_representation": str(coupling_bundle["sign_representation"]),
+        "delay_representation": str(coupling_bundle["delay_representation"]),
+        "delay_model": str(coupling_bundle["delay_model"]),
+        "aggregation_rule": str(coupling_bundle["aggregation_rule"]),
+        "missing_geometry_policy": str(coupling_bundle["missing_geometry_policy"]),
+        "source_cloud_normalization": str(
+            coupling_bundle["source_cloud_normalization"]
+        ),
+        "target_cloud_normalization": str(
+            coupling_bundle["target_cloud_normalization"]
+        ),
+        "local_synapse_registry_path": str(
+            Path(
+                str(coupling_asset_records[LOCAL_SYNAPSE_REGISTRY_KEY]["path"])
+            ).resolve()
+        ),
+        "incoming_anchor_map_path": str(
+            Path(str(coupling_asset_records[INCOMING_ANCHOR_MAP_KEY]["path"])).resolve()
+        ),
+        "outgoing_anchor_map_path": str(
+            Path(str(coupling_asset_records[OUTGOING_ANCHOR_MAP_KEY]["path"])).resolve()
+        ),
+        "coupling_index_path": str(
+            Path(str(coupling_asset_records[COUPLING_INDEX_KEY]["path"])).resolve()
+        ),
+        "selected_edge_bundle_paths": selected_edge_bundle_paths,
+    }
+
+
+def _resolve_surface_wave_coupling_asset(
+    *,
+    arm_id: str,
+    root_mapping: Mapping[str, Any],
+    hybrid_morphology: Mapping[str, Any],
+) -> dict[str, Any]:
+    asset = _resolve_root_coupling_asset_record(
+        arm_id=arm_id,
+        root_mapping=root_mapping,
+        hybrid_morphology=hybrid_morphology,
+    )
+    root_id = int(root_mapping["root_id"])
+    if asset["topology_family"] != DISTRIBUTED_PATCH_CLOUD_TOPOLOGY or (
+        not asset["fallback_hierarchy"]
+        or asset["fallback_hierarchy"][0] != SURFACE_PATCH_CLOUD_MODE
+    ):
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requires coupling topology_family "
+            f"{DISTRIBUTED_PATCH_CLOUD_TOPOLOGY!r} with leading fallback "
+            f"{SURFACE_PATCH_CLOUD_MODE!r}, but root {root_id} declares "
+            f"topology_family {asset['topology_family']!r} and fallback_hierarchy "
+            f"{asset['fallback_hierarchy']!r}."
+        )
+    return asset
+
+
+def _resolve_skeleton_neuron_coupling_asset(
+    *,
+    arm_id: str,
+    root_mapping: Mapping[str, Any],
+    hybrid_morphology: Mapping[str, Any],
+) -> dict[str, Any]:
+    asset = _resolve_root_coupling_asset_record(
+        arm_id=arm_id,
+        root_mapping=root_mapping,
+        hybrid_morphology=hybrid_morphology,
+    )
+    root_id = int(root_mapping["root_id"])
+    if SKELETON_SEGMENT_CLOUD_MODE not in asset["fallback_hierarchy"]:
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requested morphology_class "
+            f"{SKELETON_NEURON_CLASS!r} for root {root_id}, but coupling_bundle "
+            f"fallback_hierarchy {asset['fallback_hierarchy']!r} does not expose "
+            f"{SKELETON_SEGMENT_CLOUD_MODE!r}."
+        )
+    return asset
+
+
+def _resolve_skeleton_runtime_asset(
+    *,
+    arm_id: str,
+    root_mapping: Mapping[str, Any],
+    hybrid_morphology: Mapping[str, Any],
+) -> dict[str, Any]:
+    asset = _resolve_local_asset_reference(
+        root_mapping=root_mapping,
+        asset_key=SKELETON_RUNTIME_ASSET_KEY,
+    )
+    if str(asset["status"]) != ASSET_STATUS_READY or not bool(asset["exists"]):
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requested morphology_class "
+            f"{SKELETON_NEURON_CLASS!r} for root {int(root_mapping['root_id'])}, but "
+            f"required local asset {SKELETON_RUNTIME_ASSET_KEY!r} is unavailable at "
+            f"{asset['path']} with status {asset['status']!r}."
+        )
+    return {
+        **copy.deepcopy(asset),
+        "hybrid_morphology": copy.deepcopy(hybrid_morphology),
+    }
+
+
+def _resolve_point_neuron_coupling_asset(
+    *,
+    arm_id: str,
+    root_mapping: Mapping[str, Any],
+    hybrid_morphology: Mapping[str, Any],
+) -> dict[str, Any]:
+    asset = _resolve_root_coupling_asset_record(
+        arm_id=arm_id,
+        root_mapping=root_mapping,
+        hybrid_morphology=hybrid_morphology,
+    )
+    root_id = int(root_mapping["root_id"])
+    if (
+        asset["topology_family"] != POINT_TO_POINT_TOPOLOGY
+        and POINT_NEURON_LUMPED_MODE not in asset["fallback_hierarchy"]
+    ):
+        raise ValueError(
+            f"surface_wave arm {arm_id!r} requested morphology_class "
+            f"{POINT_NEURON_CLASS!r} for root {root_id}, but coupling_bundle "
+            f"topology_family {asset['topology_family']!r} with fallback_hierarchy "
+            f"{asset['fallback_hierarchy']!r} does not support "
+            f"{POINT_NEURON_LUMPED_MODE!r} anchors."
+        )
+    return asset
 
 
 def _resolve_surface_wave_operator_assets(
@@ -1629,6 +2892,7 @@ def _resolve_surface_wave_operator_assets(
     selected_root_assets: Sequence[Mapping[str, Any]],
     anisotropy_mode: str,
     branching_mode: str,
+    hybrid_morphology_by_root: Mapping[int, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     resolved: list[dict[str, Any]] = []
     for index, root_asset in enumerate(selected_root_assets):
@@ -1637,169 +2901,14 @@ def _resolve_surface_wave_operator_assets(
             field_name=f"circuit_assets.selected_root_assets[{index}]",
         )
         root_id = int(root_mapping["root_id"])
-        operator_bundle = _require_mapping(
-            root_mapping.get("operator_bundle"),
-            field_name=(
-                f"circuit_assets.selected_root_assets[{index}].operator_bundle"
-            ),
-        )
-        operator_status = _normalize_nonempty_string(
-            root_mapping.get("operator_bundle_status", operator_bundle.get("status")),
-            field_name=(
-                f"circuit_assets.selected_root_assets[{index}].operator_bundle_status"
-            ),
-        )
-        if operator_status != ASSET_STATUS_READY:
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} requires ready operator bundles for "
-                f"selected root {root_id}, found status {operator_status!r}."
-            )
-        operator_paths = _require_mapping(
-            root_mapping.get("required_operator_assets"),
-            field_name=(
-                f"circuit_assets.selected_root_assets[{index}].required_operator_assets"
-            ),
-        )
-        missing_operator_paths = [
-            asset_key
-            for asset_key in (
-                FINE_OPERATOR_KEY,
-                TRANSFER_OPERATORS_KEY,
-                OPERATOR_METADATA_KEY,
-            )
-            if not Path(
-                _normalize_nonempty_string(
-                    operator_paths.get(asset_key),
-                    field_name=(
-                        "circuit_assets.selected_root_assets"
-                        f"[{index}].required_operator_assets.{asset_key}"
-                    ),
-                )
-            ).exists()
-        ]
-        if missing_operator_paths:
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} is missing local operator assets "
-                f"{missing_operator_paths!r} for selected root {root_id}."
-            )
-
-        metadata_path = Path(str(operator_paths[OPERATOR_METADATA_KEY])).resolve()
-        loaded_operator_metadata = load_operator_bundle_metadata(metadata_path)
-        if loaded_operator_metadata != dict(operator_bundle):
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} found operator metadata drift for root "
-                f"{root_id}: manifest record does not match {metadata_path}."
-            )
-
-        normalization = _normalize_nonempty_string(
-            operator_bundle.get("normalization"),
-            field_name=f"operator_bundle[{root_id}].normalization",
-        )
-        if normalization != "mass_normalized":
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} requires mass_normalized operators, but "
-                f"root {root_id} exposes normalization {normalization!r}."
-            )
-        transfer_operators = _require_mapping(
-            operator_bundle.get("transfer_operators"),
-            field_name=f"operator_bundle[{root_id}].transfer_operators",
-        )
-        surface_membership = _require_mapping(
-            transfer_operators.get("surface_to_patch_membership"),
-            field_name=(
-                f"operator_bundle[{root_id}].transfer_operators.surface_to_patch_membership"
-            ),
-        )
-        fine_to_coarse = _require_mapping(
-            transfer_operators.get("fine_to_coarse_restriction"),
-            field_name=(
-                f"operator_bundle[{root_id}].transfer_operators.fine_to_coarse_restriction"
-            ),
-        )
-        if not bool(surface_membership.get("available")) or not bool(
-            fine_to_coarse.get("available")
-        ):
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} requires surface-to-patch transfer "
-                f"operators for root {root_id}, but the operator bundle does not "
-                "expose them as available."
-            )
-
-        anisotropy_model = _normalize_nonempty_string(
-            operator_bundle.get("anisotropy_model"),
-            field_name=f"operator_bundle[{root_id}].anisotropy_model",
-        )
-        if anisotropy_mode == "operator_embedded" and anisotropy_model == "isotropic":
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} requested anisotropy.mode "
-                "'operator_embedded' but root "
-                f"{root_id} operator bundle only exposes anisotropy_model 'isotropic'."
-            )
-
-        descriptor_sidecar_path = Path(
-            _normalize_nonempty_string(
-                root_mapping.get("descriptor_sidecar_path"),
-                field_name=(
-                    f"circuit_assets.selected_root_assets[{index}].descriptor_sidecar_path"
-                ),
-            )
-        ).resolve()
-        if branching_mode != "disabled" and not descriptor_sidecar_path.exists():
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} requested branching.mode {branching_mode!r} "
-                f"but root {root_id} is missing geometry descriptors at "
-                f"{descriptor_sidecar_path}."
-            )
-
-        spectral_radius = _estimate_surface_wave_operator_spectral_radius(
-            operator_path=Path(str(operator_paths[FINE_OPERATOR_KEY])).resolve(),
-            arm_id=arm_id,
-            root_id=root_id,
-        )
         resolved.append(
-            {
-                "root_id": root_id,
-                "operator_bundle_status": operator_status,
-                "preferred_discretization_family": str(
-                    operator_bundle["preferred_discretization_family"]
-                ),
-                "discretization_family": str(operator_bundle["discretization_family"]),
-                "mass_treatment": str(operator_bundle["mass_treatment"]),
-                "normalization": normalization,
-                "boundary_condition_mode": str(operator_bundle["boundary_condition_mode"]),
-                "anisotropy_model": anisotropy_model,
-                "fallback_policy": copy.deepcopy(operator_bundle["fallback_policy"]),
-                "fine_operator_path": str(Path(str(operator_paths[FINE_OPERATOR_KEY])).resolve()),
-                "coarse_operator_path": str(
-                    Path(str(operator_paths[COARSE_OPERATOR_KEY])).resolve()
-                ),
-                "transfer_operator_path": str(
-                    Path(str(operator_paths[TRANSFER_OPERATORS_KEY])).resolve()
-                ),
-                "operator_metadata_path": str(metadata_path),
-                "descriptor_sidecar_path": str(descriptor_sidecar_path),
-                "surface_to_patch_membership_available": True,
-                "fine_to_coarse_restriction_available": True,
-                "coarse_to_fine_prolongation_available": bool(
-                    _require_mapping(
-                        transfer_operators.get("coarse_to_fine_prolongation"),
-                        field_name=(
-                            "operator_bundle"
-                            f"[{root_id}].transfer_operators.coarse_to_fine_prolongation"
-                        ),
-                    ).get("available")
-                ),
-                "normalized_state_transfer_available": bool(
-                    _require_mapping(
-                        transfer_operators.get("normalized_state_transfer"),
-                        field_name=(
-                            "operator_bundle"
-                            f"[{root_id}].transfer_operators.normalized_state_transfer"
-                        ),
-                    ).get("available")
-                ),
-                "spectral_radius": spectral_radius,
-            }
+            _resolve_surface_wave_operator_asset(
+                arm_id=arm_id,
+                root_mapping=root_mapping,
+                anisotropy_mode=anisotropy_mode,
+                branching_mode=branching_mode,
+                hybrid_morphology=hybrid_morphology_by_root[root_id],
+            )
         )
     return resolved
 
@@ -1808,6 +2917,7 @@ def _resolve_surface_wave_coupling_assets(
     *,
     arm_id: str,
     selected_root_assets: Sequence[Mapping[str, Any]],
+    hybrid_morphology_by_root: Mapping[int, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     resolved: list[dict[str, Any]] = []
     for index, root_asset in enumerate(selected_root_assets):
@@ -1816,97 +2926,12 @@ def _resolve_surface_wave_coupling_assets(
             field_name=f"circuit_assets.selected_root_assets[{index}]",
         )
         root_id = int(root_mapping["root_id"])
-        coupling_bundle = _require_mapping(
-            root_mapping.get("coupling_bundle"),
-            field_name=(
-                f"circuit_assets.selected_root_assets[{index}].coupling_bundle"
-            ),
-        )
-        topology_family = _normalize_nonempty_string(
-            coupling_bundle.get("topology_family"),
-            field_name=f"coupling_bundle[{root_id}].topology_family",
-        )
-        fallback_hierarchy = [
-            _normalize_nonempty_string(
-                item,
-                field_name=f"coupling_bundle[{root_id}].fallback_hierarchy[{edge_index}]",
-            )
-            for edge_index, item in enumerate(
-                _require_sequence(
-                    coupling_bundle.get("fallback_hierarchy"),
-                    field_name=f"coupling_bundle[{root_id}].fallback_hierarchy",
-                )
-            )
-        ]
-        if topology_family != DISTRIBUTED_PATCH_CLOUD_TOPOLOGY or (
-            not fallback_hierarchy or fallback_hierarchy[0] != SURFACE_PATCH_CLOUD_MODE
-        ):
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} requires coupling topology_family "
-                f"{DISTRIBUTED_PATCH_CLOUD_TOPOLOGY!r} with leading fallback "
-                f"{SURFACE_PATCH_CLOUD_MODE!r}, but root {root_id} declares "
-                f"topology_family {topology_family!r} and fallback_hierarchy "
-                f"{fallback_hierarchy!r}."
-            )
-        selected_edge_bundle_paths = [
-            copy.deepcopy(edge_bundle)
-            for edge_bundle in _require_sequence(
-                root_mapping.get("edge_bundle_paths"),
-                field_name=(
-                    f"circuit_assets.selected_root_assets[{index}].edge_bundle_paths"
-                ),
-            )
-            if bool(_require_mapping(edge_bundle, field_name="edge_bundle").get("selected_peer"))
-        ]
-        blocked_selected_edges = [
-            str(edge_bundle["path"])
-            for edge_bundle in selected_edge_bundle_paths
-            if str(edge_bundle["status"]) != ASSET_STATUS_READY
-        ]
-        if blocked_selected_edges:
-            raise ValueError(
-                f"surface_wave arm {arm_id!r} requires ready edge coupling bundles "
-                f"for selected peers of root {root_id}, but found non-ready entries "
-                f"{blocked_selected_edges!r}."
-            )
-
-        required_coupling_assets = _require_mapping(
-            root_mapping.get("required_coupling_assets"),
-            field_name=(
-                f"circuit_assets.selected_root_assets[{index}].required_coupling_assets"
-            ),
-        )
         resolved.append(
-            {
-                "root_id": root_id,
-                "topology_family": topology_family,
-                "fallback_hierarchy": fallback_hierarchy,
-                "kernel_family": str(coupling_bundle["kernel_family"]),
-                "sign_representation": str(coupling_bundle["sign_representation"]),
-                "delay_representation": str(coupling_bundle["delay_representation"]),
-                "delay_model": str(coupling_bundle["delay_model"]),
-                "aggregation_rule": str(coupling_bundle["aggregation_rule"]),
-                "missing_geometry_policy": str(coupling_bundle["missing_geometry_policy"]),
-                "source_cloud_normalization": str(
-                    coupling_bundle["source_cloud_normalization"]
-                ),
-                "target_cloud_normalization": str(
-                    coupling_bundle["target_cloud_normalization"]
-                ),
-                "local_synapse_registry_path": str(
-                    Path(str(required_coupling_assets[LOCAL_SYNAPSE_REGISTRY_KEY])).resolve()
-                ),
-                "incoming_anchor_map_path": str(
-                    Path(str(required_coupling_assets[INCOMING_ANCHOR_MAP_KEY])).resolve()
-                ),
-                "outgoing_anchor_map_path": str(
-                    Path(str(required_coupling_assets[OUTGOING_ANCHOR_MAP_KEY])).resolve()
-                ),
-                "coupling_index_path": str(
-                    Path(str(required_coupling_assets["coupling_index"])).resolve()
-                ),
-                "selected_edge_bundle_paths": selected_edge_bundle_paths,
-            }
+            _resolve_surface_wave_coupling_asset(
+                arm_id=arm_id,
+                root_mapping=root_mapping,
+                hybrid_morphology=hybrid_morphology_by_root[root_id],
+            )
         )
     return resolved
 
@@ -1925,6 +2950,19 @@ def _build_surface_wave_stability_guardrails(
         runtime_timebase.get("dt_ms"),
         field_name="runtime.timebase.dt_ms",
     )
+    if not operator_assets:
+        return {
+            "status": "not_applicable_no_surface_roots",
+            "shared_output_timestep_ms": shared_output_timestep_ms,
+            "integration_timestep_ms": shared_output_timestep_ms,
+            "required_internal_substep_count": 1,
+            "max_internal_substeps_per_output_step": (
+                SURFACE_WAVE_MAX_INTERNAL_SUBSTEPS_PER_OUTPUT_STEP
+            ),
+            "max_supported_integration_timestep_ms": math.inf,
+            "limiting_root_id": None,
+            "per_root": [],
+        }
     per_root = []
     for operator_asset in operator_assets:
         root_id = int(operator_asset["root_id"])
@@ -2069,6 +3107,29 @@ def _require_sequence(value: Any, *, field_name: str) -> Sequence[Any]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ValueError(f"{field_name} must be a list.")
     return value
+
+
+def _asset_record_reference(
+    value: Any,
+    *,
+    field_name: str,
+) -> dict[str, Any]:
+    record = _require_mapping(value, field_name=field_name)
+    path = Path(
+        _normalize_nonempty_string(
+            record.get("path"),
+            field_name=f"{field_name}.path",
+        )
+    ).resolve()
+    status = _normalize_nonempty_string(
+        record.get("status"),
+        field_name=f"{field_name}.status",
+    )
+    return {
+        "path": str(path),
+        "status": status,
+        "exists": bool(path.exists()),
+    }
 
 
 def _extract_arm_plans(plan: Mapping[str, Any]) -> list[dict[str, Any]]:

@@ -25,6 +25,8 @@ from flywire_wave.geometry_contract import (
     COARSE_OPERATOR_KEY,
     FINE_OPERATOR_KEY,
     OPERATOR_METADATA_KEY,
+    RAW_SKELETON_KEY,
+    SIMPLIFIED_MESH_KEY,
     TRANSFER_OPERATORS_KEY,
     build_operator_bundle_metadata,
     build_geometry_bundle_paths,
@@ -33,8 +35,19 @@ from flywire_wave.geometry_contract import (
     write_geometry_manifest,
 )
 from flywire_wave.io_utils import write_deterministic_npz, write_json
+from flywire_wave.hybrid_morphology_contract import (
+    HYBRID_MORPHOLOGY_CONTRACT_VERSION,
+    POINT_NEURON_CLASS,
+    SKELETON_NEURON_CLASS,
+    SURFACE_NEURON_CLASS,
+)
+from flywire_wave.skeleton_runtime_assets import (
+    SKELETON_RUNTIME_ASSET_CONTRACT_VERSION,
+    SKELETON_RUNTIME_ASSET_KEY,
+)
 from flywire_wave.simulation_planning import (
     discover_simulation_run_plans,
+    resolve_manifest_mixed_fidelity_plan,
     resolve_manifest_simulation_plan,
 )
 from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
@@ -170,6 +183,26 @@ class SimulationPlanningTest(unittest.TestCase):
                 "surface_patch_cloud",
             )
             self.assertEqual(
+                wave_execution["hybrid_morphology"]["contract_version"],
+                HYBRID_MORPHOLOGY_CONTRACT_VERSION,
+            )
+            self.assertEqual(
+                wave_execution["hybrid_morphology"]["discovered_morphology_classes"],
+                [SURFACE_NEURON_CLASS],
+            )
+            self.assertEqual(
+                wave_execution["selected_root_operator_assets"][0]["hybrid_morphology"][
+                    "morphology_class"
+                ],
+                SURFACE_NEURON_CLASS,
+            )
+            self.assertEqual(
+                wave_execution["selected_root_coupling_assets"][0]["hybrid_morphology"][
+                    "morphology_class"
+                ],
+                SURFACE_NEURON_CLASS,
+            )
+            self.assertEqual(
                 wave_execution["solver"]["shared_output_timestep_ms"],
                 surface_wave_plan["runtime"]["timebase"]["dt_ms"],
             )
@@ -232,6 +265,263 @@ class SimulationPlanningTest(unittest.TestCase):
                 ),
                 3,
             )
+
+    def test_manifest_mixed_fidelity_plan_resolution_is_deterministic_and_records_per_root_assignments(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = _write_manifest_fixture(
+                tmp_dir,
+                surface_wave_fidelity_assignment={
+                    "default_morphology_class": "point_neuron",
+                    "root_overrides": [
+                        {"root_id": 101, "morphology_class": "surface_neuron"},
+                        {"root_id": 202, "morphology_class": "skeleton_neuron"},
+                    ],
+                },
+            )
+            schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+            config_path = _write_simulation_fixture(
+                tmp_dir,
+                root_specs=[
+                    {
+                        "root_id": 101,
+                        "project_role": "surface_simulated",
+                        "asset_profile": "surface",
+                    },
+                    {
+                        "root_id": 202,
+                        "project_role": "skeleton_simulated",
+                        "asset_profile": "skeleton",
+                    },
+                    {
+                        "root_id": 303,
+                        "project_role": "surface_simulated",
+                        "asset_profile": "point",
+                    },
+                ],
+            )
+
+            resolved_input = resolve_stimulus_input(
+                manifest_path=manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+            )
+            record_stimulus_bundle(resolved_input)
+
+            first_mixed_plan = resolve_manifest_mixed_fidelity_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                arm_id="surface_wave_intact",
+            )
+            second_mixed_plan = resolve_manifest_mixed_fidelity_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                arm_id="surface_wave_intact",
+            )
+
+            self.assertEqual(first_mixed_plan, second_mixed_plan)
+            self.assertEqual(
+                first_mixed_plan["assignment_policy"]["default_source"],
+                "registry_project_role",
+            )
+            self.assertEqual(
+                first_mixed_plan["arm_overrides"]["default_morphology_class"],
+                POINT_NEURON_CLASS,
+            )
+            self.assertEqual(
+                first_mixed_plan["resolved_class_counts"],
+                {
+                    POINT_NEURON_CLASS: 1,
+                    SKELETON_NEURON_CLASS: 1,
+                    SURFACE_NEURON_CLASS: 1,
+                },
+            )
+            per_root = {
+                int(item["root_id"]): item
+                for item in first_mixed_plan["per_root_assignments"]
+            }
+            self.assertEqual(
+                per_root[101]["realized_morphology_class"],
+                SURFACE_NEURON_CLASS,
+            )
+            self.assertEqual(
+                per_root[202]["realized_morphology_class"],
+                SKELETON_NEURON_CLASS,
+            )
+            self.assertEqual(
+                per_root[303]["realized_morphology_class"],
+                POINT_NEURON_CLASS,
+            )
+            self.assertEqual(
+                per_root[101]["assignment_provenance"]["resolved_from"],
+                "arm_root_override",
+            )
+            self.assertEqual(
+                per_root[202]["assignment_provenance"]["resolved_from"],
+                "arm_root_override",
+            )
+            self.assertEqual(
+                per_root[303]["assignment_provenance"]["resolved_from"],
+                "arm_default_morphology_class",
+            )
+            self.assertEqual(
+                per_root[303]["registry_default_morphology_class"],
+                SURFACE_NEURON_CLASS,
+            )
+            self.assertEqual(
+                per_root[303]["approximation_route"]["relation_to_registry_default"],
+                "demoted_from_registry_default",
+            )
+            self.assertTrue(
+                per_root[101]["required_local_assets"]["processed_surface_mesh"]["exists"]
+            )
+            self.assertTrue(
+                per_root[202]["required_local_assets"]["raw_swc_skeleton"]["exists"]
+            )
+            self.assertTrue(
+                per_root[202]["required_local_assets"][SKELETON_RUNTIME_ASSET_KEY]["exists"]
+            )
+            self.assertEqual(
+                per_root[202]["skeleton_runtime_asset"]["contract_version"],
+                SKELETON_RUNTIME_ASSET_CONTRACT_VERSION,
+            )
+            self.assertIsNone(per_root[303]["surface_operator_asset"])
+            self.assertEqual(
+                per_root[202]["coupling_resolution"]["incoming_resolution"],
+                "skeleton_node",
+            )
+
+            full_plan = resolve_manifest_simulation_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            surface_wave_plan = next(
+                arm_plan
+                for arm_plan in full_plan["arm_plans"]
+                if arm_plan["arm_reference"]["arm_id"] == "surface_wave_intact"
+            )
+            wave_execution = surface_wave_plan["model_configuration"]["surface_wave_execution_plan"]
+            self.assertEqual(
+                wave_execution["resolution"]["state_space"],
+                "per_root_morphology_class",
+            )
+            self.assertEqual(
+                wave_execution["selected_root_operator_assets_scope"],
+                "surface_neuron_roots_only",
+            )
+            self.assertEqual(
+                [item["root_id"] for item in wave_execution["selected_root_operator_assets"]],
+                [101],
+            )
+            self.assertEqual(
+                [item["root_id"] for item in wave_execution["selected_root_skeleton_assets"]],
+                [202],
+            )
+
+    def test_missing_skeleton_asset_fails_clearly_for_skeleton_assignment(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = _write_manifest_fixture(
+                tmp_dir,
+                surface_wave_fidelity_assignment={
+                    "root_overrides": [
+                        {"root_id": 202, "morphology_class": "skeleton_neuron"},
+                    ],
+                },
+            )
+            schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+            config_path = _write_simulation_fixture(
+                tmp_dir,
+                root_specs=[
+                    {
+                        "root_id": 101,
+                        "project_role": "surface_simulated",
+                        "asset_profile": "surface",
+                    },
+                    {
+                        "root_id": 202,
+                        "project_role": "point_simulated",
+                        "asset_profile": "point",
+                    },
+                ],
+            )
+
+            resolved_input = resolve_stimulus_input(
+                manifest_path=manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+            )
+            record_stimulus_bundle(resolved_input)
+
+            with self.assertRaises(ValueError) as ctx:
+                resolve_manifest_simulation_plan(
+                    manifest_path=manifest_path,
+                    config_path=config_path,
+                    schema_path=schema_path,
+                    design_lock_path=design_lock_path,
+                )
+            self.assertIn("required local asset 'raw_swc_skeleton' is unavailable", str(ctx.exception))
+
+    def test_incompatible_point_coupling_fails_clearly_for_point_assignment(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = ROOT / "manifests" / "examples" / "milestone_1_demo.yaml"
+            schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+            config_path = _write_simulation_fixture(
+                tmp_dir,
+                root_specs=[
+                    {
+                        "root_id": 101,
+                        "project_role": "surface_simulated",
+                        "asset_profile": "surface",
+                    },
+                    {
+                        "root_id": 202,
+                        "project_role": "point_simulated",
+                        "asset_profile": "point",
+                    },
+                ],
+            )
+
+            resolved_input = resolve_stimulus_input(
+                manifest_path=manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+            )
+            record_stimulus_bundle(resolved_input)
+
+            manifest_json_path = tmp_dir / "out" / "asset_manifest.json"
+            manifest_payload = json.loads(manifest_json_path.read_text(encoding="utf-8"))
+            manifest_payload["202"]["coupling_bundle"]["topology_family"] = "patch_to_patch"
+            manifest_payload["202"]["coupling_bundle"]["fallback_hierarchy"] = [
+                "surface_patch_cloud",
+                "skeleton_segment_cloud",
+            ]
+            manifest_json_path.write_text(
+                json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as ctx:
+                resolve_manifest_simulation_plan(
+                    manifest_path=manifest_path,
+                    config_path=config_path,
+                    schema_path=schema_path,
+                    design_lock_path=design_lock_path,
+                )
+            self.assertIn("does not support 'point_neuron_lumped' anchors", str(ctx.exception))
 
     def test_missing_coupling_asset_fails_clearly(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
@@ -299,7 +589,7 @@ class SimulationPlanningTest(unittest.TestCase):
                     design_lock_path=design_lock_path,
                 )
             self.assertIn(
-                "Selected root 101 is missing ready operator assets",
+                "required local asset 'fine_surface_operator' is unavailable",
                 str(ctx.exception),
             )
 
@@ -380,11 +670,17 @@ def _write_simulation_fixture(
     *,
     timebase_dt_ms: float | None = None,
     timebase_sample_count: int | None = None,
+    root_specs: list[dict[str, object]] | None = None,
 ) -> Path:
     output_dir = tmp_dir / "out"
+    normalized_root_specs = _normalize_root_specs(root_specs)
+    selected_root_ids = [spec["root_id"] for spec in normalized_root_specs]
     selected_root_ids_path = output_dir / "selected_root_ids.txt"
     selected_root_ids_path.parent.mkdir(parents=True, exist_ok=True)
-    selected_root_ids_path.write_text("101\n202\n", encoding="utf-8")
+    selected_root_ids_path.write_text(
+        "".join(f"{root_id}\n" for root_id in selected_root_ids),
+        encoding="utf-8",
+    )
 
     subset_manifest_path = output_dir / "subsets" / "motion_minimal" / "subset_manifest.json"
     subset_manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -393,7 +689,7 @@ def _write_simulation_fixture(
             {
                 "subset_manifest_version": "1",
                 "preset_name": "motion_minimal",
-                "root_ids": [101, 202],
+                "root_ids": selected_root_ids,
             },
             indent=2,
             sort_keys=True,
@@ -402,7 +698,7 @@ def _write_simulation_fixture(
         encoding="utf-8",
     )
 
-    _write_geometry_manifest(output_dir)
+    _write_geometry_manifest(output_dir, root_specs=normalized_root_specs)
 
     config_path = tmp_dir / "simulation_config.yaml"
     config_payload: dict[str, object] = {
@@ -498,12 +794,99 @@ def _write_simulation_fixture(
     return config_path
 
 
-def _write_geometry_manifest(output_dir: Path) -> None:
+def _write_manifest_fixture(
+    tmp_dir: Path,
+    *,
+    surface_wave_fidelity_assignment: dict[str, object] | None = None,
+) -> Path:
+    manifest_payload = yaml.safe_load(
+        (
+            ROOT / "manifests" / "examples" / "milestone_1_demo.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    if surface_wave_fidelity_assignment is not None:
+        for arm in manifest_payload["comparison_arms"]:
+            if arm["model_mode"] == "surface_wave":
+                arm["fidelity_assignment"] = json.loads(
+                    json.dumps(surface_wave_fidelity_assignment)
+                )
+    manifest_path = tmp_dir / "fixture_manifest.yaml"
+    manifest_path.write_text(
+        yaml.safe_dump(manifest_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def _default_root_specs() -> list[dict[str, object]]:
+    return [
+        {
+            "root_id": 101,
+            "cell_type": "fixture_101",
+            "project_role": "surface_simulated",
+            "asset_profile": "surface",
+        },
+        {
+            "root_id": 202,
+            "cell_type": "fixture_202",
+            "project_role": "surface_simulated",
+            "asset_profile": "surface",
+        },
+    ]
+
+
+def _normalize_root_specs(
+    root_specs: list[dict[str, object]] | None,
+) -> list[dict[str, object]]:
+    resolved_specs = root_specs or _default_root_specs()
+    normalized: list[dict[str, object]] = []
+    seen_root_ids: set[int] = set()
+    for item in resolved_specs:
+        root_id = int(item["root_id"])
+        if root_id in seen_root_ids:
+            raise ValueError(f"Duplicate root_id in fixture specs: {root_id}")
+        seen_root_ids.add(root_id)
+        normalized.append(
+            {
+                "root_id": root_id,
+                "cell_type": str(item.get("cell_type", f"fixture_{root_id}")),
+                "project_role": str(item.get("project_role", "surface_simulated")),
+                "asset_profile": str(item.get("asset_profile", "surface")),
+            }
+        )
+    normalized.sort(key=lambda item: int(item["root_id"]))
+    return normalized
+
+
+def _write_geometry_manifest(
+    output_dir: Path,
+    *,
+    root_specs: list[dict[str, object]] | None = None,
+) -> None:
+    normalized_root_specs = _normalize_root_specs(root_specs)
+    root_ids = [int(item["root_id"]) for item in normalized_root_specs]
     coupling_dir = output_dir / "processed_coupling"
     local_synapse_registry_path = coupling_dir / "synapse_registry.csv"
     local_synapse_registry_path.parent.mkdir(parents=True, exist_ok=True)
     local_synapse_registry_path.write_text(
-        "synapse_row_id,pre_root_id,post_root_id\nfixture-1,101,202\nfixture-2,202,101\n",
+        "\n".join(
+            [
+                "synapse_row_id,pre_root_id,post_root_id",
+                *[
+                    f"fixture-{index},{pre_root_id},{post_root_id}"
+                    for index, (pre_root_id, post_root_id) in enumerate(
+                        [
+                            (pre_root_id, post_root_id)
+                            for pre_root_id in root_ids
+                            for post_root_id in root_ids
+                            if pre_root_id != post_root_id
+                        ],
+                        start=1,
+                    )
+                ],
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -512,7 +895,7 @@ def _write_geometry_manifest(output_dir: Path) -> None:
             root_id,
             processed_coupling_dir=coupling_dir,
         )
-        for root_id in [101, 202]
+        for root_id in root_ids
     }
     for root_id, bundle_paths in coupling_paths_by_root.items():
         _write_placeholder_file(bundle_paths.incoming_anchor_map_path)
@@ -520,14 +903,19 @@ def _write_geometry_manifest(output_dir: Path) -> None:
         _write_placeholder_file(bundle_paths.coupling_index_path)
 
     edge_paths = [
-        coupling_dir / "edges" / "101__to__202_coupling.npz",
-        coupling_dir / "edges" / "202__to__101_coupling.npz",
+        coupling_dir / "edges" / f"{pre_root_id}__to__{post_root_id}_coupling.npz"
+        for pre_root_id in root_ids
+        for post_root_id in root_ids
+        if pre_root_id != post_root_id
     ]
     for edge_path in edge_paths:
         _write_placeholder_file(edge_path)
 
     bundle_records = {}
-    for root_id in [101, 202]:
+    for spec in normalized_root_specs:
+        root_id = int(spec["root_id"])
+        asset_profile = str(spec["asset_profile"])
+        asset_statuses = _asset_statuses_for_profile(asset_profile)
         bundle_paths = build_geometry_bundle_paths(
             root_id,
             meshes_raw_dir=output_dir / "meshes_raw",
@@ -535,9 +923,15 @@ def _write_geometry_manifest(output_dir: Path) -> None:
             processed_mesh_dir=output_dir / "processed_meshes",
             processed_graph_dir=output_dir / "processed_graphs",
         )
+        if asset_statuses[SIMPLIFIED_MESH_KEY] == ASSET_STATUS_READY:
+            _write_placeholder_file(bundle_paths.simplified_mesh_path)
+        if asset_statuses[RAW_SKELETON_KEY] == ASSET_STATUS_READY:
+            _write_skeleton_fixture(bundle_paths.raw_skeleton_path)
         operator_bundle_metadata = _write_fixture_operator_bundle(
             bundle_paths=bundle_paths,
             root_id=root_id,
+            asset_statuses=asset_statuses,
+            asset_profile=asset_profile,
         )
         coupling_metadata = build_coupling_bundle_metadata(
             root_id=root_id,
@@ -549,29 +943,26 @@ def _write_geometry_manifest(output_dir: Path) -> None:
             edge_bundles=[
                 build_edge_coupling_bundle_reference(
                     root_id=root_id,
-                    pre_root_id=101,
-                    post_root_id=202,
+                    pre_root_id=pre_root_id,
+                    post_root_id=post_root_id,
                     processed_coupling_dir=coupling_dir,
                     status=ASSET_STATUS_READY,
-                ),
-                build_edge_coupling_bundle_reference(
-                    root_id=root_id,
-                    pre_root_id=202,
-                    post_root_id=101,
-                    processed_coupling_dir=coupling_dir,
-                    status=ASSET_STATUS_READY,
-                ),
+                )
+                for pre_root_id in root_ids
+                for post_root_id in root_ids
+                if pre_root_id != post_root_id
+                and root_id in (pre_root_id, post_root_id)
             ],
         )
         bundle_records[root_id] = build_geometry_manifest_record(
             bundle_paths=bundle_paths,
-            asset_statuses=_surface_ready_asset_statuses(),
+            asset_statuses=asset_statuses,
             dataset_name="public",
             materialization_version=783,
             meshing_config_snapshot=_meshing_config_snapshot(),
             registry_metadata={
-                "cell_type": f"fixture_{root_id}",
-                "project_role": "surface_simulated",
+                "cell_type": str(spec["cell_type"]),
+                "project_role": str(spec["project_role"]),
             },
             operator_bundle_metadata=operator_bundle_metadata,
             coupling_bundle_metadata=coupling_metadata,
@@ -589,16 +980,34 @@ def _write_geometry_manifest(output_dir: Path) -> None:
 
 
 def _surface_ready_asset_statuses() -> dict[str, str]:
-    asset_statuses = default_asset_statuses(fetch_skeletons=False)
-    asset_statuses.update(
-        {
-            FINE_OPERATOR_KEY: ASSET_STATUS_READY,
-            COARSE_OPERATOR_KEY: ASSET_STATUS_READY,
-            TRANSFER_OPERATORS_KEY: ASSET_STATUS_READY,
-            OPERATOR_METADATA_KEY: ASSET_STATUS_READY,
-        }
-    )
-    return asset_statuses
+    return _asset_statuses_for_profile("surface")
+
+
+def _asset_statuses_for_profile(asset_profile: str) -> dict[str, str]:
+    normalized_profile = str(asset_profile)
+    if normalized_profile == "surface":
+        asset_statuses = default_asset_statuses(fetch_skeletons=False)
+        asset_statuses.update(
+            {
+                SIMPLIFIED_MESH_KEY: ASSET_STATUS_READY,
+                FINE_OPERATOR_KEY: ASSET_STATUS_READY,
+                COARSE_OPERATOR_KEY: ASSET_STATUS_READY,
+                TRANSFER_OPERATORS_KEY: ASSET_STATUS_READY,
+                OPERATOR_METADATA_KEY: ASSET_STATUS_READY,
+            }
+        )
+        return asset_statuses
+    if normalized_profile == "skeleton":
+        asset_statuses = default_asset_statuses(fetch_skeletons=True)
+        asset_statuses.update(
+            {
+                RAW_SKELETON_KEY: ASSET_STATUS_READY,
+            }
+        )
+        return asset_statuses
+    if normalized_profile == "point":
+        return default_asset_statuses(fetch_skeletons=False)
+    raise ValueError(f"Unsupported fixture asset_profile {asset_profile!r}.")
 
 
 def _meshing_config_snapshot() -> dict[str, object]:
@@ -623,7 +1032,16 @@ def _write_fixture_operator_bundle(
     *,
     bundle_paths: object,
     root_id: int,
+    asset_statuses: dict[str, str],
+    asset_profile: str,
 ) -> dict[str, object]:
+    if asset_profile != "surface":
+        return build_operator_bundle_metadata(
+            bundle_paths=bundle_paths,
+            asset_statuses=asset_statuses,
+            meshing_config_snapshot=_meshing_config_snapshot(),
+        )
+
     fine_operator = sp.csr_matrix(
         [
             [1.0, -1.0, 0.0],
@@ -701,7 +1119,7 @@ def _write_fixture_operator_bundle(
 
     operator_bundle_metadata = build_operator_bundle_metadata(
         bundle_paths=bundle_paths,
-        asset_statuses=_surface_ready_asset_statuses(),
+        asset_statuses=asset_statuses,
         meshing_config_snapshot=_meshing_config_snapshot(),
         realized_operator_metadata={
             "realization_mode": "fixture_mass_normalized_surface_operator",
@@ -729,6 +1147,21 @@ def _write_fixture_operator_bundle(
     )
     write_json(operator_bundle_metadata, bundle_paths.operator_metadata_path)
     return operator_bundle_metadata
+
+
+def _write_skeleton_fixture(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                "1 1 0.0 0.0 0.0 1.0 -1",
+                "2 3 1.0 0.0 0.0 0.5 1",
+                "3 3 2.0 0.0 0.0 0.5 2",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _write_placeholder_file(path: Path) -> None:

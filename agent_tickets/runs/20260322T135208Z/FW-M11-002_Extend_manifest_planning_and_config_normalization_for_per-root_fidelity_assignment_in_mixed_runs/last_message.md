@@ -1,0 +1,13 @@
+**Changed**
+- Added the canonical mixed-fidelity planner API `resolve_manifest_mixed_fidelity_plan` in [simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L613). It resolves a manifest plus config into a deterministic per-root fidelity plan for a `surface_wave` arm.
+- Extended `surface_wave` planning to normalize per-root morphology assignment with precedence `root override > arm default > registry project role`, then record realized class, provenance, approximation route, state resolution, coupling resolution, and required/optional local assets in [simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L1994).
+- Added strict prerequisite checks so planning fails clearly when a selected class is missing its required local assets or compatible coupling path. The mixed plan is now carried through the existing execution-plan surface without splitting baseline or pure-surface callers onto a separate workflow in [simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L1899).
+- Added manifest schema support for arm-level `fidelity_assignment` in [milestone_1_experiment_manifest.schema.json](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/schemas/milestone_1_experiment_manifest.schema.json#L431).
+- Added regression coverage for deterministic mixed assignment, override precedence, missing skeleton prerequisites, and incompatible point coupling in [test_simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py#L265). I also updated readiness/execution fixture helpers to mark simplified meshes as ready under the stricter surface checks in [milestone9_readiness.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone9_readiness.py#L1074) and [test_simulator_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L566).
+
+**Verified**
+- `make test`
+- `.venv/bin/python -m unittest tests.test_simulation_planning.SimulationPlanningTest.test_manifest_mixed_fidelity_plan_resolution_is_deterministic_and_records_per_root_assignments`
+- `.venv/bin/python -m unittest tests.test_milestone10_readiness tests.test_milestone9_readiness tests.test_simulator_execution tests.test_simulator_visualization tests.test_surface_wave_inspection`
+
+All of the above passed. I left unrelated existing worktree changes untouched.

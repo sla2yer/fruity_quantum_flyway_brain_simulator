@@ -319,6 +319,44 @@ note; later tickets should cite it instead of re-litigating the chosen wave
 family, state-variable semantics, stability assumptions, or what counts as a
 numerical artifact.
 
+### Hybrid morphology contract
+
+Milestone 11 now reserves one explicit mixed-fidelity vocabulary under the
+versioned contract `hybrid_morphology.v1`.
+
+Contract notes:
+
+- class naming, class normalization, per-root metadata normalization, stable
+  class discovery, and the allowed cross-class route catalog now live in
+  `flywire_wave.hybrid_morphology_contract`
+- the canonical simulator-facing classes are `surface_neuron`,
+  `skeleton_neuron`, and `point_neuron`, normalized from the existing registry
+  roles `surface_simulated`, `skeleton_simulated`, and `point_simulated`
+- mixed fidelity stays inside the existing `surface_wave` planning path rather
+  than introducing a second top-level simulator mode; the planner writes the
+  normalized payload at `surface_wave_execution_plan.hybrid_morphology`
+- the normalized payload records:
+  - per class required and optional local assets
+  - realized state-space semantics
+  - local readout surface semantics
+  - incoming and outgoing coupling-anchor resolution
+  - serialization requirements for planning and result review
+  - approximation notes and intentional class-specific behavior
+- promotion order is `point_neuron -> skeleton_neuron -> surface_neuron`
+- promotion or demotion may refine intraneuron state resolution, but it may not
+  change selected root IDs, selected connectome edges, shared readout IDs,
+  shared timebase semantics, or Milestone 7 sign/delay/aggregation semantics
+- all source/target class pairs are explicit contract routes; the source class
+  supplies the presynaptic readout surface and outgoing anchor resolution, and
+  the target class supplies the landing surface and incoming anchor resolution
+- the same normalized payload is mirrored into surface-wave execution
+  provenance and the wave summary sidecar so later review tooling sees one
+  stable serialization surface
+
+`docs/hybrid_morphology_design.md` is the authoritative Milestone 11 decision
+note; later tickets should cite it instead of re-litigating mixed-fidelity
+class names, approximation limits, or promotion invariants.
+
 ### Simulator result bundle contract
 
 Milestone 9 now reserves one explicit simulator-owned result surface under the

@@ -16,6 +16,11 @@ from .baseline_execution import (
     load_canonical_input_stream_from_arm_plan,
     resolve_baseline_execution_plan_from_arm_plan,
 )
+from .hybrid_morphology_runtime import (
+    SURFACE_WAVE_RUNTIME_SOURCE_INJECTION_STRATEGY,
+    resolve_morphology_runtime_from_arm_plan,
+    run_morphology_runtime_shared_schedule,
+)
 from .io_utils import (
     write_csv_rows,
     write_deterministic_npz,
@@ -55,7 +60,6 @@ from .simulator_runtime import (
     SimulationStateSummaryRow,
     build_simulation_run_blueprint,
 )
-from .surface_wave_execution import resolve_surface_wave_execution_plan_from_arm_plan
 
 
 SIMULATOR_MANIFEST_EXECUTION_VERSION = "simulator_manifest_execution.v1"
@@ -75,7 +79,7 @@ SURFACE_WAVE_COUPLING_EVENTS_ARTIFACT_ID = "surface_wave_coupling_events"
 
 FINAL_ENDPOINT_WINDOW_ID = "finalized_endpoint"
 DECLARED_TIMEBASE_WINDOW_ID = "declared_timebase"
-SURFACE_WAVE_INPUT_BINDING_STRATEGY = "uniform_surface_fill_from_shared_root_schedule"
+SURFACE_WAVE_INPUT_BINDING_STRATEGY = SURFACE_WAVE_RUNTIME_SOURCE_INJECTION_STRATEGY
 SUPPORTED_EXECUTABLE_MODEL_MODES = (
     BASELINE_MODEL_MODE,
     SURFACE_WAVE_MODEL_MODE,
@@ -347,15 +351,15 @@ def _execute_surface_wave_arm_plan(
     *,
     execution_request: Mapping[str, Any],
 ) -> ExecutedSimulationArmSummary:
-    resolved = resolve_surface_wave_execution_plan_from_arm_plan(arm_plan)
+    runtime = resolve_morphology_runtime_from_arm_plan(arm_plan)
     canonical_input_stream = load_canonical_input_stream_from_arm_plan(arm_plan)
     drive_schedule = build_drive_schedule_for_root_ids(
-        root_ids=resolved.root_ids,
+        root_ids=runtime.root_ids,
         canonical_input_stream=canonical_input_stream,
     )
     execution_payload = _run_surface_wave_manifest_execution(
         arm_plan=arm_plan,
-        resolved=resolved,
+        runtime=runtime,
         canonical_input_stream=canonical_input_stream,
         drive_schedule=drive_schedule,
     )
@@ -611,100 +615,65 @@ def _surface_wave_artifact_specs() -> tuple[dict[str, Any], ...]:
 def _run_surface_wave_manifest_execution(
     *,
     arm_plan: Mapping[str, Any],
-    resolved: Any,
+    runtime: Any,
     canonical_input_stream: Any,
     drive_schedule: Any,
 ) -> dict[str, Any]:
-    circuit = resolved.build_circuit()
-    circuit.initialize_zero()
-
-    vertex_count_by_root = {
-        int(bundle.root_id): int(bundle.surface_vertex_count)
-        for bundle in resolved.operator_bundles
-    }
-    last_drive_vector = np.zeros(len(resolved.root_ids), dtype=np.float64)
-    for step_index in range(int(resolved.timebase.sample_count)):
-        last_drive_vector = np.asarray(
-            drive_schedule.drive_values[step_index],
-            dtype=np.float64,
-        ).copy()
-        surface_drives_by_root = {
-            int(root_id): np.full(
-                vertex_count_by_root[int(root_id)],
-                float(last_drive_vector[root_index]),
-                dtype=np.float64,
-            )
-            for root_index, root_id in enumerate(resolved.root_ids)
-        }
-        circuit.step_shared(surface_drives_by_root=surface_drives_by_root)
-
-    wave_run = circuit.finalize()
+    last_drive_vector, wave_run = run_morphology_runtime_shared_schedule(
+        runtime,
+        drive_values=drive_schedule.drive_values,
+    )
     run_blueprint = _build_surface_wave_run_blueprint(
         arm_plan=arm_plan,
-        resolved=resolved,
+        runtime=runtime,
         canonical_input_stream=canonical_input_stream,
         drive_schedule=drive_schedule,
     )
-    initial_state_summaries = _build_surface_wave_state_summaries(
-        root_ids=resolved.root_ids,
-        states_by_root=wave_run.initial_states_by_root,
-        patch_state_by_root={
-            int(root_id): np.asarray(
-                wave_run.patch_readout_history_by_root[int(root_id)][0],
-                dtype=np.float64,
-            )
-            for root_id in resolved.root_ids
-        },
+    initial_state_summaries = wave_run.export_state_summaries(
+        state_stage="initial",
     )
-    final_state_summaries = _build_surface_wave_state_summaries(
-        root_ids=resolved.root_ids,
-        states_by_root=wave_run.final_states_by_root,
-        patch_state_by_root={
-            int(root_id): np.asarray(
-                wave_run.patch_readout_history_by_root[int(root_id)][-1],
-                dtype=np.float64,
-            )
-            for root_id in resolved.root_ids
-        },
+    final_state_summaries = wave_run.export_state_summaries(
+        state_stage="final",
     )
-    shared_trace_values = _build_surface_wave_trace_values(
-        shared_readout_history=wave_run.shared_readout_history,
-        run_blueprint=run_blueprint,
-        sample_count=int(resolved.timebase.sample_count),
+    shared_trace_values = wave_run.export_readout_trace_values(
+        readout_catalog=run_blueprint.readout_catalog,
+        sample_count=int(runtime.timebase.sample_count),
     )
     final_snapshot = _build_surface_wave_snapshot(
         lifecycle_stage="finalized",
-        completed_steps=int(resolved.timebase.sample_count),
-        current_time_ms=float(resolved.timebase.time_ms_after_steps(resolved.timebase.sample_count)),
-        root_ids=resolved.root_ids,
+        completed_steps=int(runtime.timebase.sample_count),
+        current_time_ms=float(
+            runtime.timebase.time_ms_after_steps(runtime.timebase.sample_count)
+        ),
+        wave_run=wave_run,
         summary=wave_run.shared_readout_history[-1],
         readout_catalog=run_blueprint.readout_catalog,
         state_summaries=final_state_summaries,
         exogenous_drive=last_drive_vector,
-        recurrent_input=np.zeros(len(resolved.root_ids), dtype=np.float64),
-        dt_ms=float(resolved.timebase.dt_ms),
+        recurrent_input=np.zeros(len(runtime.root_ids), dtype=np.float64),
+        dt_ms=float(runtime.timebase.dt_ms),
     )
     result = SimulationRunResult(
-        runtime_version=str(resolved.execution_version),
+        runtime_version=str(runtime.execution_version),
         run_blueprint=run_blueprint,
         initial_snapshot=_build_surface_wave_snapshot(
             lifecycle_stage="initialized",
             completed_steps=0,
-            current_time_ms=float(resolved.timebase.time_origin_ms),
-            root_ids=resolved.root_ids,
+            current_time_ms=float(runtime.timebase.time_origin_ms),
+            wave_run=wave_run,
             summary=wave_run.shared_readout_history[0],
             readout_catalog=run_blueprint.readout_catalog,
             state_summaries=initial_state_summaries,
-            exogenous_drive=np.zeros(len(resolved.root_ids), dtype=np.float64),
-            recurrent_input=np.zeros(len(resolved.root_ids), dtype=np.float64),
-            dt_ms=float(resolved.timebase.dt_ms),
+            exogenous_drive=np.zeros(len(runtime.root_ids), dtype=np.float64),
+            recurrent_input=np.zeros(len(runtime.root_ids), dtype=np.float64),
+            dt_ms=float(runtime.timebase.dt_ms),
         ),
         final_snapshot=final_snapshot,
         readout_traces=SimulationReadoutTraces(
-            time_ms=np.asarray(resolved.timebase.sample_times_ms(), dtype=np.float64),
+            time_ms=np.asarray(runtime.timebase.sample_times_ms(), dtype=np.float64),
             readout_ids=run_blueprint.readout_id_order,
             values=shared_trace_values,
-            captured_sample_count=int(resolved.timebase.sample_count),
+            captured_sample_count=int(runtime.timebase.sample_count),
         ),
     )
     final_state_summary_rows = [row.as_record() for row in final_state_summaries]
@@ -719,17 +688,14 @@ def _run_surface_wave_manifest_execution(
         ),
         "surface_wave_summary_payload": _build_surface_wave_summary_payload(
             arm_plan=arm_plan,
-            resolved=resolved,
+            runtime=runtime,
             wave_run=wave_run,
             canonical_input_stream=canonical_input_stream,
             drive_schedule=drive_schedule,
             run_blueprint=run_blueprint,
             state_summary_rows=final_state_summary_rows,
         ),
-        "surface_wave_patch_trace_payload": _build_surface_wave_patch_trace_payload(
-            resolved=resolved,
-            wave_run=wave_run,
-        ),
+        "surface_wave_patch_trace_payload": wave_run.export_projection_trace_payload(),
         "surface_wave_coupling_payload": {
             "format_version": SURFACE_WAVE_COUPLING_EVENTS_FORMAT,
             "workflow_version": SIMULATOR_MANIFEST_EXECUTION_VERSION,
@@ -739,22 +705,16 @@ def _run_surface_wave_manifest_execution(
         "provenance_model_execution": {
             "model_mode": SURFACE_WAVE_MODEL_MODE,
             "surface_wave_reference": copy.deepcopy(
-                _surface_wave_reference_from_arm_plan(arm_plan)
+                runtime.descriptor.model_metadata.get("surface_wave_reference")
             ),
+            "hybrid_morphology": copy.deepcopy(
+                runtime.descriptor.hybrid_morphology
+            ),
+            "morphology_runtime": runtime.descriptor.as_mapping(),
             "input_binding_strategy": SURFACE_WAVE_INPUT_BINDING_STRATEGY,
             "drive_schedule_hash": str(drive_schedule.drive_schedule_hash),
-            "solver": {
-                "integration_timestep_ms": float(resolved.integration_timestep_ms),
-                "shared_output_timestep_ms": float(resolved.shared_output_timestep_ms),
-                "internal_substep_count": int(resolved.internal_substep_count),
-            },
-            "coupling": {
-                "topology_condition": resolved.coupling_plan.topology_condition,
-                "shuffle_scope": resolved.coupling_plan.shuffle_scope,
-                "component_count": resolved.coupling_plan.component_count,
-                "max_delay_steps": resolved.coupling_plan.max_delay_steps,
-                "coupling_hash": resolved.coupling_plan.coupling_hash,
-            },
+            "solver": copy.deepcopy(runtime.descriptor.solver_metadata),
+            "coupling": copy.deepcopy(runtime.descriptor.coupling_metadata),
             "wave_specific_artifacts": [
                 SURFACE_WAVE_SUMMARY_ARTIFACT_ID,
                 SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID,
@@ -767,11 +727,11 @@ def _run_surface_wave_manifest_execution(
 def _build_surface_wave_run_blueprint(
     *,
     arm_plan: Mapping[str, Any],
-    resolved: Any,
+    runtime: Any,
     canonical_input_stream: Any,
     drive_schedule: Any,
 ) -> Any:
-    runtime = _require_mapping(arm_plan.get("runtime"), field_name="arm_plan.runtime")
+    runtime_config = _require_mapping(arm_plan.get("runtime"), field_name="arm_plan.runtime")
     selection = _require_mapping(arm_plan.get("selection"), field_name="arm_plan.selection")
     result_bundle_reference: Mapping[str, Any] | None = None
     result_bundle = arm_plan.get("result_bundle")
@@ -780,9 +740,9 @@ def _build_surface_wave_run_blueprint(
         if isinstance(reference, Mapping):
             result_bundle_reference = reference
     metadata = {
-        "execution_version": str(resolved.execution_version),
-        "runtime_config_version": runtime.get("config_version"),
-        "time_unit": runtime.get("time_unit"),
+        "execution_version": str(runtime.execution_version),
+        "runtime_config_version": runtime_config.get("config_version"),
+        "time_unit": runtime_config.get("time_unit"),
         "selected_root_ids_hash": _stable_hash(list(selection.get("selected_root_ids", []))),
         "canonical_input": {
             "input_kind": canonical_input_stream.input_kind,
@@ -796,25 +756,27 @@ def _build_surface_wave_run_blueprint(
         },
         "surface_wave_input_binding": {
             "injection_strategy": SURFACE_WAVE_INPUT_BINDING_STRATEGY,
-            "shared_output_timestep_ms": float(resolved.shared_output_timestep_ms),
-            "integration_timestep_ms": float(resolved.integration_timestep_ms),
-            "internal_substep_count": int(resolved.internal_substep_count),
-        },
-        "surface_wave_model": {
-            "model_family": resolved.surface_wave_model["model_family"],
-            "parameter_hash": resolved.surface_wave_model["parameter_hash"],
-            "solver_family": resolved.surface_wave_model["solver_family"],
-            "surface_wave_reference": copy.deepcopy(
-                _surface_wave_reference_from_arm_plan(arm_plan)
+            "shared_output_timestep_ms": float(
+                runtime.descriptor.solver_metadata["shared_output_timestep_ms"]
+            ),
+            "integration_timestep_ms": float(
+                runtime.descriptor.solver_metadata["integration_timestep_ms"]
+            ),
+            "internal_substep_count": int(
+                runtime.descriptor.solver_metadata["internal_substep_count"]
             ),
         },
-        "recurrent_coupling": {
-            "topology_condition": resolved.coupling_plan.topology_condition,
-            "shuffle_scope": resolved.coupling_plan.shuffle_scope,
-            "component_count": resolved.coupling_plan.component_count,
-            "max_delay_steps": resolved.coupling_plan.max_delay_steps,
-            "coupling_hash": resolved.coupling_plan.coupling_hash,
+        "surface_wave_model": {
+            "model_family": runtime.descriptor.model_metadata["model_family"],
+            "parameter_hash": runtime.descriptor.model_metadata["parameter_hash"],
+            "solver_family": runtime.descriptor.model_metadata["solver_family"],
+            "surface_wave_reference": copy.deepcopy(
+                runtime.descriptor.model_metadata.get("surface_wave_reference")
+            ),
         },
+        "surface_wave_hybrid_morphology": copy.deepcopy(runtime.descriptor.hybrid_morphology),
+        "recurrent_coupling": copy.deepcopy(runtime.descriptor.coupling_metadata),
+        "morphology_runtime": runtime.descriptor.as_mapping(),
     }
     return build_simulation_run_blueprint(
         manifest_reference=_require_mapping(
@@ -825,14 +787,14 @@ def _build_surface_wave_run_blueprint(
             arm_plan.get("arm_reference"),
             field_name="arm_plan.arm_reference",
         ),
-        root_ids=resolved.root_ids,
-        timebase=resolved.timebase,
+        root_ids=runtime.root_ids,
+        timebase=runtime.timebase,
         determinism=_require_mapping(
             arm_plan.get("determinism"),
             field_name="arm_plan.determinism",
         ),
         readout_catalog=_require_sequence(
-            runtime.get("shared_readout_catalog", runtime.get("readout_catalog")),
+            runtime_config.get("shared_readout_catalog", runtime_config.get("readout_catalog")),
             field_name="arm_plan.runtime.shared_readout_catalog",
         ),
         result_bundle_reference=result_bundle_reference,
@@ -865,7 +827,7 @@ def _build_surface_wave_snapshot(
     lifecycle_stage: str,
     completed_steps: int,
     current_time_ms: float,
-    root_ids: Sequence[int],
+    wave_run: Any,
     summary: Mapping[str, Any],
     readout_catalog: Sequence[Any],
     state_summaries: Sequence[SimulationStateSummaryRow],
@@ -873,8 +835,8 @@ def _build_surface_wave_snapshot(
     recurrent_input: np.ndarray,
     dt_ms: float,
 ) -> SimulationSnapshot:
-    dynamic_state = _surface_wave_dynamic_state_vector(summary=summary, root_ids=root_ids)
-    readout_values = _surface_wave_readout_values(
+    dynamic_state = wave_run.export_dynamic_state_vector(summary=summary)
+    readout_values = wave_run.export_readout_values(
         summary=summary,
         readout_catalog=readout_catalog,
     )
@@ -883,7 +845,7 @@ def _build_surface_wave_snapshot(
         completed_steps=int(completed_steps),
         current_time_ms=float(current_time_ms),
         dt_ms=float(dt_ms),
-        root_ids=tuple(int(root_id) for root_id in root_ids),
+        root_ids=tuple(int(root_id) for root_id in wave_run.root_ids),
         dynamic_state=dynamic_state,
         exogenous_drive=np.asarray(exogenous_drive, dtype=np.float64),
         recurrent_input=np.asarray(recurrent_input, dtype=np.float64),
@@ -1097,14 +1059,13 @@ def _build_surface_wave_structured_log_records(
     drive_schedule: Any,
     state_summary_row_count: int,
 ) -> list[dict[str, Any]]:
-    root_ids = run_blueprint.root_ids
-    zero_drive = np.zeros(len(root_ids), dtype=np.float64)
+    zero_drive = np.zeros(len(run_blueprint.root_ids), dtype=np.float64)
     records = [
         _surface_wave_structured_log_record(
             event_index=0,
             event_type="initialized",
+            wave_run=wave_run,
             summary=wave_run.shared_readout_history[0],
-            root_ids=root_ids,
             readout_catalog=run_blueprint.readout_catalog,
             drive_vector=zero_drive,
             sample_count=int(run_blueprint.timebase.sample_count),
@@ -1117,8 +1078,8 @@ def _build_surface_wave_structured_log_records(
             _surface_wave_structured_log_record(
                 event_index=len(records),
                 event_type="step_completed",
+                wave_run=wave_run,
                 summary=wave_run.shared_readout_history[step_index + 1],
-                root_ids=root_ids,
                 readout_catalog=run_blueprint.readout_catalog,
                 drive_vector=np.asarray(
                     drive_schedule.drive_values[step_index],
@@ -1133,8 +1094,8 @@ def _build_surface_wave_structured_log_records(
         _surface_wave_structured_log_record(
             event_index=len(records),
             event_type="finalized",
+            wave_run=wave_run,
             summary=wave_run.shared_readout_history[-1],
-            root_ids=root_ids,
             readout_catalog=run_blueprint.readout_catalog,
             drive_vector=(
                 np.asarray(drive_schedule.drive_values[-1], dtype=np.float64)
@@ -1153,16 +1114,16 @@ def _surface_wave_structured_log_record(
     *,
     event_index: int,
     event_type: str,
+    wave_run: Any,
     summary: Mapping[str, Any],
-    root_ids: Sequence[int],
     readout_catalog: Sequence[Any],
     drive_vector: np.ndarray,
     sample_count: int,
     dt_ms: float,
     state_summary_row_count: int,
 ) -> dict[str, Any]:
-    dynamic_state = _surface_wave_dynamic_state_vector(summary=summary, root_ids=root_ids)
-    readout_values = _surface_wave_readout_values(
+    dynamic_state = wave_run.export_dynamic_state_vector(summary=summary)
+    readout_values = wave_run.export_readout_values(
         summary=summary,
         readout_catalog=readout_catalog,
     )
@@ -1189,7 +1150,7 @@ def _surface_wave_structured_log_record(
 def _build_surface_wave_summary_payload(
     *,
     arm_plan: Mapping[str, Any],
-    resolved: Any,
+    runtime: Any,
     wave_run: Any,
     canonical_input_stream: Any,
     drive_schedule: Any,
@@ -1202,7 +1163,11 @@ def _build_surface_wave_summary_payload(
         "manifest_reference": copy.deepcopy(run_blueprint.manifest_reference),
         "arm_reference": copy.deepcopy(run_blueprint.arm_reference),
         "bundle_reference": copy.deepcopy(run_blueprint.result_bundle_reference),
-        "surface_wave_reference": copy.deepcopy(_surface_wave_reference_from_arm_plan(arm_plan)),
+        "surface_wave_reference": copy.deepcopy(
+            runtime.descriptor.model_metadata.get("surface_wave_reference")
+        ),
+        "hybrid_morphology": copy.deepcopy(runtime.descriptor.hybrid_morphology),
+        "morphology_runtime": runtime.descriptor.as_mapping(),
         "canonical_input": {
             "input_kind": canonical_input_stream.input_kind,
             "bundle_id": canonical_input_stream.bundle_id,
@@ -1214,23 +1179,31 @@ def _build_surface_wave_summary_payload(
         },
         "input_binding": {
             "injection_strategy": SURFACE_WAVE_INPUT_BINDING_STRATEGY,
-            "shared_output_timestep_ms": float(resolved.shared_output_timestep_ms),
-            "integration_timestep_ms": float(resolved.integration_timestep_ms),
-            "internal_substep_count": int(resolved.internal_substep_count),
+            "shared_output_timestep_ms": float(
+                runtime.descriptor.solver_metadata["shared_output_timestep_ms"]
+            ),
+            "integration_timestep_ms": float(
+                runtime.descriptor.solver_metadata["integration_timestep_ms"]
+            ),
+            "internal_substep_count": int(
+                runtime.descriptor.solver_metadata["internal_substep_count"]
+            ),
         },
         "solver": {
-            "integration_timestep_ms": float(resolved.integration_timestep_ms),
-            "shared_output_timestep_ms": float(resolved.shared_output_timestep_ms),
-            "internal_substep_count": int(resolved.internal_substep_count),
+            "integration_timestep_ms": float(
+                runtime.descriptor.solver_metadata["integration_timestep_ms"]
+            ),
+            "shared_output_timestep_ms": float(
+                runtime.descriptor.solver_metadata["shared_output_timestep_ms"]
+            ),
+            "internal_substep_count": int(
+                runtime.descriptor.solver_metadata["internal_substep_count"]
+            ),
             "substep_count": int(wave_run.substep_count),
             "shared_step_count": int(wave_run.shared_step_count),
         },
         "coupling": {
-            "topology_condition": resolved.coupling_plan.topology_condition,
-            "shuffle_scope": resolved.coupling_plan.shuffle_scope,
-            "component_count": resolved.coupling_plan.component_count,
-            "max_delay_steps": resolved.coupling_plan.max_delay_steps,
-            "coupling_hash": resolved.coupling_plan.coupling_hash,
+            **copy.deepcopy(runtime.descriptor.coupling_metadata),
             "coupling_event_count": len(wave_run.coupling_application_history),
         },
         "runtime_metadata_by_root": [copy.deepcopy(item) for item in wave_run.runtime_metadata_by_root],
@@ -1249,29 +1222,6 @@ def _build_surface_wave_summary_payload(
         },
         "state_summary_row_count": len(state_summary_rows),
     }
-
-
-def _build_surface_wave_patch_trace_payload(
-    *,
-    resolved: Any,
-    wave_run: Any,
-) -> dict[str, np.ndarray]:
-    history_length = len(
-        wave_run.patch_readout_history_by_root[int(resolved.root_ids[0])]
-    )
-    payload: dict[str, np.ndarray] = {
-        "substep_time_ms": (
-            np.arange(history_length, dtype=np.float64) * float(resolved.integration_timestep_ms)
-            + float(resolved.timebase.time_origin_ms)
-        ),
-        "root_ids": np.asarray(resolved.root_ids, dtype=np.int64),
-    }
-    for root_id in resolved.root_ids:
-        payload[f"root_{int(root_id)}_patch_activation"] = np.asarray(
-            wave_run.patch_readout_history_by_root[int(root_id)],
-            dtype=np.float64,
-        )
-    return payload
 
 
 def _surface_wave_dynamic_state_vector(

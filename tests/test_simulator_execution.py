@@ -19,12 +19,20 @@ from flywire_wave.geometry_contract import (
     COARSE_OPERATOR_KEY,
     FINE_OPERATOR_KEY,
     OPERATOR_METADATA_KEY,
+    SIMPLIFIED_MESH_KEY,
     TRANSFER_OPERATORS_KEY,
     build_geometry_bundle_paths,
     build_geometry_manifest_record,
     default_asset_statuses,
     load_operator_bundle_metadata,
     write_geometry_manifest,
+)
+from flywire_wave.hybrid_morphology_contract import (
+    HYBRID_MORPHOLOGY_CONTRACT_VERSION,
+    SURFACE_NEURON_CLASS,
+)
+from flywire_wave.hybrid_morphology_runtime import (
+    MORPHOLOGY_CLASS_RUNTIME_INTERFACE_VERSION,
 )
 from flywire_wave.manifests import load_json
 from flywire_wave.mesh_pipeline import process_mesh_into_wave_assets
@@ -264,12 +272,42 @@ class SimulatorExecutionSmokeTest(unittest.TestCase):
                 "json_surface_wave_execution_summary.v1",
             )
             self.assertEqual(
+                wave_summary["hybrid_morphology"]["contract_version"],
+                HYBRID_MORPHOLOGY_CONTRACT_VERSION,
+            )
+            self.assertEqual(
+                wave_summary["hybrid_morphology"]["discovered_morphology_classes"],
+                [SURFACE_NEURON_CLASS],
+            )
+            self.assertEqual(
+                wave_summary["morphology_runtime"]["interface_version"],
+                MORPHOLOGY_CLASS_RUNTIME_INTERFACE_VERSION,
+            )
+            self.assertEqual(
                 wave_summary["input_binding"]["injection_strategy"],
                 "uniform_surface_fill_from_shared_root_schedule",
             )
             self.assertEqual(
                 wave_summary["wave_specific_artifacts"]["patch_traces_artifact_id"],
                 "surface_wave_patch_traces",
+            )
+
+            provenance_payload = load_json(extension_paths["execution_provenance"])
+            self.assertEqual(
+                provenance_payload["model_execution"]["hybrid_morphology"]["contract_version"],
+                HYBRID_MORPHOLOGY_CONTRACT_VERSION,
+            )
+            self.assertEqual(
+                provenance_payload["model_execution"]["hybrid_morphology"][
+                    "discovered_morphology_classes"
+                ],
+                [SURFACE_NEURON_CLASS],
+            )
+            self.assertEqual(
+                provenance_payload["model_execution"]["morphology_runtime"][
+                    "interface_version"
+                ],
+                MORPHOLOGY_CLASS_RUNTIME_INTERFACE_VERSION,
             )
 
             coupling_payload = load_json(extension_paths["surface_wave_coupling_events"])
@@ -542,6 +580,7 @@ def _surface_ready_asset_statuses() -> dict[str, str]:
     asset_statuses = default_asset_statuses(fetch_skeletons=False)
     asset_statuses.update(
         {
+            SIMPLIFIED_MESH_KEY: "ready",
             FINE_OPERATOR_KEY: "ready",
             COARSE_OPERATOR_KEY: "ready",
             TRANSFER_OPERATORS_KEY: "ready",

@@ -1,0 +1,11 @@
+Implemented FW-M11-001 end to end.
+
+The main change is a new library contract module at [hybrid_morphology_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/hybrid_morphology_contract.py#L15) that freezes `hybrid_morphology.v1` with canonical normalized classes `surface_neuron`, `skeleton_neuron`, and `point_neuron`, plus per-class required/optional assets, state-space semantics, readout surface semantics, coupling anchor resolution, serialization requirements, approximation notes, cross-class coupling routes, and promotion invariants. The existing `surface_wave` planning path now carries this at [simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L1565), and execution now normalizes/mirrors it into wave provenance and summary payloads in [surface_wave_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/surface_wave_execution.py) and [simulator_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L739).
+
+The Milestone 11 vocabulary is documented in [hybrid_morphology_design.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/hybrid_morphology_design.md#L1), and [pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md#L322) now places mixed morphology alongside the other versioned contracts. Regression coverage was added in [test_hybrid_morphology_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_hybrid_morphology_contract.py#L24) and extended in [test_simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py) and [test_simulator_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py).
+
+Verified:
+- `.venv/bin/python -m unittest tests.test_hybrid_morphology_contract tests.test_simulation_planning tests.test_simulator_execution -v`
+- `make test`
+
+Both passed. I left unrelated untracked `agent_tickets/...` files untouched.

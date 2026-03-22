@@ -428,6 +428,9 @@
         "random_seed": {
           "type": "integer"
         },
+        "fidelity_assignment": {
+          "$ref": "#/$defs/fidelityAssignment"
+        },
         "notes": {
           "type": "string",
           "minLength": 1
@@ -484,6 +487,39 @@
           }
         }
       ]
+    },
+    "fidelityRootOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root_id",
+        "morphology_class"
+      ],
+      "properties": {
+        "root_id": {
+          "type": "integer"
+        },
+        "morphology_class": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "fidelityAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default_morphology_class": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root_overrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fidelityRootOverride"
+          }
+        }
+      }
     },
     "plotOutput": {
       "type": "object",

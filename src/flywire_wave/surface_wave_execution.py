@@ -15,6 +15,10 @@ from .coupling_contract import (
     SEPARABLE_RANK_ONE_CLOUD_KERNEL,
     SURFACE_PATCH_CLOUD_MODE,
 )
+from .hybrid_morphology_contract import (
+    build_hybrid_morphology_plan_metadata,
+    parse_hybrid_morphology_plan_metadata,
+)
 from .simulator_runtime import (
     SimulationDeterminismContext,
     SimulationTimebase,
@@ -758,6 +762,35 @@ def resolve_surface_wave_execution_plan(
         raise ValueError("surface-wave execution requires at least one selected root.")
     if len(set(normalized_root_ids)) != len(normalized_root_ids):
         raise ValueError("surface-wave execution root_ids contain duplicates.")
+    hybrid_morphology = normalized_execution_plan.get("hybrid_morphology")
+    if hybrid_morphology is None:
+        hybrid_morphology = build_hybrid_morphology_plan_metadata(
+            root_records=[
+                {
+                    "root_id": int(root_id),
+                    "project_role": "surface_simulated",
+                }
+                for root_id in normalized_root_ids
+            ],
+            model_mode="surface_wave",
+        )
+    else:
+        hybrid_morphology = parse_hybrid_morphology_plan_metadata(
+            _require_mapping(
+                hybrid_morphology,
+                field_name="surface_wave_execution_plan.hybrid_morphology",
+            )
+        )
+    hybrid_root_ids = tuple(
+        int(item["root_id"])
+        for item in hybrid_morphology["per_root_class_metadata"]
+    )
+    if hybrid_root_ids != normalized_root_ids:
+        raise ValueError(
+            "surface_wave_execution_plan.hybrid_morphology.per_root_class_metadata "
+            "must cover the same ordered root_ids as the execution request."
+        )
+    normalized_execution_plan["hybrid_morphology"] = hybrid_morphology
     normalized_timebase = SimulationTimebase.from_mapping(timebase)
     normalized_determinism = SimulationDeterminismContext.from_mapping(determinism)
     operator_assets = _resolve_operator_assets(

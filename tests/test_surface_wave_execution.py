@@ -29,6 +29,10 @@ from flywire_wave.coupling_contract import (
     SURFACE_PATCH_CLOUD_MODE,
     SUM_TO_ONE_PER_COMPONENT_NORMALIZATION,
 )
+from flywire_wave.hybrid_morphology_runtime import (
+    build_surface_wave_morphology_runtime,
+    run_morphology_runtime_shared_schedule,
+)
 from flywire_wave.io_utils import write_deterministic_npz, write_json
 from flywire_wave.surface_operators import serialize_sparse_matrix
 from flywire_wave.surface_wave_contract import build_surface_wave_model_metadata
@@ -160,6 +164,73 @@ class SurfaceWaveExecutionTest(unittest.TestCase):
             np.testing.assert_allclose(
                 result.patch_readout_history_by_root[202],
                 repeated.patch_readout_history_by_root[202],
+            )
+
+    def test_morphology_runtime_adapter_preserves_surface_fixture_behavior(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_fixture(Path(tmp_dir_str), topology_condition="intact")
+            plan = resolve_surface_wave_execution_plan(
+                surface_wave_model=fixture["surface_wave_model"],
+                surface_wave_execution_plan=fixture["surface_wave_execution_plan"],
+                root_ids=fixture["root_ids"],
+                timebase=fixture["timebase"],
+                determinism=fixture["determinism"],
+            )
+            initial_states = {
+                101: SurfaceWaveState(
+                    resolution="surface",
+                    activation=np.asarray([1.0, 0.0], dtype=np.float64),
+                    velocity=np.zeros(2, dtype=np.float64),
+                )
+            }
+
+            legacy = plan.run_to_completion(
+                shared_step_count=3,
+                initial_states_by_root=initial_states,
+            )
+            runtime = build_surface_wave_morphology_runtime(plan)
+            last_drive_vector, adapted = run_morphology_runtime_shared_schedule(
+                runtime,
+                drive_values=np.zeros((3, len(plan.root_ids)), dtype=np.float64),
+                initial_states_by_root=initial_states,
+            )
+
+            np.testing.assert_allclose(last_drive_vector, np.zeros(len(plan.root_ids), dtype=np.float64))
+            self.assertEqual(
+                runtime.descriptor.hybrid_morphology["discovered_morphology_classes"],
+                ["surface_neuron"],
+            )
+            self.assertEqual(
+                adapted.initial_state_exports_by_root,
+                legacy.initial_states_by_root,
+            )
+            self.assertEqual(
+                adapted.final_state_exports_by_root,
+                legacy.final_states_by_root,
+            )
+            self.assertEqual(
+                list(adapted.shared_readout_history),
+                list(legacy.shared_readout_history),
+            )
+            self.assertEqual(
+                list(adapted.coupling_application_history),
+                list(legacy.coupling_application_history),
+            )
+            np.testing.assert_allclose(
+                adapted.coupling_projection_history_by_root[101],
+                legacy.patch_readout_history_by_root[101],
+            )
+            np.testing.assert_allclose(
+                adapted.coupling_projection_history_by_root[202],
+                legacy.patch_readout_history_by_root[202],
+            )
+
+            projection_payload = adapted.export_projection_trace_payload()
+            self.assertIn("root_101_patch_activation", projection_payload)
+            self.assertIn("root_202_patch_activation", projection_payload)
+            np.testing.assert_allclose(
+                projection_payload["root_202_patch_activation"],
+                legacy.patch_readout_history_by_root[202],
             )
 
     def test_unusable_delay_and_incompatible_anchor_resolution_fail_clearly(self) -> None:
