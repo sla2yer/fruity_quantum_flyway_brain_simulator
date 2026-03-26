@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +16,8 @@ from typing import Any, Callable
 TICKET_HEADING_RE = re.compile(r"^##\s+([A-Za-z0-9._-]+)\s+-\s+(.+?)\s*$")
 SECTION_HEADING_RE = re.compile(r"^###\s+(.+?)\s*$")
 STATUS_DEFAULT = "open"
+MAX_TICKET_DIR_NAME_LEN = 120
+TICKET_ARTIFACT_FILENAMES = ("prompt.md", "stdout.jsonl", "stderr.log", "last_message.md")
 
 
 @dataclass(frozen=True)
@@ -167,7 +171,13 @@ def build_ticket_prompt(ticket: AgentTicket, *, repo_root: str | Path) -> str:
 
 def _safe_ticket_name(ticket: AgentTicket) -> str:
     raw = f"{ticket.ticket_id}_{ticket.title}"
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("_") or ticket.ticket_id
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("_") or ticket.ticket_id
+    if len(sanitized) <= MAX_TICKET_DIR_NAME_LEN:
+        return sanitized
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    head_len = max(1, MAX_TICKET_DIR_NAME_LEN - len(digest) - 1)
+    head = sanitized[:head_len].rstrip("._-") or ticket.ticket_id
+    return f"{head}_{digest}"
 
 
 def _compact_text(text: str, *, max_len: int = 240) -> str:
@@ -267,6 +277,18 @@ def _stream_ticket_process(
     return int(process.wait())
 
 
+def _sync_ticket_artifacts(staging_dir: Path, ticket_dir: Path) -> None:
+    ticket_dir.mkdir(parents=True, exist_ok=True)
+    for filename in TICKET_ARTIFACT_FILENAMES:
+        source_path = staging_dir / filename
+        target_path = ticket_dir / filename
+        if source_path.exists():
+            shutil.copy2(source_path, target_path)
+            continue
+        if target_path.exists():
+            target_path.unlink()
+
+
 def run_ticket(
     ticket: AgentTicket,
     *,
@@ -282,55 +304,62 @@ def run_ticket(
     repo_root = Path(repo_root)
     output_dir = Path(output_dir)
     ticket_dir = output_dir / _safe_ticket_name(ticket)
-    ticket_dir.mkdir(parents=True, exist_ok=True)
-
     prompt = build_ticket_prompt(ticket, repo_root=repo_root)
     prompt_path = ticket_dir / "prompt.md"
     stdout_path = ticket_dir / "stdout.jsonl"
     stderr_path = ticket_dir / "stderr.log"
     last_message_path = ticket_dir / "last_message.md"
 
-    prompt_path.write_text(prompt, encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix=f"flywire_wave_{ticket.ticket_id}_") as staging_dir_str:
+        staging_dir = Path(staging_dir_str)
+        staging_prompt_path = staging_dir / "prompt.md"
+        staging_stdout_path = staging_dir / "stdout.jsonl"
+        staging_stderr_path = staging_dir / "stderr.log"
+        staging_last_message_path = staging_dir / "last_message.md"
 
-    cmd = [
-        runner,
-        "exec",
-        "--json",
-        "--cd",
-        str(repo_root),
-        "--sandbox",
-        sandbox,
-        "--output-last-message",
-        str(last_message_path),
-    ]
-    if model:
-        cmd.extend(["--model", model])
-    if extra_args:
-        cmd.extend(extra_args)
+        staging_prompt_path.write_text(prompt, encoding="utf-8")
 
-    process = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    assert process.stdin is not None
-    process.stdin.write(prompt)
-    process.stdin.close()
+        cmd = [
+            runner,
+            "exec",
+            "--json",
+            "--cd",
+            str(repo_root),
+            "--sandbox",
+            sandbox,
+            "--output-last-message",
+            str(staging_last_message_path),
+        ]
+        if model:
+            cmd.extend(["--model", model])
+        if extra_args:
+            cmd.extend(extra_args)
 
-    return_code = _stream_ticket_process(
-        process,
-        raw_output_path=stdout_path,
-        progress_callback=progress_callback,
-        heartbeat_seconds=heartbeat_seconds,
-        heartbeat_label=f"{ticket.ticket_id} ({ticket.title})",
-    )
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        assert process.stdin is not None
+        process.stdin.write(prompt)
+        process.stdin.close()
 
-    # stderr is merged into stdout for streaming simplicity; keep a placeholder file
-    # so callers still have a stable artifact path.
-    if not stderr_path.exists():
-        stderr_path.write_text("", encoding="utf-8")
+        return_code = _stream_ticket_process(
+            process,
+            raw_output_path=staging_stdout_path,
+            progress_callback=progress_callback,
+            heartbeat_seconds=heartbeat_seconds,
+            heartbeat_label=f"{ticket.ticket_id} ({ticket.title})",
+        )
+
+        # stderr is merged into stdout for streaming simplicity; keep a placeholder file
+        # so callers still have a stable artifact path.
+        if not staging_stderr_path.exists():
+            staging_stderr_path.write_text("", encoding="utf-8")
+
+        _sync_ticket_artifacts(staging_dir, ticket_dir)
 
     return {
         "ticket_id": ticket.ticket_id,
@@ -348,5 +377,6 @@ def run_ticket(
 
 def write_run_summary(results: list[dict[str, Any]], output_dir: str | Path) -> Path:
     output_path = Path(output_dir) / "summary.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     return output_path
