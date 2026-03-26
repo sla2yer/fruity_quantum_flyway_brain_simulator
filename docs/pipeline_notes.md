@@ -489,6 +489,16 @@ Contract notes:
 - Milestone 12 v1 freezes ids and discovery semantics first; later Milestone 12
   tickets may add packaged analysis artifacts, but they must reuse this same
   catalog instead of inventing script-local names
+- `scripts/20_experiment_comparison_analysis.py` is the Milestone 12 local
+  task-layer workflow:
+  - it resolves the normalized readout-analysis plan, discovers one
+    experiment's local simulator bundle set, computes matched baseline versus
+    `surface_wave` comparisons, aggregates across the declared seed sweep, runs
+    the active null tests, and emits experiment-level task scores plus the
+    Milestone 1 decision panel
+  - `make compare-analysis` is the repo entrypoint for that workflow and
+    accepts `COMPARE_ANALYSIS_ARGS`, for example
+    `COMPARE_ANALYSIS_ARGS="--output data/processed/analysis/example-summary.json"`
 
 `docs/readout_analysis_design.md` is the authoritative Milestone 12 decision
 note; later tickets should cite it instead of re-litigating the metric

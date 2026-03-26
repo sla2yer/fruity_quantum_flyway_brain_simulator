@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -121,6 +122,52 @@ class ExperimentComparisonWorkflowTest(unittest.TestCase):
                 )
 
             self.assertIn("missing required condition coverage", str(ctx.exception))
+
+    def test_workflow_fails_clearly_for_incomplete_seed_coverage(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _materialize_experiment_comparison_fixture(tmp_dir)
+            for item in fixture["bundle_metadata_records"]:
+                if item["arm_id"] == "surface_wave_intact" and item["seed"] == 17:
+                    item["metadata_path"].unlink()
+
+            with self.assertRaises(ValueError) as ctx:
+                execute_experiment_comparison_workflow(
+                    manifest_path=fixture["manifest_path"],
+                    config_path=fixture["config_path"],
+                    schema_path=fixture["schema_path"],
+                    design_lock_path=fixture["design_lock_path"],
+                )
+
+            message = str(ctx.exception)
+            self.assertIn("missing required condition coverage", message)
+            self.assertIn("surface_wave_intact", message)
+            self.assertIn("17", message)
+
+    def test_workflow_fails_clearly_for_incompatible_readout_inventory(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _materialize_experiment_comparison_fixture(tmp_dir)
+            config_payload = yaml.safe_load(
+                fixture["config_path"].read_text(encoding="utf-8")
+            )
+            config_payload["simulation"]["readout_catalog"][0]["units"] = "arb_units"
+            fixture["config_path"].write_text(
+                yaml.safe_dump(config_payload, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as ctx:
+                execute_experiment_comparison_workflow(
+                    manifest_path=fixture["manifest_path"],
+                    config_path=fixture["config_path"],
+                    schema_path=fixture["schema_path"],
+                    design_lock_path=fixture["design_lock_path"],
+                )
+
+            message = str(ctx.exception)
+            self.assertIn("incompatible units", message)
+            self.assertIn("shared_output_mean", message)
 
 
 def _materialize_experiment_comparison_fixture(tmp_dir: Path) -> dict[str, Any]:

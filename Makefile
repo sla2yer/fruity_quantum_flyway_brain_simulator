@@ -14,10 +14,11 @@ M10_CONFIG ?= config/milestone_10_verification.yaml
 M11_CONFIG ?= config/milestone_11_verification.yaml
 M11_READINESS_ARGS ?=
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate wave-inspect mixed-fidelity-inspect milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate compare-analysis wave-inspect mixed-fidelity-inspect milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
+COMPARE_ANALYSIS_ARGS ?=
 WAVE_INSPECT_ARGS ?=
 MIXED_FIDELITY_INSPECT_ARGS ?=
 
@@ -35,6 +36,7 @@ help:
 		'coupling-inspect   Build static offline coupling inspection report(s)' \
 		'operator-qa        Build static offline operator QA report(s)' \
 		'simulate           Execute manifest-driven simulator runs and write result bundles' \
+		'compare-analysis  Discover local simulator bundles and compute experiment-level comparison analysis' \
 		'wave-inspect       Run local surface-wave sweep and offline inspection report(s)' \
 		'mixed-fidelity-inspect Run offline surrogate-versus-reference mixed-fidelity inspection' \
 		'milestone6-readiness Run the Milestone 6 verification pass and publish a readiness report' \
@@ -78,6 +80,9 @@ operator-qa:
 
 simulate:
 	$(PYTHON) scripts/run_simulation.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(SIMULATE_ARGS)
+
+compare-analysis:
+	$(PYTHON) scripts/20_experiment_comparison_analysis.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(COMPARE_ANALYSIS_ARGS)
 
 wave-inspect:
 	$(PYTHON) scripts/15_surface_wave_inspection.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(WAVE_INSPECT_ARGS)
