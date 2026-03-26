@@ -7,6 +7,8 @@ __all__ = [
     "coupling_assembly",
     "coupling_inspection",
     "coupling_contract",
+    "experiment_analysis_contract",
+    "experiment_analysis_visualization",
     "experiment_comparison_analysis",
     "geometry_contract",
     "geometry_qa",

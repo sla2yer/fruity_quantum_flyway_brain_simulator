@@ -21,8 +21,9 @@ from flywire_wave.experiment_comparison_analysis import (
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Discover one experiment's local simulator bundle set and compute "
-            "experiment-level Milestone 12 comparison summaries."
+            "Discover one experiment's local simulator bundle set, compute the "
+            "Milestone 12 comparison summary, and package canonical experiment-"
+            "level analysis exports plus an offline report."
         )
     )
     parser.add_argument("--config", required=True, help="Path to the runtime config YAML.")
@@ -35,7 +36,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--output",
-        help="Optional JSON output path for the computed experiment summary.",
+        help="Optional extra JSON output path for the computed experiment summary.",
     )
     args = parser.parse_args(argv)
 

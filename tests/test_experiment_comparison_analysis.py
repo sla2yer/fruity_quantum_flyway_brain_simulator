@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,18 @@ from flywire_wave.experiment_comparison_analysis import (
     EXPERIMENT_COMPARISON_SUMMARY_VERSION,
     execute_experiment_comparison_workflow,
 )
+from flywire_wave.experiment_analysis_contract import (
+    ANALYSIS_UI_PAYLOAD_ARTIFACT_ID,
+    COMPARISON_MATRICES_ARTIFACT_ID,
+    OFFLINE_REPORT_INDEX_ARTIFACT_ID,
+    OFFLINE_REPORT_SUMMARY_ARTIFACT_ID,
+    VISUALIZATION_CATALOG_ARTIFACT_ID,
+    discover_experiment_analysis_bundle_paths,
+    load_experiment_analysis_bundle_metadata,
+)
+from flywire_wave.experiment_analysis_visualization import (
+    generate_experiment_analysis_report,
+)
 from flywire_wave.io_utils import write_deterministic_npz, write_json
 from flywire_wave.simulation_planning import (
     discover_simulation_run_plans,
@@ -30,7 +43,9 @@ from flywire_wave.simulator_result_contract import (
     READOUT_TRACES_KEY,
     STATE_SUMMARY_KEY,
     build_selected_asset_reference,
+    build_simulator_extension_artifact_record,
     build_simulator_result_bundle_metadata,
+    build_simulator_result_bundle_paths,
     write_simulator_result_bundle_metadata,
 )
 from flywire_wave.stimulus_contract import (
@@ -69,6 +84,7 @@ class ExperimentComparisonWorkflowTest(unittest.TestCase):
             self.assertEqual(first["summary_version"], EXPERIMENT_COMPARISON_SUMMARY_VERSION)
             self.assertEqual(first["summary_path"], second["summary_path"])
             self.assertEqual(first["task_scores"], second["task_scores"])
+            self.assertEqual(first["packaged_analysis_bundle"], second["packaged_analysis_bundle"])
             self.assertTrue(Path(first["summary_path"]).exists())
             self.assertEqual(len(first["bundle_set"]["bundle_inventory"]), 48)
 
@@ -99,6 +115,112 @@ class ExperimentComparisonWorkflowTest(unittest.TestCase):
                 [item["status"] for item in decision_panel["decision_items"]],
                 ["pass", "pass", "pass", "pass"],
             )
+
+    def test_fixture_workflow_packages_analysis_bundle_with_ui_payload_and_phase_map_refs(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _materialize_experiment_comparison_fixture(tmp_dir)
+
+            result = execute_experiment_comparison_workflow(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+
+            packaged = result["packaged_analysis_bundle"]
+            metadata_path = Path(packaged["metadata_path"]).resolve()
+            metadata = load_experiment_analysis_bundle_metadata(metadata_path)
+            discovered_paths = discover_experiment_analysis_bundle_paths(metadata)
+
+            self.assertTrue(metadata_path.exists())
+            self.assertEqual(
+                discovered_paths[ANALYSIS_UI_PAYLOAD_ARTIFACT_ID],
+                Path(packaged["analysis_ui_payload_path"]).resolve(),
+            )
+            self.assertEqual(
+                discovered_paths[COMPARISON_MATRICES_ARTIFACT_ID],
+                Path(packaged["comparison_matrices_path"]).resolve(),
+            )
+            self.assertEqual(
+                discovered_paths[VISUALIZATION_CATALOG_ARTIFACT_ID],
+                Path(packaged["visualization_catalog_path"]).resolve(),
+            )
+            self.assertEqual(
+                discovered_paths[OFFLINE_REPORT_INDEX_ARTIFACT_ID],
+                Path(packaged["report_path"]).resolve(),
+            )
+            self.assertEqual(
+                discovered_paths[OFFLINE_REPORT_SUMMARY_ARTIFACT_ID],
+                Path(packaged["report_summary_path"]).resolve(),
+            )
+
+            ui_payload = json.loads(
+                Path(packaged["analysis_ui_payload_path"]).read_text(encoding="utf-8")
+            )
+            self.assertIn("task_summary_cards", ui_payload)
+            self.assertIn("comparison_cards", ui_payload)
+            self.assertIn("analysis_visualizations", ui_payload)
+            self.assertGreater(len(ui_payload["task_summary_cards"]), 0)
+            self.assertTrue(
+                any(
+                    item["output_id"] == "null_direction_suppression_comparison"
+                    for item in ui_payload["comparison_cards"]
+                )
+            )
+            self.assertEqual(
+                ui_payload["shared_comparison"]["milestone_1_decision_panel"][
+                    "overall_status"
+                ],
+                "pass",
+            )
+
+            visualization_catalog = json.loads(
+                Path(packaged["visualization_catalog_path"]).read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertGreater(len(visualization_catalog["phase_map_references"]), 0)
+            self.assertEqual(
+                visualization_catalog["offline_report"]["summary_path"],
+                packaged["report_summary_path"],
+            )
+
+            report_html = Path(packaged["report_path"]).read_text(encoding="utf-8")
+            self.assertIn("Task Summary Cards", report_html)
+            self.assertIn("Null Tests", report_html)
+            self.assertIn("null_direction_suppression_comparison", report_html)
+
+    def test_packaged_analysis_bundle_can_regenerate_report_from_local_artifacts_only(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _materialize_experiment_comparison_fixture(tmp_dir)
+
+            result = execute_experiment_comparison_workflow(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+            packaged = result["packaged_analysis_bundle"]
+
+            regenerated = generate_experiment_analysis_report(
+                analysis_bundle_metadata_path=packaged["metadata_path"],
+                output_dir=tmp_dir / "regenerated_analysis_report",
+            )
+
+            self.assertEqual(
+                regenerated["bundle_id"],
+                packaged["bundle_reference"]["bundle_id"],
+            )
+            self.assertTrue(Path(regenerated["report_path"]).exists())
+            self.assertTrue(Path(regenerated["summary_path"]).exists())
+            self.assertIn("no local server is required", regenerated["viewer_open_hint"])
+            regenerated_html = Path(regenerated["report_path"]).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("Milestone 12 Experiment Analysis Bundle", regenerated_html)
+            self.assertIn("Wave Diagnostics", regenerated_html)
 
     def test_workflow_fails_clearly_for_missing_condition_coverage(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
@@ -324,6 +446,50 @@ def _materialize_simulator_bundles(
                 readout_traces_status="ready",
                 metrics_table_status="ready",
             )
+            if str(run_plan["arm_reference"]["model_mode"]) == "surface_wave":
+                bundle_paths = build_simulator_result_bundle_paths(
+                    experiment_id=str(run_plan["manifest_reference"]["experiment_id"]),
+                    arm_id=str(run_plan["arm_reference"]["arm_id"]),
+                    run_spec_hash=str(bundle_metadata["run_spec_hash"]),
+                    processed_simulator_results_dir=run_plan["runtime"][
+                        "processed_simulator_results_dir"
+                    ],
+                )
+                model_artifacts = [
+                    build_simulator_extension_artifact_record(
+                        bundle_paths=bundle_paths,
+                        artifact_id="surface_wave_summary",
+                        file_name="surface_wave_summary.json",
+                        format="json_surface_wave_execution_summary.v1",
+                        status="ready",
+                        artifact_scope="wave_model_extension",
+                        description="Fixture packaged surface-wave summary.",
+                    ),
+                    build_simulator_extension_artifact_record(
+                        bundle_paths=bundle_paths,
+                        artifact_id="surface_wave_phase_map",
+                        file_name="surface_wave_phase_map.npz",
+                        format="npz_surface_wave_phase_map.v1",
+                        status="ready",
+                        artifact_scope="wave_model_extension",
+                        description="Fixture phase-map export for analysis packaging tests.",
+                    ),
+                ]
+                bundle_metadata = build_simulator_result_bundle_metadata(
+                    manifest_reference=run_plan["manifest_reference"],
+                    arm_reference=run_plan["arm_reference"],
+                    determinism=run_plan["determinism"],
+                    timebase=run_plan["runtime"]["timebase"],
+                    selected_assets=selected_assets,
+                    readout_catalog=run_plan["runtime"]["shared_readout_catalog"],
+                    processed_simulator_results_dir=run_plan["runtime"][
+                        "processed_simulator_results_dir"
+                    ],
+                    state_summary_status="ready",
+                    readout_traces_status="ready",
+                    metrics_table_status="ready",
+                    model_artifacts=model_artifacts,
+                )
             metadata_path = write_simulator_result_bundle_metadata(bundle_metadata)
             _write_bundle_artifacts(
                 bundle_metadata=bundle_metadata,
@@ -409,6 +575,49 @@ def _write_bundle_artifacts(
         },
         readout_path,
     )
+    model_artifacts = {
+        str(item["artifact_id"]): dict(item)
+        for item in bundle_metadata["artifacts"].get("model_artifacts", [])
+    }
+    if "surface_wave_summary" in model_artifacts:
+        write_json(
+            {
+                "format_version": "json_surface_wave_execution_summary.v1",
+                "runtime_metadata_by_root": [
+                    {
+                        "root_id": 101,
+                        "morphology_class": "surface_neuron",
+                        "patch_count": 2,
+                        "source_reference": {},
+                    }
+                ],
+                "wave_specific_artifacts": {
+                    "phase_map_artifact_id": "surface_wave_phase_map",
+                },
+            },
+            Path(model_artifacts["surface_wave_summary"]["path"]).resolve(),
+        )
+    if "surface_wave_phase_map" in model_artifacts:
+        phase_values = np.asarray(
+            [
+                [0.0, 0.4],
+                [0.2, 0.6],
+                [0.4, 0.8],
+                [0.6, 1.0],
+                [0.8, 1.2],
+                [1.0, 1.4],
+                [1.2, 1.6],
+            ],
+            dtype=np.float64,
+        )
+        write_deterministic_npz(
+            {
+                "substep_time_ms": time_ms,
+                "root_ids": np.asarray([101], dtype=np.int64),
+                "root_101_phase_rad": phase_values[:sample_count],
+            },
+            Path(model_artifacts["surface_wave_phase_map"]["path"]).resolve(),
+        )
 
 
 def _bundle_trace_values(

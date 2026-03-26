@@ -194,6 +194,8 @@ but they must preserve these invariants:
 
 - `readout_analysis.v1` remains the canonical source of metric IDs, task-family
   IDs, null-test IDs, and experiment-output IDs
+- experiment-level packaging may add `experiment_analysis_bundle.v1` metadata
+  and exports, but it must reuse the same Milestone 12 metric and output IDs
 - shared-comparison metrics stay computable from the shared result-bundle
   surface
 - wave-only diagnostics stay outside the shared fairness boundary

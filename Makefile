@@ -36,7 +36,7 @@ help:
 		'coupling-inspect   Build static offline coupling inspection report(s)' \
 		'operator-qa        Build static offline operator QA report(s)' \
 		'simulate           Execute manifest-driven simulator runs and write result bundles' \
-		'compare-analysis  Discover local simulator bundles and compute experiment-level comparison analysis' \
+		'compare-analysis  Compute experiment-level comparison analysis and package Milestone 12 exports' \
 		'wave-inspect       Run local surface-wave sweep and offline inspection report(s)' \
 		'mixed-fidelity-inspect Run offline surrogate-versus-reference mixed-fidelity inspection' \
 		'milestone6-readiness Run the Milestone 6 verification pass and publish a readiness report' \

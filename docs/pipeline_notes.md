@@ -494,8 +494,16 @@ Contract notes:
   - it resolves the normalized readout-analysis plan, discovers one
     experiment's local simulator bundle set, computes matched baseline versus
     `surface_wave` comparisons, aggregates across the declared seed sweep, runs
-    the active null tests, and emits experiment-level task scores plus the
-    Milestone 1 decision panel
+    the active null tests, emits experiment-level task scores plus the
+    Milestone 1 decision panel, and packages the result under the versioned
+    experiment-analysis bundle contract
+  - the packaged bundle now lives under
+    `config.paths.processed_simulator_results_dir/analysis/<experiment_id>/<analysis_spec_hash>/`
+    with contract-owned metadata, task-summary, null-test, matrix, UI-payload,
+    and report artifacts
+  - `scripts/21_visualize_experiment_analysis.py` can regenerate the static
+    report from `experiment_analysis_bundle.json` alone, so the packaged
+    outputs stay reviewable without notebooks or raw-bundle directory crawling
   - `make compare-analysis` is the repo entrypoint for that workflow and
     accepts `COMPARE_ANALYSIS_ARGS`, for example
     `COMPARE_ANALYSIS_ARGS="--output data/processed/analysis/example-summary.json"`
@@ -503,6 +511,8 @@ Contract notes:
 `docs/readout_analysis_design.md` is the authoritative Milestone 12 decision
 note; later tickets should cite it instead of re-litigating the metric
 taxonomy, fairness split, null-test vocabulary, or UI-facing output identities.
+`docs/experiment_analysis_bundle_design.md` is the authoritative Milestone 12
+packaging note for experiment-level exports, discovery, and offline review.
 
 ### Offline retinal inspection contract
 

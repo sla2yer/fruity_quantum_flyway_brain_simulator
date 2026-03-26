@@ -639,10 +639,35 @@ That is enough to support later work on:
 - hybrid surface/skeleton/point-neuron representations,
 - offline review gates before simulator integration.
 
+## Packaged Milestone 12 analysis
+
+After local simulator bundles exist for one manifest experiment, the Milestone
+12 analysis workflow now writes a canonical experiment-analysis bundle under:
+
+- `data/processed/simulator_results/analysis/<experiment_id>/<analysis_spec_hash>/`
+
+Run it with:
+
+```bash
+make compare-analysis MANIFEST=manifests/examples/milestone_1_demo.yaml CONFIG=config/local.yaml
+```
+
+The packaged bundle includes metadata-backed JSON exports for task summaries,
+null-test tables, comparison matrices, a UI-facing analysis payload, and a
+static offline report. Regenerate the report from packaged artifacts alone
+with:
+
+```bash
+python scripts/21_visualize_experiment_analysis.py \
+  --analysis-bundle data/processed/simulator_results/analysis/<experiment_id>/<analysis_spec_hash>/experiment_analysis_bundle.json
+```
+
 ## Contract and QA references
 
 - [`docs/pipeline_notes.md`](docs/pipeline_notes.md): concise artifact-contract
   overview
+- [`docs/experiment_analysis_bundle_design.md`](docs/experiment_analysis_bundle_design.md):
+  Milestone 12 experiment-analysis packaging contract
 - [`docs/coupling_inspection.md`](docs/coupling_inspection.md): Milestone 7
   offline edge-inspection workflow and reviewer checklist
 - [`docs/geometry_descriptor_qa.md`](docs/geometry_descriptor_qa.md): geometry
