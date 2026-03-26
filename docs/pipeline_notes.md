@@ -456,6 +456,44 @@ Contract notes:
 decision note; later tickets should cite it instead of re-litigating baseline
 fairness, shared readout semantics, or the result-bundle layout.
 
+### Readout analysis contract
+
+Milestone 12 now reserves one explicit analysis vocabulary under the versioned
+contract `readout_analysis.v1`.
+
+Contract notes:
+
+- metric IDs, task-family IDs, null-test hook IDs, experiment-output IDs, and
+  catalog discovery now live in `flywire_wave.readout_analysis_contract`
+- the contract freezes one fairness split:
+  - shared readout metrics and derived task metrics must stay computable from
+    the shared `simulator_result_bundle.v1` readout surface plus arm-invariant
+    task context
+  - wave-only diagnostics may consume `surface_wave` extension artifacts such
+    as patch traces, summary sidecars, or later phase maps, but they stay
+    labeled as diagnostics rather than fairness-critical shared observables
+- the locked readout stop point remains the `T4a/T5a` terminal boundary in
+  lobula plate layer 1; Milestone 12 does not silently move the comparison
+  surface downstream into LPi or tangential-cell decoders
+- the first shared metric family is the Milestone 1 evidence ladder:
+  `null_direction_suppression_index`, `response_latency_to_peak_ms`,
+  `direction_selectivity_index`, and `on_off_selectivity_index`
+- the first fair task-decoder family adds `motion_vector_*` and `optic_flow_*`
+  estimates derived from shared readouts plus declared task context
+- the first wave-only diagnostic family adds synchrony/coherence, phase
+  gradients, wavefront speed/curvature, and patch-activation entropy
+- the first experiment-level outputs are
+  `null_direction_suppression_comparison`, `latency_shift_comparison`,
+  `motion_decoder_summary`, `wave_diagnostic_summary`,
+  `milestone_1_decision_panel`, and `analysis_ui_payload`
+- Milestone 12 v1 freezes ids and discovery semantics first; later Milestone 12
+  tickets may add packaged analysis artifacts, but they must reuse this same
+  catalog instead of inventing script-local names
+
+`docs/readout_analysis_design.md` is the authoritative Milestone 12 decision
+note; later tickets should cite it instead of re-litigating the metric
+taxonomy, fairness split, null-test vocabulary, or UI-facing output identities.
+
 ### Offline retinal inspection contract
 
 Milestone 8B now also defines one deterministic offline inspection workflow for

@@ -39,6 +39,10 @@ from .surface_wave_solver import (
     SingleNeuronSurfaceWaveSolver,
     SurfaceWaveState,
 )
+from .wave_structure_analysis import (
+    estimate_patch_wavefront_speed as _estimate_wavefront_speed_kernel,
+    mean_abs_pairwise_root_correlation as _mean_abs_pairwise_root_correlation_kernel,
+)
 
 
 SURFACE_WAVE_INSPECTION_REPORT_VERSION = "surface_wave_inspection.v1"
@@ -1073,109 +1077,15 @@ def _estimate_patch_wavefront_speed(
     time_ms: np.ndarray,
     seed_patch: int,
 ) -> dict[str, Any]:
-    coarse_operator = operator_bundle.coarse_operator
-    if coarse_operator is None:
-        return {
-            "detected": False,
-            "detection_mode": "coarse_operator_unavailable",
-            "distance_degenerate": False,
-            "speed_units_per_ms": None,
-            "distance_units": "patch_hops",
-            "fit_r2": None,
-            "arrival_count": 0,
-            "threshold": None,
-        }
-    adjacency = coarse_operator.tocoo()
-    mask = adjacency.row != adjacency.col
-    graph = sp.csr_matrix(
-        (
-            np.ones(int(np.count_nonzero(mask)), dtype=np.float64),
-            (adjacency.row[mask], adjacency.col[mask]),
-        ),
-        shape=coarse_operator.shape,
+    return _estimate_wavefront_speed_kernel(
+        operator_bundle=operator_bundle,
+        patch_activation_history=patch_activation_history,
+        time_ms=time_ms,
+        seed_patch=seed_patch,
+        minimum_signal_amplitude=DEFAULT_DYNAMIC_RANGE_EPSILON,
+        initial_threshold_fraction=0.25,
+        global_threshold_fraction=0.05,
     )
-    distances = sp.csgraph.dijkstra(graph, directed=False, indices=int(seed_patch))
-    threshold = max(
-        float(np.max(np.abs(patch_activation_history[0]))) * 0.25,
-        float(np.max(np.abs(patch_activation_history))) * 0.05,
-        DEFAULT_DYNAMIC_RANGE_EPSILON,
-    )
-    arrival_times: list[float] = []
-    arrival_distances: list[float] = []
-    for patch_index, distance in enumerate(np.asarray(distances, dtype=np.float64)):
-        if patch_index == seed_patch or not np.isfinite(distance) or distance <= 0.0:
-            continue
-        crossings = np.flatnonzero(
-            np.abs(patch_activation_history[:, patch_index]) >= threshold
-        )
-        if crossings.size == 0:
-            continue
-        arrival_time_ms = float(time_ms[int(crossings[0])])
-        if arrival_time_ms <= 0.0:
-            continue
-        arrival_times.append(arrival_time_ms)
-        arrival_distances.append(float(distance))
-    if len(arrival_times) < 2:
-        return {
-            "detected": False,
-            "detection_mode": "insufficient_arrivals",
-            "distance_degenerate": False,
-            "speed_units_per_ms": None,
-            "distance_units": "patch_hops",
-            "fit_r2": None,
-            "arrival_count": len(arrival_times),
-            "threshold": float(threshold),
-        }
-    x = np.asarray(arrival_times, dtype=np.float64)
-    y = np.asarray(arrival_distances, dtype=np.float64)
-    if np.allclose(y, y[0]):
-        return {
-            "detected": True,
-            "detection_mode": "equal_distance_arrivals",
-            "distance_degenerate": True,
-            "speed_units_per_ms": None,
-            "distance_units": "patch_hops",
-            "fit_r2": None,
-            "arrival_count": len(arrival_times),
-            "threshold": float(threshold),
-        }
-    if np.allclose(x, x[0]):
-        return {
-            "detected": False,
-            "detection_mode": "simultaneous_arrivals",
-            "distance_degenerate": False,
-            "speed_units_per_ms": None,
-            "distance_units": "patch_hops",
-            "fit_r2": None,
-            "arrival_count": len(arrival_times),
-            "threshold": float(threshold),
-        }
-    slope, intercept = np.polyfit(x, y, deg=1)
-    if not np.isfinite(slope) or float(slope) <= 0.0:
-        return {
-            "detected": False,
-            "detection_mode": "nonpositive_speed_fit",
-            "distance_degenerate": False,
-            "speed_units_per_ms": None,
-            "distance_units": "patch_hops",
-            "fit_r2": None,
-            "arrival_count": len(arrival_times),
-            "threshold": float(threshold),
-        }
-    predicted = slope * x + intercept
-    residual_sum = float(np.sum((y - predicted) ** 2))
-    centered_sum = float(np.sum((y - np.mean(y)) ** 2))
-    fit_r2 = None if centered_sum <= 0.0 else float(1.0 - residual_sum / centered_sum)
-    return {
-        "detected": True,
-        "detection_mode": "speed_fit",
-        "distance_degenerate": False,
-        "speed_units_per_ms": float(slope),
-        "distance_units": "patch_hops",
-        "fit_r2": fit_r2,
-        "arrival_count": len(arrival_times),
-        "threshold": float(threshold),
-    }
 
 
 def _build_diagnostics(
@@ -2043,19 +1953,10 @@ def _threshold_check(
 def _mean_abs_pairwise_root_correlation(
     per_root_mean_activation: Mapping[int, np.ndarray],
 ) -> float | None:
-    values = [np.asarray(item, dtype=np.float64) for _, item in sorted(per_root_mean_activation.items())]
-    valid = [item for item in values if item.size >= 2 and np.std(item) > DEFAULT_DRIVE_EPSILON]
-    if len(valid) < 2:
-        return None
-    correlations: list[float] = []
-    for first_index, first in enumerate(valid):
-        for second in valid[first_index + 1 :]:
-            correlation = np.corrcoef(first, second)[0, 1]
-            if np.isfinite(correlation):
-                correlations.append(abs(float(correlation)))
-    if not correlations:
-        return None
-    return float(np.mean(correlations))
+    return _mean_abs_pairwise_root_correlation_kernel(
+        per_root_mean_activation,
+        minimum_trace_std=DEFAULT_DRIVE_EPSILON,
+    )
 
 
 def _coupled_values_are_finite(coupled: Mapping[str, Any]) -> bool:

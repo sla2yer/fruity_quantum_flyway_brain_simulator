@@ -48,6 +48,7 @@ from flywire_wave.skeleton_runtime_assets import (
 from flywire_wave.simulation_planning import (
     discover_simulation_run_plans,
     resolve_manifest_mixed_fidelity_plan,
+    resolve_manifest_readout_analysis_plan,
     resolve_manifest_simulation_plan,
 )
 from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
@@ -426,6 +427,268 @@ class SimulationPlanningTest(unittest.TestCase):
                 [202],
             )
 
+    def test_manifest_readout_analysis_plan_resolution_is_deterministic_and_respects_manifest_precedence(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = ROOT / "manifests" / "examples" / "milestone_1_demo.yaml"
+            schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+            latency_override_path = tmp_dir / "out" / "analysis" / "latency_override.png"
+            config_path = _write_simulation_fixture(
+                tmp_dir,
+                readout_catalog=[
+                    {
+                        "readout_id": "shared_output_peak",
+                        "scope": "circuit_output",
+                        "aggregation": "max_over_root_ids",
+                        "units": "activation_au",
+                        "value_semantics": "shared_downstream_activation",
+                        "description": "Shared downstream output peak for matched comparisons.",
+                    },
+                    {
+                        "readout_id": "direction_selectivity_index",
+                        "scope": "comparison_panel",
+                        "aggregation": "identity",
+                        "units": "unitless",
+                        "value_semantics": "direction_selectivity_index",
+                        "description": "Shared direction-selectivity summary for matched comparisons.",
+                    },
+                    {
+                        "readout_id": "shared_output_mean",
+                        "scope": "circuit_output",
+                        "aggregation": "mean_over_root_ids",
+                        "units": "activation_au",
+                        "value_semantics": "shared_downstream_activation",
+                        "description": "Shared downstream output mean for matched comparisons.",
+                    },
+                ],
+                analysis_config={
+                    "active_readout_ids": [
+                        "shared_output_peak",
+                        "shared_output_mean",
+                    ],
+                    "active_metric_ids": [
+                        "patch_activation_entropy_bits",
+                    ],
+                    "analysis_windows": {
+                        "shared_response_window": {
+                            "start_ms": 60.0,
+                            "end_ms": 430.0,
+                            "description": "Fixture override window.",
+                        },
+                    },
+                    "experiment_output_targets": [
+                        {
+                            "output_id": "latency_shift_comparison",
+                            "path": str(latency_override_path),
+                        },
+                    ],
+                },
+            )
+
+            _record_fixture_stimulus_bundle(
+                manifest_path=manifest_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+
+            first_plan = resolve_manifest_readout_analysis_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            second_plan = resolve_manifest_readout_analysis_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            simulation_plan = resolve_manifest_simulation_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+
+            self.assertEqual(first_plan, second_plan)
+            self.assertEqual(first_plan, simulation_plan["readout_analysis_plan"])
+            self.assertEqual(
+                [item["readout_id"] for item in first_plan["active_shared_readouts"]],
+                ["shared_output_mean", "shared_output_peak"],
+            )
+            shared_window = next(
+                item
+                for item in first_plan["analysis_window_catalog"]
+                if item["window_id"] == "shared_response_window"
+            )
+            self.assertEqual(shared_window["start_ms"], 60.0)
+            self.assertEqual(shared_window["end_ms"], 430.0)
+            self.assertEqual(shared_window["description"], "Fixture override window.")
+            self.assertIn("null_direction_suppression_index", first_plan["active_metric_ids"])
+            self.assertIn("response_latency_to_peak_ms", first_plan["active_metric_ids"])
+            self.assertIn("direction_selectivity_index", first_plan["active_metric_ids"])
+            self.assertIn("on_off_selectivity_index", first_plan["active_metric_ids"])
+            self.assertIn("patch_activation_entropy_bits", first_plan["active_metric_ids"])
+            latency_target = next(
+                item
+                for item in first_plan["experiment_output_targets"]
+                if item["output_id"] == "latency_shift_comparison"
+            )
+            self.assertNotEqual(latency_target["path"], str(latency_override_path))
+            decision_panel_target = next(
+                item
+                for item in first_plan["experiment_output_targets"]
+                if item["output_id"] == "milestone_decision_panel"
+            )
+            self.assertEqual(
+                decision_panel_target["analysis_output_id"],
+                "milestone_1_decision_panel",
+            )
+            self.assertEqual(
+                [item["requested_metric_id"] for item in first_plan["manifest_metric_requests"]],
+                [
+                    "geometry_sensitive_null_direction_suppression_effect",
+                    "response_latency_to_peak_ms",
+                    "direction_selectivity_index",
+                    "geometry_sensitive_shared_output_effect",
+                ],
+            )
+
+    def test_manifest_readout_analysis_plan_fails_clearly_for_invalid_requests(self) -> None:
+        schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+        design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+
+        with self.subTest("unsupported_manifest_metric"):
+            with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+                tmp_dir = Path(tmp_dir_str)
+                manifest_path = _write_manifest_fixture(
+                    tmp_dir,
+                    manifest_overrides={
+                        "primary_metric": "unsupported_metric_request",
+                    },
+                )
+                config_path = _write_simulation_fixture(tmp_dir)
+                _record_fixture_stimulus_bundle(
+                    manifest_path=manifest_path,
+                    processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                    schema_path=schema_path,
+                    design_lock_path=design_lock_path,
+                )
+                with self.assertRaises(ValueError) as ctx:
+                    resolve_manifest_readout_analysis_plan(
+                        manifest_path=manifest_path,
+                        config_path=config_path,
+                        schema_path=schema_path,
+                        design_lock_path=design_lock_path,
+                    )
+                self.assertIn(
+                    "unsupported analysis metric id 'unsupported_metric_request'",
+                    str(ctx.exception),
+                )
+
+        with self.subTest("incompatible_condition_pairing"):
+            with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+                tmp_dir = Path(tmp_dir_str)
+                manifest_path = _write_manifest_fixture(
+                    tmp_dir,
+                    manifest_overrides={
+                        "stimulus_family": "flash",
+                        "stimulus_name": "simple_flash",
+                    },
+                )
+                config_path = _write_simulation_fixture(tmp_dir)
+                _record_fixture_stimulus_bundle(
+                    manifest_path=manifest_path,
+                    processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                    schema_path=schema_path,
+                    design_lock_path=design_lock_path,
+                )
+                with self.assertRaises(ValueError) as ctx:
+                    resolve_manifest_readout_analysis_plan(
+                        manifest_path=manifest_path,
+                        config_path=config_path,
+                        schema_path=schema_path,
+                        design_lock_path=design_lock_path,
+                    )
+                self.assertIn(
+                    "requires stimulus condition pair declarations ['preferred_vs_null']",
+                    str(ctx.exception),
+                )
+
+        with self.subTest("missing_shared_readout_dependency"):
+            with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+                tmp_dir = Path(tmp_dir_str)
+                manifest_path = ROOT / "manifests" / "examples" / "milestone_1_demo.yaml"
+                config_path = _write_simulation_fixture(
+                    tmp_dir,
+                    analysis_config={
+                        "active_readout_ids": [
+                            "missing_shared_readout",
+                        ],
+                    },
+                )
+                _record_fixture_stimulus_bundle(
+                    manifest_path=manifest_path,
+                    processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                    schema_path=schema_path,
+                    design_lock_path=design_lock_path,
+                )
+                with self.assertRaises(ValueError) as ctx:
+                    resolve_manifest_readout_analysis_plan(
+                        manifest_path=manifest_path,
+                        config_path=config_path,
+                        schema_path=schema_path,
+                        design_lock_path=design_lock_path,
+                    )
+                self.assertIn(
+                    "analysis.active_readout_ids references readout ids",
+                    str(ctx.exception),
+                )
+
+        with self.subTest("unrealizable_baseline_challenge_output"):
+            with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+                tmp_dir = Path(tmp_dir_str)
+                manifest_payload = yaml.safe_load(
+                    (
+                        ROOT / "manifests" / "examples" / "milestone_1_demo.yaml"
+                    ).read_text(encoding="utf-8")
+                )
+                manifest_path = _write_manifest_fixture(
+                    tmp_dir,
+                    manifest_overrides={
+                        "comparison_arms": [
+                            arm
+                            for arm in manifest_payload["comparison_arms"]
+                            if arm.get("baseline_family") != "P1"
+                        ],
+                        "success_criteria_ids": [
+                            criterion_id
+                            for criterion_id in manifest_payload["success_criteria_ids"]
+                            if criterion_id != "m1_survives_stronger_baseline"
+                        ],
+                    },
+                )
+                config_path = _write_simulation_fixture(tmp_dir)
+                _record_fixture_stimulus_bundle(
+                    manifest_path=manifest_path,
+                    processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                    schema_path=schema_path,
+                    design_lock_path=design_lock_path,
+                )
+                with self.assertRaises(ValueError) as ctx:
+                    resolve_manifest_readout_analysis_plan(
+                        manifest_path=manifest_path,
+                        config_path=config_path,
+                        schema_path=schema_path,
+                        design_lock_path=design_lock_path,
+                    )
+                self.assertIn(
+                    "baseline_challenge_comparison' cannot be realized",
+                    str(ctx.exception),
+                )
+
     def test_missing_skeleton_asset_fails_clearly_for_skeleton_assignment(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
@@ -671,6 +934,8 @@ def _write_simulation_fixture(
     timebase_dt_ms: float | None = None,
     timebase_sample_count: int | None = None,
     root_specs: list[dict[str, object]] | None = None,
+    readout_catalog: list[dict[str, object]] | None = None,
+    analysis_config: dict[str, object] | None = None,
 ) -> Path:
     output_dir = tmp_dir / "out"
     normalized_root_specs = _normalize_root_specs(root_specs)
@@ -718,7 +983,8 @@ def _write_simulation_fixture(
                 "source_kind": "stimulus_bundle",
                 "require_recorded_bundle": True,
             },
-            "readout_catalog": [
+            "readout_catalog": readout_catalog
+            or [
                 {
                     "readout_id": "shared_output_mean",
                     "scope": "circuit_output",
@@ -776,6 +1042,8 @@ def _write_simulation_fixture(
             },
         },
     }
+    if analysis_config is not None:
+        config_payload["analysis"] = json.loads(json.dumps(analysis_config))
     if timebase_dt_ms is not None:
         config_payload["simulation"]["timebase"] = {
             "dt_ms": float(timebase_dt_ms),
@@ -798,6 +1066,7 @@ def _write_manifest_fixture(
     tmp_dir: Path,
     *,
     surface_wave_fidelity_assignment: dict[str, object] | None = None,
+    manifest_overrides: dict[str, object] | None = None,
 ) -> Path:
     manifest_payload = yaml.safe_load(
         (
@@ -810,12 +1079,31 @@ def _write_manifest_fixture(
                 arm["fidelity_assignment"] = json.loads(
                     json.dumps(surface_wave_fidelity_assignment)
                 )
+    if manifest_overrides is not None:
+        for key, value in manifest_overrides.items():
+            manifest_payload[key] = json.loads(json.dumps(value))
     manifest_path = tmp_dir / "fixture_manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(manifest_payload, sort_keys=False),
         encoding="utf-8",
     )
     return manifest_path
+
+
+def _record_fixture_stimulus_bundle(
+    *,
+    manifest_path: Path,
+    processed_stimulus_dir: Path,
+    schema_path: Path,
+    design_lock_path: Path,
+) -> None:
+    resolved_input = resolve_stimulus_input(
+        manifest_path=manifest_path,
+        schema_path=schema_path,
+        design_lock_path=design_lock_path,
+        processed_stimulus_dir=processed_stimulus_dir,
+    )
+    record_stimulus_bundle(resolved_input)
 
 
 def _default_root_specs() -> list[dict[str, object]]:
