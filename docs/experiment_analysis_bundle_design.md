@@ -80,6 +80,17 @@ Milestone 12 packaging must preserve these invariants:
 - `scripts/21_visualize_experiment_analysis.py` regenerates a deterministic
   static HTML report from an existing packaged analysis bundle without touching
   raw simulator bundle directories
+- `scripts/22_milestone12_readiness.py` is the shipped integration audit for
+  this layer: it materializes a deterministic local fixture, runs the shipped
+  `scripts/20_experiment_comparison_analysis.py` and
+  `scripts/21_visualize_experiment_analysis.py` commands, audits the packaged
+  exports plus UI-facing payload discovery, and writes
+  `milestone_12_readiness.md` / `milestone_12_readiness.json` under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_12/`
+- `make milestone12-readiness` is the repo entrypoint for that readiness pass
+- the readiness-generated visualization under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_12/visualization/index.html`
+  is fully static, so no local server is required
 
 If a later ticket needs different packaged artifact identities, different
 matrix semantics, or a different UI payload meaning, that is a new contract

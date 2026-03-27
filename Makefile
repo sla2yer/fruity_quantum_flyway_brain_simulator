@@ -12,9 +12,11 @@ M8B_CONFIG ?= config/milestone_8b_verification.yaml
 M9_CONFIG ?= config/milestone_9_verification.yaml
 M10_CONFIG ?= config/milestone_10_verification.yaml
 M11_CONFIG ?= config/milestone_11_verification.yaml
+M12_CONFIG ?= config/milestone_12_verification.yaml
 M11_READINESS_ARGS ?=
+M12_READINESS_ARGS ?=
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate compare-analysis wave-inspect mixed-fidelity-inspect milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate compare-analysis wave-inspect mixed-fidelity-inspect milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
@@ -46,6 +48,7 @@ help:
 		'milestone9-readiness Run the Milestone 9 baseline simulator integration verification pass and publish a readiness report' \
 		'milestone10-readiness Run the Milestone 10 surface-wave integration verification pass and publish a readiness report' \
 		'milestone11-readiness Run the Milestone 11 mixed-fidelity integration verification pass and publish a readiness report' \
+		'milestone12-readiness Run the Milestone 12 task-layer integration verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -110,6 +113,9 @@ milestone10-readiness:
 
 milestone11-readiness:
 	$(PYTHON) scripts/19_milestone11_readiness.py --config $(M11_CONFIG) $(M11_READINESS_ARGS)
+
+milestone12-readiness:
+	$(PYTHON) scripts/22_milestone12_readiness.py --config $(M12_CONFIG) $(M12_READINESS_ARGS)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

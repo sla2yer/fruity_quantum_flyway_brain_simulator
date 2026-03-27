@@ -98,6 +98,38 @@ python scripts/run_simulation.py --config data/processed/milestone_11_verificati
 python scripts/18_mixed_fidelity_inspection.py --config data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/generated_fixture/simulation_fixture_config.yaml --manifest data/processed/milestone_11_verification/simulator_results/readiness/milestone_11/generated_fixture/fixture_manifest.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --arm-id surface_wave_intact
 ```
 
+## Milestone 12 local verification
+
+The shipped Milestone 12 task-layer integration pass is:
+
+```bash
+make milestone12-readiness
+```
+
+That runs `scripts/22_milestone12_readiness.py` with
+`config/milestone_12_verification.yaml`, materializes a deterministic local
+Milestone 12 analysis fixture, executes `scripts/20_experiment_comparison_analysis.py`
+and `scripts/21_visualize_experiment_analysis.py` on the shipped representative
+manifest path, audits analysis-plan resolution plus packaged-export discovery,
+and writes `milestone_12_readiness.md` plus `milestone_12_readiness.json` under
+`data/processed/milestone_12_verification/simulator_results/readiness/milestone_12/`.
+
+The generated visualization at
+`data/processed/milestone_12_verification/simulator_results/readiness/milestone_12/visualization/index.html`
+is fully static, so no local server is required. Open that file directly in
+your browser, or run `make milestone12-readiness M12_READINESS_ARGS=--open-visualization`
+to launch it after the readiness pass.
+
+To rerun the shipped end-to-end Milestone 12 workflow directly after readiness,
+use the generated fixture config and manifest from that report directory. The
+second command takes the `analysis_bundle_metadata_path` recorded in
+`milestone_12_readiness.json`:
+
+```bash
+python scripts/20_experiment_comparison_analysis.py --config data/processed/milestone_12_verification/simulator_results/readiness/milestone_12/generated_fixture/simulation_fixture_config.yaml --manifest data/processed/milestone_12_verification/simulator_results/readiness/milestone_12/generated_fixture/fixture_manifest.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml --output data/processed/milestone_12_verification/simulator_results/readiness/milestone_12/generated_fixture/analysis_summary.json
+python scripts/21_visualize_experiment_analysis.py --analysis-bundle <analysis_bundle_metadata_path> --output-dir data/processed/milestone_12_verification/simulator_results/readiness/milestone_12/visualization
+```
+
 ## Pipeline at a glance
 
 The main pipeline order is:
@@ -124,6 +156,9 @@ Optional offline inspection steps:
 17. `scripts/17_visualize_simulator_results.py`
 18. `scripts/18_mixed_fidelity_inspection.py`
 19. `scripts/19_milestone11_readiness.py`
+20. `scripts/20_experiment_comparison_analysis.py`
+21. `scripts/21_visualize_experiment_analysis.py`
+22. `scripts/22_milestone12_readiness.py`
 
 ## Source-of-truth inputs
 
@@ -170,7 +205,7 @@ per-neuron when configured.
 - `scripts/`: thin CLI entrypoints for the pipeline and offline review tools
 - `tests/`: local unit tests that do not require FlyWire network access
 - `config/`: example runtime config plus the tracked Milestone 1 and Milestone 6
-  through Milestone 11 verification configs and inputs, including the
+  through Milestone 12 verification configs and inputs, including the
   verification-grade and exploratory surface-wave sweep specs
 - `manifests/`: example experiment manifests
 - `schemas/`: manifest schema files
@@ -194,6 +229,10 @@ per-neuron when configured.
   contract and stability note
 - `docs/surface_wave_inspection.md`: local surface-wave inspection and
   readiness workflow
+- `docs/readout_analysis_design.md`: authoritative Milestone 12 task-layer
+  metric and fairness contract note
+- `docs/experiment_analysis_bundle_design.md`: authoritative Milestone 12
+  experiment-analysis packaging and readiness workflow note
 - `data/raw/codex/`: manually downloaded Codex CSV snapshots
 - `data/interim/`, `data/processed/`: generated outputs, ignored by git
 - `flywire_codex/`: upstream Codex submodule; avoid editing unless a task

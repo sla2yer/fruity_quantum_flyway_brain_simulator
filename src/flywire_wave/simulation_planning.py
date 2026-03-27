@@ -1558,6 +1558,7 @@ def _resolve_base_analysis_artifact_classes(
     ):
         artifact_classes.update(
             {
+                SURFACE_WAVE_PHASE_MAP_ARTIFACT_CLASS,
                 SURFACE_WAVE_PATCH_TRACES_ARTIFACT_CLASS,
                 SURFACE_WAVE_SUMMARY_ARTIFACT_CLASS,
             }

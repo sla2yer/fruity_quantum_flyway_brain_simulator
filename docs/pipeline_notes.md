@@ -507,6 +507,22 @@ Contract notes:
   - `make compare-analysis` is the repo entrypoint for that workflow and
     accepts `COMPARE_ANALYSIS_ARGS`, for example
     `COMPARE_ANALYSIS_ARGS="--output data/processed/analysis/example-summary.json"`
+- `scripts/22_milestone12_readiness.py` is the shipped Milestone 12 integration
+  verification pass:
+  - it materializes a deterministic local analysis fixture, executes the
+    shipped `scripts/20_experiment_comparison_analysis.py` and
+    `scripts/21_visualize_experiment_analysis.py` commands against the
+    representative Milestone 1 manifest path, audits analysis-plan resolution,
+    shared-readout kernels, task decoders, wave diagnostics, packaged exports,
+    and UI-facing payload discovery, and writes `milestone_12_readiness.md`
+    plus `milestone_12_readiness.json` under
+    `config.paths.processed_simulator_results_dir/readiness/milestone_12/`
+  - the regenerated visualization lives at
+    `config.paths.processed_simulator_results_dir/readiness/milestone_12/visualization/index.html`
+    and is fully static, so no local server is required
+  - `make milestone12-readiness` is the one-command entrypoint for the shipped
+    Milestone 12 verification pass; it uses
+    `config/milestone_12_verification.yaml`
 
 `docs/readout_analysis_design.md` is the authoritative Milestone 12 decision
 note; later tickets should cite it instead of re-litigating the metric

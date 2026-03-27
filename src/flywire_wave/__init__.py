@@ -17,6 +17,7 @@ __all__ = [
     "io_utils",
     "manifests",
     "milestone10_readiness",
+    "milestone12_readiness",
     "mesh_pipeline",
     "readout_analysis_contract",
     "registry",
