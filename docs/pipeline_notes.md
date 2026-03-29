@@ -597,6 +597,62 @@ note; later tickets should cite it instead of re-litigating the ladder
 vocabulary, evidence-scope meaning, or the boundary between machine findings
 and Grant-owned scientific interpretation.
 
+### Dashboard session contract
+
+Milestone 14 now reserves one explicit dashboard-session and dashboard-package
+surface under the versioned contract `dashboard_session.v1`.
+
+The library-owned default layout is:
+
+- `config.paths.processed_simulator_results_dir/dashboard_sessions/<experiment_id>/<session_spec_hash>/dashboard_session.json`:
+  authoritative dashboard-session metadata and discovery anchor
+- `config.paths.processed_simulator_results_dir/dashboard_sessions/<experiment_id>/<session_spec_hash>/dashboard_session_payload.json`:
+  reserved packaged session payload for the static Milestone 14 app shell
+- `config.paths.processed_simulator_results_dir/dashboard_sessions/<experiment_id>/<session_spec_hash>/session_state.json`:
+  exportable serialized dashboard interaction state
+- `config.paths.processed_simulator_results_dir/dashboard_sessions/<experiment_id>/<session_spec_hash>/app/index.html`:
+  reserved offline app-shell entrypoint for the self-contained dashboard
+
+Contract notes:
+
+- pane IDs are now fixed at `scene`, `circuit`, `morphology`, `time_series`,
+  and `analysis`
+- global interaction state is serialized with
+  `selected_arm_pair`, `selected_neuron_id`, `selected_readout_id`,
+  `active_overlay_id`, `comparison_mode`, and `time_cursor`
+- overlay categories are `context`, `shared_comparison`,
+  `wave_only_diagnostic`, and `validation_evidence`
+- comparison modes are `single_arm`, `paired_baseline_vs_wave`, and
+  `paired_delta`
+- export target IDs are `session_state_json`, `pane_snapshot_png`,
+  `metrics_json`, and `replay_frame_sequence`
+- stable artifact-hook roles now live in
+  `flywire_wave.dashboard_session_contract` and point at:
+  - simulator result bundle metadata and optional simulator UI payloads
+  - experiment analysis bundle metadata, `analysis_ui_payload`, and the static
+    offline report
+  - validation bundle metadata, `validation_summary`, `review_handoff`, and
+    the static offline validation report
+  - reserved Milestone 14 dashboard-package assets
+- the default UI delivery model is `self_contained_static_app`; existing
+  self-contained offline reports remain bridge artifacts discovered from the
+  upstream analysis and validation bundles instead of being replaced or
+  reparsed
+- fairness boundaries stay explicit:
+  - shared-comparison overlays remain tied to
+    `simulator_result_bundle.v1` plus `experiment_analysis_bundle.v1`
+  - wave-only diagnostics may use wave-specific artifacts but must stay
+    visibly labeled as diagnostics
+  - reviewer-oriented validation evidence stays separate from both of the
+    above
+- the dashboard session may package local state and reserved Milestone 14
+  assets, but it may not mutate upstream simulator, analysis, or validation
+  bundle contracts or silently reinterpret shared timebase semantics
+
+`docs/ui_dashboard_design.md` is the authoritative Milestone 14 decision note;
+later tickets should cite it instead of re-litigating the pane taxonomy,
+interaction state meaning, overlay boundaries, or offline delivery model.
+
 ### Offline retinal inspection contract
 
 Milestone 8B now also defines one deterministic offline inspection workflow for
