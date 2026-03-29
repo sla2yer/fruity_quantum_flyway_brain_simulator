@@ -130,6 +130,29 @@ python scripts/20_experiment_comparison_analysis.py --config data/processed/mile
 python scripts/21_visualize_experiment_analysis.py --analysis-bundle <analysis_bundle_metadata_path> --output-dir data/processed/milestone_12_verification/simulator_results/readiness/milestone_12/visualization
 ```
 
+## Milestone 13 local verification
+
+The shipped Milestone 13 validation-ladder integration pass is:
+
+```bash
+make milestone13-readiness
+```
+
+That runs `scripts/28_milestone13_readiness.py` with
+`config/milestone_13_verification.yaml`, materializes a deterministic
+representative-manifest plan fixture, executes the packaged smoke ladder
+through `scripts/27_validation_ladder.py`, audits validation-plan resolution,
+packaged-export discovery, regression command discovery, and documentation, and
+writes `milestone_13_readiness.md` plus `milestone_13_readiness.json` under
+`data/processed/milestone_13_verification/simulator_results/readiness/milestone_13/`.
+
+To rerun the shipped packaged ladder smoke directly after readiness, use either:
+
+```bash
+make validation-ladder-smoke
+python scripts/27_validation_ladder.py smoke --processed-simulator-results-dir data/processed/milestone_13_verification/simulator_results/readiness/milestone_13/smoke_fixture/simulator_results --baseline tests/fixtures/validation_ladder_smoke_baseline.json --enforce-baseline
+```
+
 ## Pipeline at a glance
 
 The main pipeline order is:
@@ -159,6 +182,12 @@ Optional offline inspection steps:
 20. `scripts/20_experiment_comparison_analysis.py`
 21. `scripts/21_visualize_experiment_analysis.py`
 22. `scripts/22_milestone12_readiness.py`
+23. `scripts/23_numerical_validation.py`
+24. `scripts/24_morphology_validation.py`
+25. `scripts/25_circuit_validation.py`
+26. `scripts/26_task_validation.py`
+27. `scripts/27_validation_ladder.py`
+28. `scripts/28_milestone13_readiness.py`
 
 ## Source-of-truth inputs
 

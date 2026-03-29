@@ -13,16 +13,24 @@ M9_CONFIG ?= config/milestone_9_verification.yaml
 M10_CONFIG ?= config/milestone_10_verification.yaml
 M11_CONFIG ?= config/milestone_11_verification.yaml
 M12_CONFIG ?= config/milestone_12_verification.yaml
+M13_CONFIG ?= config/milestone_13_verification.yaml
 M11_READINESS_ARGS ?=
 M12_READINESS_ARGS ?=
+M13_READINESS_ARGS ?=
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate compare-analysis wave-inspect mixed-fidelity-inspect milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate compare-analysis wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
 COMPARE_ANALYSIS_ARGS ?=
 WAVE_INSPECT_ARGS ?=
 MIXED_FIDELITY_INSPECT_ARGS ?=
+NUMERICAL_VALIDATE_ARGS ?=
+MORPHOLOGY_VALIDATE_ARGS ?=
+CIRCUIT_VALIDATE_ARGS ?=
+TASK_VALIDATE_ARGS ?=
+VALIDATION_LADDER_ARGS ?=
+VALIDATION_LADDER_SMOKE_ARGS ?=
 
 help:
 	@printf '%s\n' \
@@ -41,6 +49,12 @@ help:
 		'compare-analysis  Compute experiment-level comparison analysis and package Milestone 12 exports' \
 		'wave-inspect       Run local surface-wave sweep and offline inspection report(s)' \
 		'mixed-fidelity-inspect Run offline surrogate-versus-reference mixed-fidelity inspection' \
+		'numerical-validate Run the Milestone 13 numerical-sanity validation suite' \
+		'morphology-validate Run the Milestone 13 morphology-sanity validation suite' \
+		'circuit-validate   Run the Milestone 13 circuit-sanity validation suite' \
+		'task-validate      Run the Milestone 13 task-sanity validation suite' \
+		'validation-ladder-package Package existing Milestone 13 layer bundles into one review/regression bundle' \
+		'validation-ladder-smoke Run the deterministic packaged Milestone 13 smoke fixture and enforce the committed baseline' \
 		'milestone6-readiness Run the Milestone 6 verification pass and publish a readiness report' \
 		'milestone7-readiness Run the Milestone 7 integration verification pass and publish a readiness report' \
 		'milestone8a-readiness Run the Milestone 8A canonical stimulus integration verification pass and publish a readiness report' \
@@ -49,6 +63,7 @@ help:
 		'milestone10-readiness Run the Milestone 10 surface-wave integration verification pass and publish a readiness report' \
 		'milestone11-readiness Run the Milestone 11 mixed-fidelity integration verification pass and publish a readiness report' \
 		'milestone12-readiness Run the Milestone 12 task-layer integration verification pass and publish a readiness report' \
+		'milestone13-readiness Run the Milestone 13 validation-ladder integration verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -93,6 +108,24 @@ wave-inspect:
 mixed-fidelity-inspect:
 	$(PYTHON) scripts/18_mixed_fidelity_inspection.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(MIXED_FIDELITY_INSPECT_ARGS)
 
+numerical-validate:
+	$(PYTHON) scripts/23_numerical_validation.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(NUMERICAL_VALIDATE_ARGS)
+
+morphology-validate:
+	$(PYTHON) scripts/24_morphology_validation.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(MORPHOLOGY_VALIDATE_ARGS)
+
+circuit-validate:
+	$(PYTHON) scripts/25_circuit_validation.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(CIRCUIT_VALIDATE_ARGS)
+
+task-validate:
+	$(PYTHON) scripts/26_task_validation.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(TASK_VALIDATE_ARGS)
+
+validation-ladder-package:
+	$(PYTHON) scripts/27_validation_ladder.py package $(VALIDATION_LADDER_ARGS)
+
+validation-ladder-smoke:
+	$(PYTHON) scripts/27_validation_ladder.py smoke --baseline tests/fixtures/validation_ladder_smoke_baseline.json --enforce-baseline $(VALIDATION_LADDER_SMOKE_ARGS)
+
 milestone6-readiness:
 	$(PYTHON) scripts/07_milestone6_readiness.py --config $(M6_CONFIG)
 
@@ -116,6 +149,9 @@ milestone11-readiness:
 
 milestone12-readiness:
 	$(PYTHON) scripts/22_milestone12_readiness.py --config $(M12_CONFIG) $(M12_READINESS_ARGS)
+
+milestone13-readiness:
+	$(PYTHON) scripts/28_milestone13_readiness.py --config $(M13_CONFIG) $(M13_READINESS_ARGS)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

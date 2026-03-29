@@ -1,0 +1,178 @@
+[
+  {
+    "ticket_id": "FW-M13-001",
+    "title": "Freeze a versioned validation-ladder contract, validator taxonomy, and criteria-handoff design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M13-001_mj5q1ve3/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-001_Freeze_a_versioned_validation-ladder_contract_validator_taxonomy_and_criteria-handoff_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-001_Freeze_a_versioned_validation-ladder_contract_validator_taxonomy_and_criteria-handoff_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-001_Freeze_a_versioned_validation-ladder_contract_validator_taxonomy_and_criteria-handoff_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-001_Freeze_a_versioned_validation-ladder_contract_validator_taxonomy_and_criteria-handoff_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-001_Freeze_a_versioned_validation-ladder_contract_validator_taxonomy_and_criteria-handoff_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M13-002",
+    "title": "Extend manifest and config normalization for validation plans, perturbation suites, and criteria profiles",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M13-002_q56n3rs6/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-002_Extend_manifest_and_config_normalization_for_validation_plans_perturbation_suites_and_criteria_profiles",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-002_Extend_manifest_and_config_normalization_for_validation_plans_perturbation_suites_and_criteria_profiles/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-002_Extend_manifest_and_config_normalization_for_validation_plans_perturbation_suites_and_criteria_profiles/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-002_Extend_manifest_and_config_normalization_for_validation_plans_perturbation_suites_and_criteria_profiles/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-002_Extend_manifest_and_config_normalization_for_validation_plans_perturbation_suites_and_criteria_profiles/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M13-003",
+    "title": "Build the numerical-sanity validation suite for stability, operator checks, boundary behavior, and mesh-resolution sensitivity",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M13-003_0r4jmkc0/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-003_Build_the_numerical-sanity_validation_suite_for_stability_operator_checks_boundary_behavior_and_83bd0dd13f68",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-003_Build_the_numerical-sanity_validation_suite_for_stability_operator_checks_boundary_behavior_and_83bd0dd13f68/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-003_Build_the_numerical-sanity_validation_suite_for_stability_operator_checks_boundary_behavior_and_83bd0dd13f68/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-003_Build_the_numerical-sanity_validation_suite_for_stability_operator_checks_boundary_behavior_and_83bd0dd13f68/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-003_Build_the_numerical-sanity_validation_suite_for_stability_operator_checks_boundary_behavior_and_83bd0dd13f68/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M13-004",
+    "title": "Build the morphology-sanity validation suite for shape effects, bottlenecks, and representation sensitivity",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M13-004_lgeapsjd/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-004_Build_the_morphology-sanity_validation_suite_for_shape_effects_bottlenecks_and_representation_sensitivity",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-004_Build_the_morphology-sanity_validation_suite_for_shape_effects_bottlenecks_and_representation_sensitivity/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-004_Build_the_morphology-sanity_validation_suite_for_shape_effects_bottlenecks_and_representation_sensitivity/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-004_Build_the_morphology-sanity_validation_suite_for_shape_effects_bottlenecks_and_representation_sensitivity/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-004_Build_the_morphology-sanity_validation_suite_for_shape_effects_bottlenecks_and_representation_sensitivity/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M13-005",
+    "title": "Build the circuit-sanity validation suite for delays, signs, aggregation, and motion-pathway asymmetry",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M13-005_veov7ixa/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-005_Build_the_circuit-sanity_validation_suite_for_delays_signs_aggregation_and_motion-pathway_asymmetry",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-005_Build_the_circuit-sanity_validation_suite_for_delays_signs_aggregation_and_motion-pathway_asymmetry/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-005_Build_the_circuit-sanity_validation_suite_for_delays_signs_aggregation_and_motion-pathway_asymmetry/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-005_Build_the_circuit-sanity_validation_suite_for_delays_signs_aggregation_and_motion-pathway_asymmetry/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-005_Build_the_circuit-sanity_validation_suite_for_delays_signs_aggregation_and_motion-pathway_asymmetry/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M13-006",
+    "title": "Build the task-sanity validation suite for stable outputs, reproducible arm differences, and perturbation robustness",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M13-006_hb135ryt/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-006_Build_the_task-sanity_validation_suite_for_stable_outputs_reproducible_arm_differences_and_pertu_e51a50eae69d",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-006_Build_the_task-sanity_validation_suite_for_stable_outputs_reproducible_arm_differences_and_pertu_e51a50eae69d/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-006_Build_the_task-sanity_validation_suite_for_stable_outputs_reproducible_arm_differences_and_pertu_e51a50eae69d/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-006_Build_the_task-sanity_validation_suite_for_stable_outputs_reproducible_arm_differences_and_pertu_e51a50eae69d/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-006_Build_the_task-sanity_validation_suite_for_stable_outputs_reproducible_arm_differences_and_pertu_e51a50eae69d/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M13-007",
+    "title": "Ship packaged validation reports, regression baselines, and CI-friendly validation commands",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M13-007__ipwig2_/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-007_Ship_packaged_validation_reports_regression_baselines_and_CI-friendly_validation_commands",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-007_Ship_packaged_validation_reports_regression_baselines_and_CI-friendly_validation_commands/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-007_Ship_packaged_validation_reports_regression_baselines_and_CI-friendly_validation_commands/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-007_Ship_packaged_validation_reports_regression_baselines_and_CI-friendly_validation_commands/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-007_Ship_packaged_validation_reports_regression_baselines_and_CI-friendly_validation_commands/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M13-008",
+    "title": "Run a Milestone 13 integration verification pass and publish a readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M13-008_aw9ogjy2/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-008_Run_a_Milestone_13_integration_verification_pass_and_publish_a_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-008_Run_a_Milestone_13_integration_verification_pass_and_publish_a_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-008_Run_a_Milestone_13_integration_verification_pass_and_publish_a_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-008_Run_a_Milestone_13_integration_verification_pass_and_publish_a_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260328T202749Z/FW-M13-008_Run_a_Milestone_13_integration_verification_pass_and_publish_a_readiness_report/last_message.md"
+  }
+]

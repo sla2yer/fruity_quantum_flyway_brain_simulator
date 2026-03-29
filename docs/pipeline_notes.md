@@ -530,6 +530,73 @@ taxonomy, fairness split, null-test vocabulary, or UI-facing output identities.
 `docs/experiment_analysis_bundle_design.md` is the authoritative Milestone 12
 packaging note for experiment-level exports, discovery, and offline review.
 
+### Validation ladder contract
+
+Milestone 13 now reserves one explicit validation vocabulary under the versioned
+contract `validation_ladder.v1`.
+
+Contract notes:
+
+- the canonical Milestone 13 layer IDs are `numerical_sanity`,
+  `morphology_sanity`, `circuit_sanity`, and `task_sanity`
+- the first validator-family IDs are `numerical_stability`,
+  `morphology_dependence`, `circuit_response`, and
+  `task_effect_reproducibility`
+- stable validator IDs, evidence-scope IDs, result-status semantics,
+  criteria-profile references, and deterministic validation-output discovery now
+  live in `flywire_wave.validation_contract`
+- the first evidence scopes intentionally reuse earlier contract-owned surfaces:
+  `operator_qa_review`, `surface_wave_inspection`,
+  `mixed_fidelity_inspection`, `simulator_shared_readout`,
+  `experiment_shared_analysis`, `experiment_wave_diagnostics`, and
+  `experiment_null_tests`
+- validator result statuses are `pass`, `review`, `blocking`, and `blocked`
+- `review` is the explicit Grant handoff state: machine code may classify local
+  diagnostics from the declared evidence scopes and criteria-profile
+  references, but scientific plausibility and claim sufficiency remain
+  reviewer-owned
+- the deterministic validation bundle layout is now reserved under
+  `config.paths.processed_simulator_results_dir/validation/<experiment_id>/<validation_spec_hash>/`
+  with contract-owned slots for `validation_bundle.json`,
+  `validation_summary.json`, `validator_findings.json`,
+  `review_handoff.json`, and `report/validation_report.md`
+- packaged ladder-level review and regression outputs now live under
+  `config.paths.processed_simulator_results_dir/validation_ladder/<experiment_id>/<ladder_spec_hash>/`
+  with stable slots for:
+  `validation_ladder_package.json`,
+  `validation_ladder_summary.json`,
+  `exports/finding_rows.jsonl`,
+  `exports/finding_rows.csv`,
+  `regression/baseline_reference.json`,
+  `regression/regression_summary.json`,
+  and `report/validation_ladder_report.md`
+- `flywire_wave.validation_reporting` owns the packaged-ladder metadata and
+  discovery helpers so later notebooks, dashboards, or CI jobs do not need to
+  rediscover per-layer findings from ad hoc paths
+- `scripts/27_validation_ladder.py smoke` and
+  `make validation-ladder-smoke` run the deterministic local Milestone 13 smoke
+  fixture, package the four layer bundles together, and compare the resulting
+  summary against the committed baseline snapshot
+- `scripts/27_validation_ladder.py package` and
+  `make validation-ladder-package` package one or more existing
+  `validation_bundle.json` artifacts into the same ladder-level review and
+  regression surface
+- `scripts/28_milestone13_readiness.py` layers a representative-manifest plan
+  audit plus a repeated packaged-smoke execution on top of the Milestone 13
+  command surface and writes `milestone_13_readiness.md` plus
+  `milestone_13_readiness.json` under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_13/`
+- `make milestone13-readiness` is the one-command entrypoint for the shipped
+  Milestone 13 integration verification pass; it uses
+  `config/milestone_13_verification.yaml`
+- later Milestone 13 tickets must compose with operator QA, simulator-result,
+  mixed-fidelity, and experiment-analysis contracts instead of bypassing them
+
+`docs/validation_ladder_design.md` is the authoritative Milestone 13 decision
+note; later tickets should cite it instead of re-litigating the ladder
+vocabulary, evidence-scope meaning, or the boundary between machine findings
+and Grant-owned scientific interpretation.
+
 ### Offline retinal inspection contract
 
 Milestone 8B now also defines one deterministic offline inspection workflow for

@@ -1,0 +1,7 @@
+Implemented the task-sanity suite in [validation_task.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_task.py). It now consumes Milestone 12 experiment-analysis bundles or summaries, builds a task-only Milestone 13 validation plan, checks seed stability, baseline-versus-wave and intact-versus-ablated effect reproducibility, perturbation/noise robustness, and keeps shared-comparison inventory separate from wave-only diagnostics in the review artifact. It also fails clearly for missing perturbation variants, missing seed coverage, and missing task-decoder inventory.
+
+I added the workflow regression fixture in [test_validation_task.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_validation_task.py), the CLI entrypoint in [26_task_validation.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/26_task_validation.py), the `make task-validate` target in [Makefile](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile), package exports in [__init__.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/__init__.py), and the rationale note in [FW-M13-006_rationale.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/validation_ladder_notes/FW-M13-006_rationale.md).
+
+Verified with:
+- `python3 -m unittest tests.test_validation_task -v`
+- `make test` (`192` tests, `OK`)

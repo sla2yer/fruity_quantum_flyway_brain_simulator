@@ -1,0 +1,13 @@
+**Changes**
+
+- Added the Milestone 13 packaging/regression layer in [validation_reporting.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_reporting.py). It writes a deterministic package root at `data/processed/simulator_results/validation_ladder/<experiment_id>/<ladder_spec_hash>/` and keeps raw layer findings, aggregate gate summaries, regression artifacts, and reviewer-facing reports as separate stable outputs. The package now includes metadata-backed discovery, `validation_ladder_summary.json`, regression JSON, notebook-friendly `finding_rows.jsonl` and `finding_rows.csv`, and an offline Markdown review report.
+- Added a fully local smoke workflow in [validation_ladder_smoke.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_ladder_smoke.py) plus a CLI surface in [27_validation_ladder.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/27_validation_ladder.py). `smoke` builds fixture layer bundles without FlyWire access and packages them end to end; `package` repackages existing layer bundle metadata. [Makefile](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile) now exposes `make validation-ladder-smoke` and `make validation-ladder-package`.
+- Added deterministic regression coverage in [test_validation_reporting.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_validation_reporting.py) with the committed baseline [validation_ladder_smoke_baseline.json](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/fixtures/validation_ladder_smoke_baseline.json). The smoke test reruns the packaged ladder twice, asserts deterministic paths and exports, checks discovery helpers, and verifies expected summary fields/statuses.
+- Documented the contract and rationale in [pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md) and [FW-M13-007_rationale.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/validation_ladder_notes/FW-M13-007_rationale.md).
+
+**Verified**
+
+- `./.venv/bin/python scripts/27_validation_ladder.py smoke --no-baseline`
+- `./.venv/bin/python -m unittest tests.test_validation_reporting -v`
+- `make validation-ladder-smoke`
+- `make test` (`193` tests passed)
