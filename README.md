@@ -153,6 +153,34 @@ make validation-ladder-smoke
 python scripts/27_validation_ladder.py smoke --processed-simulator-results-dir data/processed/milestone_13_verification/simulator_results/readiness/milestone_13/smoke_fixture/simulator_results --baseline tests/fixtures/validation_ladder_smoke_baseline.json --enforce-baseline
 ```
 
+## Milestone 14 local verification
+
+The shipped Milestone 14 dashboard integration pass is:
+
+```bash
+make milestone14-readiness
+```
+
+That runs `scripts/30_milestone14_readiness.py` with
+`config/milestone_14_verification.yaml`, materializes a deterministic local
+dashboard fixture, exercises `scripts/29_dashboard_shell.py build`,
+`scripts/29_dashboard_shell.py open --no-browser`, and deterministic export
+paths for pane snapshot, metrics, and replay-frame outputs, then writes
+`milestone_14_readiness.md` plus `milestone_14_readiness.json` under
+`data/processed/milestone_14_verification/simulator_results/readiness/milestone_14/`.
+
+The packaged dashboard session remains fully static and local-disk friendly. If
+you want to rerun the end-to-end dashboard workflow directly after readiness,
+use the generated fixture config and manifest from that report directory:
+
+```bash
+python scripts/29_dashboard_shell.py build --config data/processed/milestone_14_verification/simulator_results/readiness/milestone_14/generated_fixture/simulation_config.yaml --manifest data/processed/milestone_14_verification/simulator_results/readiness/milestone_14/generated_fixture/fixture_manifest.yaml --schema schemas/milestone_1_experiment_manifest.schema.json --design-lock config/milestone_1_design_lock.yaml
+python scripts/29_dashboard_shell.py open --dashboard-session-metadata <dashboard_session_metadata_path> --no-browser
+python scripts/29_dashboard_shell.py export --dashboard-session-metadata <dashboard_session_metadata_path> --export-target-id pane_snapshot_png --pane-id analysis --active-overlay-id phase_map_reference --sample-index 3
+python scripts/29_dashboard_shell.py export --dashboard-session-metadata <dashboard_session_metadata_path> --export-target-id metrics_json --pane-id analysis --active-overlay-id reviewer_findings --sample-index 2
+python scripts/29_dashboard_shell.py export --dashboard-session-metadata <dashboard_session_metadata_path> --export-target-id replay_frame_sequence --pane-id scene
+```
+
 ## Pipeline at a glance
 
 The main pipeline order is:
@@ -188,6 +216,8 @@ Optional offline inspection steps:
 26. `scripts/26_task_validation.py`
 27. `scripts/27_validation_ladder.py`
 28. `scripts/28_milestone13_readiness.py`
+29. `scripts/29_dashboard_shell.py`
+30. `scripts/30_milestone14_readiness.py`
 
 ## Source-of-truth inputs
 
@@ -234,7 +264,7 @@ per-neuron when configured.
 - `scripts/`: thin CLI entrypoints for the pipeline and offline review tools
 - `tests/`: local unit tests that do not require FlyWire network access
 - `config/`: example runtime config plus the tracked Milestone 1 and Milestone 6
-  through Milestone 12 verification configs and inputs, including the
+  through Milestone 14 verification configs and inputs, including the
   verification-grade and exploratory surface-wave sweep specs
 - `manifests/`: example experiment manifests
 - `schemas/`: manifest schema files

@@ -268,7 +268,6 @@ def _build_dashboard_app_bootstrap(
             "bundle_directory": str(metadata["bundle_layout"]["bundle_directory"]),
         },
         "manifest_reference": copy_json(metadata["manifest_reference"]),
-        "source_mode": payload.get("source_mode"),
         "pane_catalog": pane_catalog,
         "comparison_mode_catalog": comparison_mode_catalog,
         "overlay_catalog": {

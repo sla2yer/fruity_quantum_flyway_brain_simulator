@@ -648,6 +648,20 @@ Contract notes:
 - the dashboard session may package local state and reserved Milestone 14
   assets, but it may not mutate upstream simulator, analysis, or validation
   bundle contracts or silently reinterpret shared timebase semantics
+- `scripts/29_dashboard_shell.py build` is the canonical CLI for packaging one
+  dashboard session from manifest-, experiment-, or bundle-driven inputs
+- `scripts/29_dashboard_shell.py open --dashboard-session-metadata <path> --no-browser`
+  provides a deterministic app-shell discovery path for local verification
+- `scripts/29_dashboard_shell.py export` writes deterministic still-image,
+  metrics, and replay-frame exports under the packaged session `exports/` tree
+- `scripts/30_milestone14_readiness.py` layers a repeated CLI workflow audit,
+  pane-contract compatibility checks, export determinism checks, and
+  documentation verification on top of the shipped dashboard fixture and writes
+  `milestone_14_readiness.md` plus `milestone_14_readiness.json` under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_14/`
+- `make milestone14-readiness` is the one-command entrypoint for the shipped
+  Milestone 14 dashboard integration verification pass; it uses
+  `config/milestone_14_verification.yaml`
 
 `docs/ui_dashboard_design.md` is the authoritative Milestone 14 decision note;
 later tickets should cite it instead of re-litigating the pane taxonomy,

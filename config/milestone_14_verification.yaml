@@ -1,0 +1,17 @@
+paths:
+  processed_stimulus_dir: data/processed/milestone_14_verification/stimuli
+  processed_retinal_dir: data/processed/milestone_14_verification/retinal
+  processed_simulator_results_dir: data/processed/milestone_14_verification/simulator_results
+
+dashboard_verification:
+  experiment_id: milestone_1_demo_motion_patch
+  baseline_arm_id: baseline_p0_intact
+  wave_arm_id: surface_wave_intact
+  preferred_seed: 11
+  preferred_condition_ids:
+    - on_polarity
+    - preferred_direction
+  snapshot_overlay_id: phase_map_reference
+  metrics_overlay_id: reviewer_findings
+  snapshot_sample_index: 3
+  metrics_sample_index: 2

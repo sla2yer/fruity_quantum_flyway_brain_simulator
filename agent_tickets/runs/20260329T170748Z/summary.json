@@ -1,0 +1,178 @@
+[
+  {
+    "ticket_id": "FW-M14-001",
+    "title": "Freeze a versioned dashboard-session contract, pane taxonomy, and interaction design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M14-001_rzxgyquv/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-001_Freeze_a_versioned_dashboard-session_contract_pane_taxonomy_and_interaction_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-001_Freeze_a_versioned_dashboard-session_contract_pane_taxonomy_and_interaction_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-001_Freeze_a_versioned_dashboard-session_contract_pane_taxonomy_and_interaction_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-001_Freeze_a_versioned_dashboard-session_contract_pane_taxonomy_and_interaction_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-001_Freeze_a_versioned_dashboard-session_contract_pane_taxonomy_and_interaction_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M14-002",
+    "title": "Build manifest- and bundle-driven dashboard planning plus deterministic session packaging",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M14-002_cnodbp8_/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-002_Build_manifest-_and_bundle-driven_dashboard_planning_plus_deterministic_session_packaging",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-002_Build_manifest-_and_bundle-driven_dashboard_planning_plus_deterministic_session_packaging/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-002_Build_manifest-_and_bundle-driven_dashboard_planning_plus_deterministic_session_packaging/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-002_Build_manifest-_and_bundle-driven_dashboard_planning_plus_deterministic_session_packaging/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-002_Build_manifest-_and_bundle-driven_dashboard_planning_plus_deterministic_session_packaging/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M14-003",
+    "title": "Ship the dashboard application shell, static asset pipeline, and linked multi-pane state model",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M14-003_swkky_j6/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-003_Ship_the_dashboard_application_shell_static_asset_pipeline_and_linked_multi-pane_state_model",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-003_Ship_the_dashboard_application_shell_static_asset_pipeline_and_linked_multi-pane_state_model/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-003_Ship_the_dashboard_application_shell_static_asset_pipeline_and_linked_multi-pane_state_model/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-003_Ship_the_dashboard_application_shell_static_asset_pipeline_and_linked_multi-pane_state_model/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-003_Ship_the_dashboard_application_shell_static_asset_pipeline_and_linked_multi-pane_state_model/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M14-004",
+    "title": "Implement the scene pane and circuit pane with synchronized subset, connectivity, and scene-context inspection",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M14-004_lz3p7gg0/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-004_Implement_the_scene_pane_and_circuit_pane_with_synchronized_subset_connectivity_and_scene-context_inspection",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-004_Implement_the_scene_pane_and_circuit_pane_with_synchronized_subset_connectivity_and_scene-context_inspection/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-004_Implement_the_scene_pane_and_circuit_pane_with_synchronized_subset_connectivity_and_scene-context_inspection/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-004_Implement_the_scene_pane_and_circuit_pane_with_synchronized_subset_connectivity_and_scene-context_inspection/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-004_Implement_the_scene_pane_and_circuit_pane_with_synchronized_subset_connectivity_and_scene-context_inspection/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M14-005",
+    "title": "Implement the morphology pane with mixed-fidelity geometry rendering, activity overlays, and neuron inspection",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M14-005_ca9q4kff/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-005_Implement_the_morphology_pane_with_mixed-fidelity_geometry_rendering_activity_overlays_and_neuron_inspection",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-005_Implement_the_morphology_pane_with_mixed-fidelity_geometry_rendering_activity_overlays_and_neuron_inspection/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-005_Implement_the_morphology_pane_with_mixed-fidelity_geometry_rendering_activity_overlays_and_neuron_inspection/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-005_Implement_the_morphology_pane_with_mixed-fidelity_geometry_rendering_activity_overlays_and_neuron_inspection/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-005_Implement_the_morphology_pane_with_mixed-fidelity_geometry_rendering_activity_overlays_and_neuron_inspection/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M14-006",
+    "title": "Implement the replay scrubber, time-series pane, and baseline-versus-wave comparison workflow",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M14-006_jogzfbqz/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-006_Implement_the_replay_scrubber_time-series_pane_and_baseline-versus-wave_comparison_workflow",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-006_Implement_the_replay_scrubber_time-series_pane_and_baseline-versus-wave_comparison_workflow/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-006_Implement_the_replay_scrubber_time-series_pane_and_baseline-versus-wave_comparison_workflow/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-006_Implement_the_replay_scrubber_time-series_pane_and_baseline-versus-wave_comparison_workflow/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-006_Implement_the_replay_scrubber_time-series_pane_and_baseline-versus-wave_comparison_workflow/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M14-007",
+    "title": "Implement the analysis pane, scientific overlay catalog, and deterministic export tools for images, video, and metrics",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M14-007_behrovir/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-007_Implement_the_analysis_pane_scientific_overlay_catalog_and_deterministic_export_tools_for_images_cc61ab2a51ac",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-007_Implement_the_analysis_pane_scientific_overlay_catalog_and_deterministic_export_tools_for_images_cc61ab2a51ac/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-007_Implement_the_analysis_pane_scientific_overlay_catalog_and_deterministic_export_tools_for_images_cc61ab2a51ac/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-007_Implement_the_analysis_pane_scientific_overlay_catalog_and_deterministic_export_tools_for_images_cc61ab2a51ac/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-007_Implement_the_analysis_pane_scientific_overlay_catalog_and_deterministic_export_tools_for_images_cc61ab2a51ac/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M14-008",
+    "title": "Run a Milestone 14 integration verification pass and publish a dashboard readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M14-008_ioqewddy/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-008_Run_a_Milestone_14_integration_verification_pass_and_publish_a_dashboard_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-008_Run_a_Milestone_14_integration_verification_pass_and_publish_a_dashboard_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-008_Run_a_Milestone_14_integration_verification_pass_and_publish_a_dashboard_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-008_Run_a_Milestone_14_integration_verification_pass_and_publish_a_dashboard_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T170748Z/FW-M14-008_Run_a_Milestone_14_integration_verification_pass_and_publish_a_dashboard_readiness_report/last_message.md"
+  }
+]

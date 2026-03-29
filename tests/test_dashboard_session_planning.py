@@ -240,6 +240,52 @@ class DashboardSessionPlanningTest(unittest.TestCase):
                 explicit_plan["pane_inputs"],
             )
 
+    def test_manifest_and_experiment_packaging_produce_identical_bundle_payloads(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_dashboard_fixture(Path(tmp_dir_str))
+
+            manifest_plan = resolve_dashboard_session_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+            experiment_plan = resolve_dashboard_session_plan(
+                experiment_id=EXPERIMENT_ID,
+                config_path=fixture["config_path"],
+                baseline_arm_id=DEFAULT_BASELINE_ARM_ID,
+                wave_arm_id=DEFAULT_WAVE_ARM_ID,
+                preferred_seed=DEFAULT_SEED,
+                preferred_condition_ids=DEFAULT_CONDITION_IDS,
+            )
+
+            manifest_packaged = package_dashboard_session(manifest_plan)
+            manifest_payload = json.loads(
+                Path(manifest_packaged["session_payload_path"]).read_text(encoding="utf-8")
+            )
+            manifest_asset_manifest = json.loads(
+                Path(manifest_packaged["asset_manifest_path"]).read_text(encoding="utf-8")
+            )
+
+            experiment_packaged = package_dashboard_session(experiment_plan)
+            experiment_payload = json.loads(
+                Path(experiment_packaged["session_payload_path"]).read_text(encoding="utf-8")
+            )
+            experiment_asset_manifest = json.loads(
+                Path(experiment_packaged["asset_manifest_path"]).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(
+                manifest_packaged["bundle_id"],
+                experiment_packaged["bundle_id"],
+            )
+            self.assertEqual(manifest_payload, experiment_payload)
+            self.assertEqual(
+                manifest_packaged["bootstrap_hash"],
+                experiment_packaged["bootstrap_hash"],
+            )
+            self.assertEqual(manifest_asset_manifest, experiment_asset_manifest)
+
     def test_planning_fails_clearly_for_missing_phase_map_overlay_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             fixture = _materialize_dashboard_fixture(Path(tmp_dir_str))

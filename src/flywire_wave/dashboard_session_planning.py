@@ -441,7 +441,6 @@ def resolve_dashboard_session_plan(
         analysis_context=analysis_context,
         overlay_resolution=overlay_resolution,
         inventory=inventory,
-        source_mode=source_mode,
     )
     dashboard_state = _build_dashboard_session_state(
         dashboard_session=dashboard_session,
@@ -1592,14 +1591,12 @@ def _build_dashboard_session_payload(
     analysis_context: Mapping[str, Any],
     overlay_resolution: Mapping[str, Any],
     inventory: Sequence[Mapping[str, Any]],
-    source_mode: str,
 ) -> dict[str, Any]:
     return {
         "format_version": DASHBOARD_SESSION_PAYLOAD_VERSION,
         "contract_version": DASHBOARD_SESSION_CONTRACT_VERSION,
         "design_note": DASHBOARD_SESSION_DESIGN_NOTE,
         "plan_version": DASHBOARD_SESSION_PLAN_VERSION,
-        "source_mode": str(source_mode),
         "bundle_reference": {
             "bundle_id": str(dashboard_session["bundle_id"]),
             "session_spec_hash": str(dashboard_session["session_spec_hash"]),

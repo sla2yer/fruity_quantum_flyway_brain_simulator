@@ -14,14 +14,16 @@ M10_CONFIG ?= config/milestone_10_verification.yaml
 M11_CONFIG ?= config/milestone_11_verification.yaml
 M12_CONFIG ?= config/milestone_12_verification.yaml
 M13_CONFIG ?= config/milestone_13_verification.yaml
+M14_CONFIG ?= config/milestone_14_verification.yaml
 M11_READINESS_ARGS ?=
 M12_READINESS_ARGS ?=
 M13_READINESS_ARGS ?=
+M14_READINESS_ARGS ?=
 DASHBOARD_ARGS ?=
 DASHBOARD_SESSION_METADATA ?=
 DASHBOARD_EXPORT_ARGS ?=
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate compare-analysis dashboard dashboard-open dashboard-export wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate compare-analysis dashboard dashboard-open dashboard-export wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
@@ -70,6 +72,7 @@ help:
 		'milestone11-readiness Run the Milestone 11 mixed-fidelity integration verification pass and publish a readiness report' \
 		'milestone12-readiness Run the Milestone 12 task-layer integration verification pass and publish a readiness report' \
 		'milestone13-readiness Run the Milestone 13 validation-ladder integration verification pass and publish a readiness report' \
+		'milestone14-readiness Run the Milestone 14 dashboard integration verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -168,6 +171,9 @@ milestone12-readiness:
 
 milestone13-readiness:
 	$(PYTHON) scripts/28_milestone13_readiness.py --config $(M13_CONFIG) $(M13_READINESS_ARGS)
+
+milestone14-readiness:
+	$(PYTHON) scripts/30_milestone14_readiness.py --config $(M14_CONFIG) $(M14_READINESS_ARGS)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

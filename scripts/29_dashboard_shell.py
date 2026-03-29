@@ -34,7 +34,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == "export":
         result = _export_dashboard(args)
     else:
-        result = _open_packaged_dashboard(Path(args.dashboard_session_metadata))
+        result = _open_packaged_dashboard(
+            Path(args.dashboard_session_metadata),
+            open_browser=not args.no_browser,
+        )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
@@ -107,6 +110,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dashboard-session-metadata",
         required=True,
         help="Path to dashboard_session.json.",
+    )
+    open_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Resolve the packaged app shell path without launching a browser.",
     )
 
     export_parser = subparsers.add_parser(
@@ -189,7 +197,11 @@ def _build_dashboard(args: argparse.Namespace) -> dict[str, object]:
     return packaged
 
 
-def _open_packaged_dashboard(metadata_path: Path) -> dict[str, object]:
+def _open_packaged_dashboard(
+    metadata_path: Path,
+    *,
+    open_browser: bool = True,
+) -> dict[str, object]:
     metadata = load_dashboard_session_metadata(metadata_path)
     bundle_paths = discover_dashboard_session_bundle_paths(metadata)
     app_shell_path = bundle_paths[APP_SHELL_INDEX_ARTIFACT_ID].resolve()
@@ -198,7 +210,7 @@ def _open_packaged_dashboard(metadata_path: Path) -> dict[str, object]:
         "metadata_path": str(metadata_path.resolve()),
         "app_shell_path": str(app_shell_path),
         "app_shell_file_url": file_url,
-        "browser_opened": bool(webbrowser.open(file_url, new=2)),
+        "browser_opened": bool(webbrowser.open(file_url, new=2)) if open_browser else False,
     }
 
 
