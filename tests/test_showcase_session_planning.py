@@ -13,7 +13,9 @@ sys.path.insert(0, str(SRC))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from flywire_wave.dashboard_session_contract import (
+    SELECTED_SUBSET_HIGHLIGHT_OVERLAY_ID,
     SHARED_READOUT_ACTIVITY_OVERLAY_ID,
+    STIMULUS_CONTEXT_FRAME_OVERLAY_ID,
     load_dashboard_session_metadata,
 )
 from flywire_wave.dashboard_session_planning import (
@@ -41,10 +43,14 @@ from flywire_wave.showcase_session_contract import (
     HIGHLIGHT_FALLBACK_PRESET_ID,
     METADATA_JSON_KEY,
     PAIRED_COMPARISON_PRESET_ID,
+    PROPAGATION_REPLAY_PRESET_ID,
+    RETINAL_INPUT_FOCUS_PRESET_ID,
+    SCENE_CONTEXT_PRESET_ID,
     SCENE_SELECTION_STEP_ID,
     SHOWCASE_EXPORT_MANIFEST_ARTIFACT_ID,
     SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID,
     SHOWCASE_SCRIPT_PAYLOAD_ARTIFACT_ID,
+    SUBSET_CONTEXT_PRESET_ID,
     SUITE_SUMMARY_TABLE_ROLE_ID,
     SUMMARY_ANALYSIS_STEP_ID,
     VALIDATION_REVIEW_HANDOFF_ROLE_ID,
@@ -395,6 +401,171 @@ class ShowcaseSessionPlanningTest(unittest.TestCase):
                 catalog["highlight_step_evidence_references"],
                 highlight_step["evidence_references"],
             )
+            self.assertEqual(
+                catalog["comparison_act"]["view_kind"],
+                "comparison_act",
+            )
+            self.assertEqual(
+                catalog["comparison_act"]["content_scope_label"],
+                "shared_comparison",
+            )
+            self.assertEqual(
+                catalog["comparison_act"]["stable_pairing_semantics"]["shared_seed"],
+                DEFAULT_SEED,
+            )
+            self.assertEqual(
+                catalog["highlight_presentation"]["view_kind"],
+                "wave_highlight_effect",
+            )
+            self.assertEqual(
+                catalog["highlight_presentation"]["active_scope_label"],
+                "wave_only_diagnostic",
+            )
+            self.assertEqual(
+                catalog["summary_analysis_landing"]["view_kind"],
+                "summary_analysis_landing",
+            )
+            self.assertEqual(
+                catalog["summary_analysis_landing"]["headline"],
+                "Small, causal, geometry-dependent computational effect.",
+            )
+            self.assertEqual(
+                plan["summary_analysis_landing"]["highlight_outcome"][
+                    "presentation_status"
+                ],
+                "ready",
+            )
+
+    def test_unapproved_highlight_demotes_to_caveated_fallback_story_state(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+
+            plan = resolve_showcase_session_plan(
+                config_path=fixture["config_path"],
+                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                suite_review_summary_path=fixture["suite_review_summary_path"],
+                table_dimension_ids=["motion_direction"],
+                fixture_mode=SHOWCASE_FIXTURE_MODE_REHEARSAL,
+            )
+
+            self.assertEqual(plan["highlight_selection"]["presentation_status"], "fallback")
+            self.assertEqual(
+                plan["highlight_presentation"]["view_kind"],
+                "wave_highlight_caveat",
+            )
+            self.assertEqual(
+                plan["highlight_presentation"]["active_scope_label"],
+                "shared_comparison",
+            )
+            self.assertIn(
+                "not approved",
+                str(plan["highlight_presentation"]["caveat_text"]),
+            )
+            self.assertEqual(
+                _showcase_step(plan, APPROVED_WAVE_HIGHLIGHT_STEP_ID)["preset_id"],
+                HIGHLIGHT_FALLBACK_PRESET_ID,
+            )
+            self.assertEqual(
+                plan["summary_analysis_landing"]["highlight_outcome"][
+                    "presentation_status"
+                ],
+                "fallback",
+            )
+            self.assertIn(
+                "Demote the wave-only highlight",
+                plan["summary_analysis_landing"]["newcomer_summary_lines"][1],
+            )
+
+    def test_early_story_presets_capture_deterministic_choreography_and_ui_metadata(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+
+            plan = resolve_showcase_session_plan(
+                config_path=fixture["config_path"],
+                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                suite_review_summary_path=fixture["suite_review_summary_path"],
+                table_dimension_ids=["motion_direction"],
+                fixture_mode=SHOWCASE_FIXTURE_MODE_REHEARSAL,
+            )
+
+            scene_preset = _saved_preset(plan, SCENE_CONTEXT_PRESET_ID)
+            input_preset = _saved_preset(plan, RETINAL_INPUT_FOCUS_PRESET_ID)
+            subset_preset = _saved_preset(plan, SUBSET_CONTEXT_PRESET_ID)
+            propagation_preset = _saved_preset(plan, PROPAGATION_REPLAY_PRESET_ID)
+
+            scene_metadata = scene_preset["presentation_state_patch"]["rehearsal_metadata"]
+            self.assertEqual(
+                scene_metadata["camera_choreography"]["transition"]["to_anchor_id"],
+                "opening_scene_context",
+            )
+            self.assertEqual(
+                scene_metadata["annotation_layout"]["placements"][0]["annotation_id"],
+                "story_context",
+            )
+            self.assertEqual(
+                scene_metadata["emphasis_state"]["overlay_ids_by_pane"]["scene"],
+                [STIMULUS_CONTEXT_FRAME_OVERLAY_ID],
+            )
+            self.assertEqual(
+                scene_metadata["showcase_ui_state"]["inspection_escape_hatch"][
+                    "dashboard_app_shell_path"
+                ],
+                str(Path(fixture["dashboard_package"]["app_shell_path"]).resolve()),
+            )
+
+            input_metadata = input_preset["presentation_state_patch"]["rehearsal_metadata"]
+            self.assertEqual(
+                input_metadata["presentation_links"][0]["link_kind"],
+                "shared_scene_surface",
+            )
+            self.assertEqual(
+                input_metadata["presentation_links"][0]["shared_context"][
+                    "active_layer_id"
+                ],
+                plan["scene_choice"]["active_layer_id"],
+            )
+
+            subset_metadata = subset_preset["presentation_state_patch"]["rehearsal_metadata"]
+            self.assertEqual(
+                subset_metadata["camera_choreography"]["anchor"]["anchor_id"],
+                "active_subset_cluster",
+            )
+            self.assertEqual(
+                subset_metadata["emphasis_state"]["overlay_ids_by_pane"]["circuit"],
+                [SELECTED_SUBSET_HIGHLIGHT_OVERLAY_ID],
+            )
+            self.assertEqual(
+                subset_metadata["presentation_links"][0]["shared_context"][
+                    "selected_root_ids"
+                ],
+                plan["active_subset_focus_targets"]["selected_root_ids"],
+            )
+
+            propagation_metadata = propagation_preset["presentation_state_patch"][
+                "rehearsal_metadata"
+            ]
+            self.assertEqual(
+                propagation_metadata["camera_choreography"]["timing"][
+                    "recommended_sample_index"
+                ],
+                2,
+            )
+            self.assertEqual(
+                propagation_metadata["emphasis_state"]["overlay_ids_by_pane"][
+                    "time_series"
+                ],
+                [SHARED_READOUT_ACTIVITY_OVERLAY_ID],
+            )
+            self.assertEqual(
+                sorted(
+                    propagation_metadata["showcase_ui_state"]["runtime_mode_variants"]
+                ),
+                ["guided_autoplay", "presenter_rehearsal"],
+            )
 
     def test_planning_fails_clearly_for_unsupported_preset_overlay_and_missing_highlight_review(
         self,
@@ -440,6 +611,66 @@ class ShowcaseSessionPlanningTest(unittest.TestCase):
             self.assertIn(
                 "validation review_handoff artifact is unavailable",
                 str(highlight_ctx.exception),
+            )
+
+    def test_planning_fails_clearly_for_showcase_pair_loss_and_timebase_loss(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+
+            dashboard_payload_path = Path(
+                fixture["dashboard_package"]["session_payload_path"]
+            ).resolve()
+            payload = json.loads(dashboard_payload_path.read_text(encoding="utf-8"))
+            payload["selected_bundle_pair"]["wave"]["arm_id"] = payload[
+                "selected_bundle_pair"
+            ]["baseline"]["arm_id"]
+            write_json(payload, dashboard_payload_path)
+
+            with self.assertRaises(ValueError) as pair_ctx:
+                resolve_showcase_session_plan(
+                    config_path=fixture["config_path"],
+                    dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                    suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                    suite_review_summary_path=fixture["suite_review_summary_path"],
+                )
+
+            self.assertIn(
+                "distinct baseline-versus-wave arm pair",
+                str(pair_ctx.exception),
+            )
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+
+            dashboard_payload_path = Path(
+                fixture["dashboard_package"]["session_payload_path"]
+            ).resolve()
+            payload = json.loads(dashboard_payload_path.read_text(encoding="utf-8"))
+            payload["pane_inputs"]["time_series"]["replay_model"][
+                "shared_timebase_status"
+            ] = {
+                "availability": "unavailable",
+                "reason": "fixture removed the shared timebase for showcase validation",
+            }
+            for status in payload["pane_inputs"]["time_series"]["replay_model"][
+                "comparison_mode_statuses"
+            ]:
+                if status["comparison_mode_id"] == "paired_baseline_vs_wave":
+                    status["availability"] = "unavailable"
+                    status["reason"] = "shared timebase unavailable"
+            write_json(payload, dashboard_payload_path)
+
+            with self.assertRaises(ValueError) as timebase_ctx:
+                resolve_showcase_session_plan(
+                    config_path=fixture["config_path"],
+                    dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                    suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                    suite_review_summary_path=fixture["suite_review_summary_path"],
+                )
+
+            self.assertIn(
+                "shared baseline-versus-wave timebase",
+                str(timebase_ctx.exception),
             )
 
 

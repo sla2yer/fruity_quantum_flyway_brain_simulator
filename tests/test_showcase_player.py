@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 sys.path.insert(0, str(ROOT / "tests"))
 
+from flywire_wave.dashboard_session_contract import SHARED_READOUT_ACTIVITY_OVERLAY_ID
 from flywire_wave.io_utils import write_json
 from flywire_wave.showcase_player import (
     GUIDED_AUTOPLAY_MODE,
@@ -24,12 +25,16 @@ from flywire_wave.showcase_player import (
 )
 from flywire_wave.showcase_session_contract import (
     ACTIVITY_PROPAGATION_STEP_ID,
+    ANALYSIS_OFFLINE_REPORT_ROLE_ID,
+    ANALYSIS_UI_PAYLOAD_ROLE_ID,
     ANALYSIS_SUMMARY_PRESET_ID,
     APPROVED_WAVE_HIGHLIGHT_STEP_ID,
     BASELINE_WAVE_COMPARISON_STEP_ID,
     SCENE_CONTEXT_PRESET_ID,
     SCENE_SELECTION_STEP_ID,
+    SUITE_SUMMARY_TABLE_ROLE_ID,
     SUMMARY_ANALYSIS_STEP_ID,
+    VALIDATION_REVIEW_HANDOFF_ROLE_ID,
 )
 from flywire_wave.showcase_session_planning import (
     SHOWCASE_FIXTURE_MODE_REHEARSAL,
@@ -241,6 +246,223 @@ class ShowcasePlayerTest(unittest.TestCase):
             self.assertEqual(
                 reset_state["sequence_state"]["visited_step_ids"],
                 [SCENE_SELECTION_STEP_ID],
+            )
+
+    def test_early_beats_resolve_choreography_annotations_and_ui_mode_variants(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+
+            plan = resolve_showcase_session_plan(
+                config_path=fixture["config_path"],
+                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                suite_review_summary_path=fixture["suite_review_summary_path"],
+                table_dimension_ids=["motion_direction"],
+                fixture_mode=SHOWCASE_FIXTURE_MODE_REHEARSAL,
+            )
+            packaged = package_showcase_session(plan)
+            context = load_showcase_player_context(packaged["metadata_path"])
+
+            initial_state = resolve_showcase_player_state(context)
+            self.assertEqual(
+                initial_state["camera_choreography"]["anchor"]["anchor_id"],
+                "opening_scene_context",
+            )
+            self.assertEqual(
+                initial_state["narrative_annotations"][0]["placement"]["placement"],
+                "hero_top_left",
+            )
+            self.assertEqual(
+                initial_state["showcase_ui_state"]["runtime_mode"],
+                PRESENTER_REHEARSAL_MODE,
+            )
+            self.assertEqual(
+                initial_state["showcase_ui_state"]["inspection_panel_state"],
+                "peek",
+            )
+            self.assertEqual(
+                initial_state["showcase_ui_state"]["inspection_escape_hatch"][
+                    "dashboard_app_shell_path"
+                ],
+                str(Path(fixture["dashboard_package"]["app_shell_path"]).resolve()),
+            )
+
+            guided_propagation = apply_showcase_player_command(
+                context,
+                command="jump_to_step",
+                state=initial_state,
+                step_id=ACTIVITY_PROPAGATION_STEP_ID,
+                runtime_mode=GUIDED_AUTOPLAY_MODE,
+            )
+            self.assertEqual(
+                guided_propagation["camera_choreography"]["anchor"]["anchor_id"],
+                "propagation_path_follow",
+            )
+            self.assertEqual(
+                guided_propagation["annotation_layout"]["focus_pane_id"],
+                "time_series",
+            )
+            annotation_placements = {
+                item["annotation_id"]: item["placement"]["pane_id"]
+                for item in guided_propagation["narrative_annotations"]
+            }
+            self.assertEqual(
+                annotation_placements["fairness_boundary"],
+                "analysis",
+            )
+            self.assertEqual(
+                guided_propagation["showcase_ui_state"]["runtime_mode"],
+                GUIDED_AUTOPLAY_MODE,
+            )
+            self.assertEqual(
+                guided_propagation["showcase_ui_state"]["inspection_panel_state"],
+                "collapsed",
+            )
+            self.assertEqual(
+                guided_propagation["emphasis_state"]["overlay_ids_by_pane"][
+                    "time_series"
+                ],
+                [SHARED_READOUT_ACTIVITY_OVERLAY_ID],
+            )
+            self.assertEqual(
+                guided_propagation["presentation_links"][0]["shared_context"][
+                    "selected_readout_id"
+                ],
+                guided_propagation["resolved_dashboard_session_state"][
+                    "global_interaction_state"
+                ]["selected_readout_id"],
+            )
+
+    def test_late_stage_beats_resolve_fairness_labels_and_evidence_hooks(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+            _approve_validation_highlight(fixture)
+
+            plan = resolve_showcase_session_plan(
+                config_path=fixture["config_path"],
+                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                suite_review_summary_path=fixture["suite_review_summary_path"],
+                table_dimension_ids=["motion_direction"],
+                fixture_mode=SHOWCASE_FIXTURE_MODE_REHEARSAL,
+            )
+            packaged = package_showcase_session(plan)
+            context = load_showcase_player_context(packaged["metadata_path"])
+            initial_state = resolve_showcase_player_state(context)
+
+            comparison_state = apply_showcase_player_command(
+                context,
+                command="jump_to_step",
+                state=initial_state,
+                step_id=BASELINE_WAVE_COMPARISON_STEP_ID,
+            )
+            self.assertEqual(
+                comparison_state["presentation_view"]["view_kind"],
+                "comparison_act",
+            )
+            self.assertEqual(
+                comparison_state["presentation_view"]["content_scope_label"],
+                "shared_comparison",
+            )
+            self.assertEqual(
+                comparison_state["fairness_boundary"]["wave_only_label"],
+                "Wave-only diagnostic",
+            )
+            self.assertEqual(
+                comparison_state["comparison_act"]["stable_pairing_semantics"][
+                    "shared_seed"
+                ],
+                11,
+            )
+            comparison_roles = {
+                item["artifact_role_id"] for item in comparison_state["evidence_hooks"]
+            }
+            self.assertEqual(
+                comparison_roles,
+                {
+                    ANALYSIS_UI_PAYLOAD_ROLE_ID,
+                    SUITE_SUMMARY_TABLE_ROLE_ID,
+                },
+            )
+            self.assertTrue(
+                all(item["path_exists"] for item in comparison_state["evidence_hooks"])
+            )
+
+            highlight_state = apply_showcase_player_command(
+                context,
+                command="jump_to_step",
+                state=comparison_state,
+                step_id=APPROVED_WAVE_HIGHLIGHT_STEP_ID,
+            )
+            self.assertEqual(
+                highlight_state["presentation_view"]["view_kind"],
+                "wave_highlight_effect",
+            )
+            self.assertEqual(
+                highlight_state["presentation_view"]["active_scope_label"],
+                "wave_only_diagnostic",
+            )
+            self.assertTrue(
+                highlight_state["highlight_presentation"]["guardrail_status"][
+                    "approved_for_showcase"
+                ]
+            )
+            highlight_roles = {
+                item["artifact_role_id"] for item in highlight_state["evidence_hooks"]
+            }
+            self.assertEqual(
+                highlight_roles,
+                {
+                    ANALYSIS_UI_PAYLOAD_ROLE_ID,
+                    SUITE_SUMMARY_TABLE_ROLE_ID,
+                    VALIDATION_REVIEW_HANDOFF_ROLE_ID,
+                },
+            )
+            self.assertTrue(
+                all(item["path_exists"] for item in highlight_state["evidence_hooks"])
+            )
+
+            summary_state = apply_showcase_player_command(
+                context,
+                command="jump_to_step",
+                state=highlight_state,
+                step_id=SUMMARY_ANALYSIS_STEP_ID,
+            )
+            self.assertEqual(
+                summary_state["presentation_view"]["view_kind"],
+                "summary_analysis_landing",
+            )
+            self.assertEqual(
+                summary_state["summary_analysis_landing"]["headline"],
+                "Small, causal, geometry-dependent computational effect.",
+            )
+            self.assertEqual(
+                summary_state["summary_analysis_landing"]["highlight_outcome"][
+                    "presentation_status"
+                ],
+                "ready",
+            )
+            self.assertIn(
+                "matched shared-comparison surface",
+                summary_state["summary_analysis_landing"]["newcomer_summary_lines"][
+                    0
+                ].lower(),
+            )
+            summary_roles = {
+                item["artifact_role_id"] for item in summary_state["evidence_hooks"]
+            }
+            self.assertIn(SUITE_SUMMARY_TABLE_ROLE_ID, summary_roles)
+            self.assertIn(VALIDATION_REVIEW_HANDOFF_ROLE_ID, summary_roles)
+            self.assertTrue(
+                ANALYSIS_OFFLINE_REPORT_ROLE_ID in summary_roles
+                or ANALYSIS_UI_PAYLOAD_ROLE_ID in summary_roles
+            )
+            self.assertTrue(
+                all(item["path_exists"] for item in summary_state["evidence_hooks"])
             )
 
     def test_player_fails_clearly_for_unsupported_step_jump_and_incomplete_state(

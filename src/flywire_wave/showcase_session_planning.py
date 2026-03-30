@@ -10,6 +10,7 @@ from .config import get_config_path, get_project_root, load_config
 from .dashboard_session_contract import (
     ANALYSIS_BUNDLE_METADATA_ROLE_ID as DASHBOARD_ANALYSIS_BUNDLE_METADATA_ROLE_ID,
     ANALYSIS_PANE_ID,
+    APP_SHELL_INDEX_ARTIFACT_ID,
     CIRCUIT_PANE_ID,
     DASHBOARD_SESSION_CONTRACT_VERSION,
     DASHBOARD_SESSION_METADATA_ROLE_ID as DASHBOARD_METADATA_ROLE_ID,
@@ -17,13 +18,16 @@ from .dashboard_session_contract import (
     DASHBOARD_SESSION_STATE_ROLE_ID as DASHBOARD_STATE_ROLE_ID,
     METADATA_JSON_KEY as DASHBOARD_METADATA_JSON_KEY,
     MORPHOLOGY_PANE_ID,
+    PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
     PAIRED_READOUT_DELTA_OVERLAY_ID,
     PHASE_MAP_REFERENCE_OVERLAY_ID,
     REVIEWER_FINDINGS_OVERLAY_ID,
     SCENE_PANE_ID,
+    SELECTED_SUBSET_HIGHLIGHT_OVERLAY_ID,
     SESSION_PAYLOAD_ARTIFACT_ID,
     SESSION_STATE_ARTIFACT_ID,
     SHARED_READOUT_ACTIVITY_OVERLAY_ID,
+    SINGLE_ARM_COMPARISON_MODE,
     STIMULUS_CONTEXT_FRAME_OVERLAY_ID,
     TIME_SERIES_PANE_ID,
     VALIDATION_BUNDLE_METADATA_ROLE_ID as DASHBOARD_VALIDATION_BUNDLE_METADATA_ROLE_ID,
@@ -210,6 +214,21 @@ DEFAULT_EXPORT_FILE_NAMES = {
     REVIEW_MANIFEST_EXPORT_TARGET_ROLE_ID: "review_manifest.json",
 }
 
+_SHOWCASE_CONTROL_GROUP_IDS = (
+    "comparison_controls",
+    "inspection_drawer",
+    "inspection_escape_hatch",
+    "neuron_detail_controls",
+    "overlay_controls",
+    "playback_transport",
+    "readout_detail_controls",
+    "scene_context_controls",
+    "story_annotations",
+    "story_header",
+    "subset_focus_controls",
+    "time_scrub",
+)
+
 _PRESENTATION_STATUS_PRIORITY = {
     PRESENTATION_STATUS_BLOCKED: 0,
     PRESENTATION_STATUS_SCIENTIFIC_REVIEW_REQUIRED: 1,
@@ -222,6 +241,20 @@ _APPROVED_HIGHLIGHT_DECISIONS = {
     "approved_for_showcase",
     "scientifically_defensible",
     "ready_for_showcase",
+}
+_SHARED_COMPARISON_SCOPE_LABEL = "shared_comparison"
+_WAVE_ONLY_DIAGNOSTIC_SCOPE_LABEL = "wave_only_diagnostic"
+_VALIDATION_EVIDENCE_SCOPE_LABEL = "validation_evidence"
+_SUMMARY_ANALYSIS_HEADLINE = "Small, causal, geometry-dependent computational effect."
+_SUMMARY_ANALYSIS_SUBHEAD = (
+    "Matched shared-comparison evidence first, wave-only diagnostic second, "
+    "validation caveats explicit."
+)
+_DECISION_ITEM_DISPLAY_NAMES = {
+    "m1_nonzero_shared_output_effect": "Matched shared output effect",
+    "m1_geometry_dependence": "Geometry-dependent effect",
+    "m1_survives_stronger_baseline": "Survives stronger baseline",
+    "m1_seed_parameter_stability": "Stable across seeds and parameters",
 }
 _SUPPORTED_PANE_IDS = (
     SCENE_PANE_ID,
@@ -465,9 +498,16 @@ def resolve_showcase_session_plan(
         "approved_comparison_arms": copy.deepcopy(
             narrative_context["approved_comparison_arms"]
         ),
+        "comparison_act": copy.deepcopy(narrative_context["comparison_act"]),
         "highlight_selection": copy.deepcopy(narrative_context["highlight_selection"]),
+        "highlight_presentation": copy.deepcopy(
+            narrative_context["highlight_presentation"]
+        ),
         "closing_analysis_assets": copy.deepcopy(
             narrative_context["closing_analysis_assets"]
+        ),
+        "summary_analysis_landing": copy.deepcopy(
+            narrative_context["summary_analysis_landing"]
         ),
         "operator_defaults": copy.deepcopy(operator_defaults),
         "upstream_artifact_references": copy.deepcopy(external_artifact_references),
@@ -831,6 +871,16 @@ def _validate_dashboard_payload(
             "Showcase planning requires a shared baseline-versus-wave timebase, but "
             f"dashboard replay reports {shared_timebase_status!r}."
         )
+    paired_status = _comparison_mode_status_by_id(
+        replay_model,
+        comparison_mode_id=PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
+    )
+    if str(paired_status.get("availability")) != "available":
+        raise ValueError(
+            "Showcase planning requires one available paired baseline-versus-wave "
+            "comparison mode, but dashboard replay reports "
+            f"{paired_status!r}."
+        )
 
     circuit_context = _require_mapping(
         payload.get("pane_inputs", {}).get(CIRCUIT_PANE_ID),
@@ -1121,6 +1171,326 @@ def _validate_experiment_alignment(
         )
 
 
+def _comparison_mode_status_by_id(
+    replay_model: Mapping[str, Any],
+    *,
+    comparison_mode_id: str,
+) -> dict[str, Any]:
+    for item in _normalize_mapping_sequence(
+        replay_model.get("comparison_mode_statuses", []),
+        field_name=(
+            "dashboard_session_payload.pane_inputs.time_series.replay_model."
+            "comparison_mode_statuses"
+        ),
+    ):
+        if str(item["comparison_mode_id"]) == comparison_mode_id:
+            return item
+    return {
+        "comparison_mode_id": str(comparison_mode_id),
+        "availability": "unavailable",
+        "reason": "comparison_mode_statuses does not list the requested comparison mode",
+    }
+
+
+def _build_comparison_act(
+    *,
+    selected_pair: Mapping[str, Any],
+    time_series_context: Mapping[str, Any],
+    replay_model: Mapping[str, Any],
+    suite_context: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    paired_status = _comparison_mode_status_by_id(
+        replay_model,
+        comparison_mode_id=PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
+    )
+    if str(paired_status.get("availability")) != "available":
+        raise ValueError(
+            "Showcase planning requires one paired baseline-versus-wave comparison mode "
+            "for the comparison act, but dashboard replay reports "
+            f"{paired_status!r}."
+        )
+    condition_signature = _normalize_identifier(
+        "_".join(str(item) for item in selected_pair.get("condition_ids", []))
+        or "all_conditions",
+        field_name="comparison_act.condition_signature",
+    )
+    pairing_id = _normalize_identifier(
+        (
+            f"{selected_pair['baseline']['arm_id']}_"
+            f"{selected_pair['wave']['arm_id']}_"
+            f"{time_series_context['selected_readout_id']}_"
+            f"seed_{selected_pair['shared_seed']}_"
+            f"{condition_signature}"
+        ),
+        field_name="comparison_act.pairing_id",
+    )
+    support_references = [
+        build_showcase_evidence_reference(
+            evidence_role_id=SHARED_COMPARISON_EVIDENCE_ROLE_ID,
+            artifact_role_id=ANALYSIS_UI_PAYLOAD_ROLE_ID,
+            citation_label="Analysis shared-comparison payload",
+            locator="shared_comparison",
+        )
+    ]
+    if suite_context is not None and suite_context.get("summary_table_artifact") is not None:
+        support_references.append(
+            build_showcase_evidence_reference(
+                evidence_role_id=SUITE_ROLLUP_EVIDENCE_ROLE_ID,
+                artifact_role_id=SUITE_SUMMARY_TABLE_ROLE_ID,
+                citation_label="Suite summary table",
+                locator="shared_comparison_metrics.summary_table_rows",
+                required=False,
+            )
+        )
+    return {
+        "view_id": "baseline_wave_comparison_view",
+        "view_kind": "comparison_act",
+        "display_name": "Matched Baseline vs Wave Comparison",
+        "pairing_id": pairing_id,
+        "comparison_mode": PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
+        "content_scope_label": _SHARED_COMPARISON_SCOPE_LABEL,
+        "stable_pairing_semantics": {
+            "pairing_kind": "matched_shared_seed_condition_pair",
+            "baseline_arm_id": str(selected_pair["baseline"]["arm_id"]),
+            "wave_arm_id": str(selected_pair["wave"]["arm_id"]),
+            "baseline_bundle_id": str(selected_pair["baseline"]["bundle_id"]),
+            "wave_bundle_id": str(selected_pair["wave"]["bundle_id"]),
+            "shared_seed": int(selected_pair["shared_seed"]),
+            "condition_ids": [str(item) for item in selected_pair["condition_ids"]],
+            "selected_readout_id": str(time_series_context["selected_readout_id"]),
+            "shared_timebase_signature": str(replay_model["timebase_signature"]),
+            "shared_timebase_status": copy.deepcopy(
+                dict(replay_model["shared_timebase_status"])
+            ),
+            "comparison_mode_status": copy.deepcopy(dict(paired_status)),
+        },
+        "shared_surface": {
+            "scope_label": _SHARED_COMPARISON_SCOPE_LABEL,
+            "display_name": "Shared comparison",
+            "comparison_mode": PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
+            "selected_readout_id": str(time_series_context["selected_readout_id"]),
+            "analysis_locator": "shared_comparison",
+        },
+        "wave_only_boundary": {
+            "scope_label": _WAVE_ONLY_DIAGNOSTIC_SCOPE_LABEL,
+            "display_name": "Wave-only diagnostics",
+            "availability": "reserved_for_next_beat",
+            "reason": (
+                "Wave-only diagnostics stay outside the fairness-critical matched "
+                "comparison beat."
+            ),
+        },
+        "fairness_boundary": {
+            "shared_comparison_label": "Shared comparison",
+            "wave_only_label": "Wave-only diagnostic",
+            "claim_rule": (
+                "Only the shared-comparison surface supports direct baseline-versus-wave claims."
+            ),
+            "operator_note": (
+                "Keep wave-only overlays and diagnostics visibly separate until the "
+                "approved highlight beat."
+            ),
+        },
+        "supporting_evidence_references": support_references,
+    }
+
+
+def _build_highlight_presentation(
+    *,
+    comparison_act: Mapping[str, Any],
+    highlight_selection: Mapping[str, Any],
+) -> dict[str, Any]:
+    highlight_ready = (
+        str(highlight_selection["presentation_status"]) == PRESENTATION_STATUS_READY
+    )
+    return {
+        "view_id": (
+            "approved_wave_highlight_view"
+            if highlight_ready
+            else "wave_highlight_fallback_view"
+        ),
+        "view_kind": (
+            "wave_highlight_effect"
+            if highlight_ready
+            else "wave_highlight_caveat"
+        ),
+        "display_name": (
+            "Wave-Only Highlight"
+            if highlight_ready
+            else "Wave-Only Highlight Caveat"
+        ),
+        "active_scope_label": (
+            _WAVE_ONLY_DIAGNOSTIC_SCOPE_LABEL
+            if highlight_ready
+            else _SHARED_COMPARISON_SCOPE_LABEL
+        ),
+        "nominated_scope_label": _WAVE_ONLY_DIAGNOSTIC_SCOPE_LABEL,
+        "presentation_status": str(highlight_selection["presentation_status"]),
+        "phenomenon_id": str(highlight_selection["phenomenon_id"]),
+        "citation_label": str(highlight_selection["citation_label"]),
+        "comparison_reference": {
+            "step_id": BASELINE_WAVE_COMPARISON_STEP_ID,
+            "preset_id": PAIRED_COMPARISON_PRESET_ID,
+            "pairing_id": str(comparison_act["pairing_id"]),
+        },
+        "fairness_boundary": {
+            "shared_comparison_label": str(
+                comparison_act["fairness_boundary"]["shared_comparison_label"]
+            ),
+            "wave_only_label": str(
+                comparison_act["fairness_boundary"]["wave_only_label"]
+            ),
+            "claim_rule": (
+                "Treat the highlight as a wave-only diagnostic rather than as the "
+                "matched comparison itself."
+            ),
+        },
+        "primary_evidence_reference": copy.deepcopy(
+            dict(highlight_selection["primary_evidence_reference"])
+        ),
+        "supporting_evidence_references": [
+            copy.deepcopy(dict(item))
+            for item in highlight_selection.get("supporting_evidence_references", [])
+        ],
+        "guardrail_status": {
+            "scientific_plausibility_decision": highlight_selection.get(
+                "scientific_plausibility_decision"
+            ),
+            "review_status": highlight_selection.get("review_status"),
+            "approved_for_showcase": bool(highlight_ready),
+        },
+        "caveat_text": (
+            None
+            if highlight_ready
+            else str(highlight_selection["fallback_path"]["fallback_explanation"])
+        ),
+        "fallback_path": copy.deepcopy(dict(highlight_selection["fallback_path"])),
+    }
+
+
+def _build_summary_analysis_landing(
+    *,
+    analysis_summary_card: Mapping[str, Any],
+    closing_analysis_assets: Mapping[str, Any],
+    comparison_act: Mapping[str, Any],
+    highlight_presentation: Mapping[str, Any],
+) -> dict[str, Any]:
+    decision_rows = []
+    for index, item in enumerate(
+        _normalize_mapping_sequence(
+            analysis_summary_card.get("decision_items", []),
+            field_name="analysis_summary_card.decision_items",
+        )
+    ):
+        item_id = str(item["item_id"])
+        decision_rows.append(
+            {
+                "claim_id": item_id,
+                "display_name": _DECISION_ITEM_DISPLAY_NAMES.get(
+                    item_id,
+                    item_id.replace("_", " "),
+                ),
+                "status": str(item.get("status", "unavailable")),
+                "supports_claim": str(item.get("status", "unavailable")) == "pass",
+                "locator": (
+                    "shared_comparison.milestone_1_decision_panel."
+                    f"decision_items[{index}]"
+                ),
+            }
+        )
+
+    evidence_references = [
+        build_showcase_evidence_reference(
+            evidence_role_id=SUMMARY_ANALYSIS_EVIDENCE_ROLE_ID,
+            artifact_role_id=(
+                ANALYSIS_OFFLINE_REPORT_ROLE_ID
+                if closing_analysis_assets["analysis_offline_report_path"]
+                else ANALYSIS_UI_PAYLOAD_ROLE_ID
+            ),
+            citation_label=(
+                "Analysis offline report"
+                if closing_analysis_assets["analysis_offline_report_path"]
+                else "Analysis UI payload"
+            ),
+            locator=str(closing_analysis_assets["analysis_summary_locator"]),
+        )
+    ]
+    if closing_analysis_assets["suite_summary_table_path"] is not None:
+        evidence_references.append(
+            build_showcase_evidence_reference(
+                evidence_role_id=SUITE_ROLLUP_EVIDENCE_ROLE_ID,
+                artifact_role_id=SUITE_SUMMARY_TABLE_ROLE_ID,
+                citation_label="Suite summary table",
+                locator="shared_comparison_metrics.summary_table_rows",
+            )
+        )
+    if closing_analysis_assets["validation_review_handoff_path"] is not None:
+        evidence_references.append(
+            build_showcase_evidence_reference(
+                evidence_role_id=VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
+                artifact_role_id=VALIDATION_REVIEW_HANDOFF_ROLE_ID,
+                citation_label="Validation review handoff",
+                locator="scientific_plausibility_decision",
+                required=False,
+            )
+        )
+    elif closing_analysis_assets["validation_findings_path"] is not None:
+        evidence_references.append(
+            build_showcase_evidence_reference(
+                evidence_role_id=VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
+                artifact_role_id=VALIDATION_FINDINGS_ROLE_ID,
+                citation_label="Validation findings",
+                locator="validator_findings",
+                required=False,
+            )
+        )
+
+    highlight_ready = (
+        str(highlight_presentation["presentation_status"]) == PRESENTATION_STATUS_READY
+    )
+    return {
+        "view_id": "summary_analysis_landing_view",
+        "view_kind": "summary_analysis_landing",
+        "display_name": "Summary Analysis Landing",
+        "headline": _SUMMARY_ANALYSIS_HEADLINE,
+        "subheadline": _SUMMARY_ANALYSIS_SUBHEAD,
+        "analysis_overall_status": str(
+            analysis_summary_card.get("overall_status", "unavailable")
+        ),
+        "newcomer_summary_lines": [
+            (
+                "Start from the matched shared-comparison surface on one readout and "
+                "one shared timebase."
+            ),
+            (
+                "Use the wave-only highlight as an explicitly labeled diagnostic."
+                if highlight_ready
+                else "Demote the wave-only highlight to a caveated note when approval is missing."
+            ),
+            (
+                "Close on packaged analysis, suite, and validation artifacts rather "
+                "than a disconnected summary slide."
+            ),
+        ],
+        "comparison_anchor": {
+            "pairing_id": str(comparison_act["pairing_id"]),
+            "content_scope_label": str(comparison_act["content_scope_label"]),
+            "selected_readout_id": str(
+                comparison_act["stable_pairing_semantics"]["selected_readout_id"]
+            ),
+        },
+        "highlight_outcome": {
+            "presentation_status": str(highlight_presentation["presentation_status"]),
+            "citation_label": str(highlight_presentation["citation_label"]),
+            "active_scope_label": str(highlight_presentation["active_scope_label"]),
+            "caveat_text": highlight_presentation.get("caveat_text"),
+        },
+        "claim_rows": decision_rows,
+        "supporting_evidence_references": evidence_references,
+        "linked_artifacts": copy.deepcopy(dict(closing_analysis_assets)),
+    }
+
+
 def _build_narrative_context(
     *,
     dashboard_context: Mapping[str, Any],
@@ -1164,6 +1534,48 @@ def _build_narrative_context(
         suite_context=suite_context,
         override=highlight_override,
     )
+    comparison_act = _build_comparison_act(
+        selected_pair=selected_pair,
+        time_series_context=time_series_context,
+        replay_model=replay_model,
+        suite_context=suite_context,
+    )
+    closing_analysis_assets = {
+        "analysis_ui_payload_path": str(analysis_context["ui_payload_path"]),
+        "analysis_offline_report_path": analysis_context["offline_report_path"],
+        "suite_summary_table_path": (
+            None
+            if suite_context is None or suite_context.get("summary_table_artifact") is None
+            else str(suite_context["summary_table_artifact"]["path"])
+        ),
+        "suite_comparison_plot_path": (
+            None
+            if suite_context is None or suite_context.get("comparison_plot_artifact") is None
+            else str(suite_context["comparison_plot_artifact"]["path"])
+        ),
+        "suite_review_artifact_path": (
+            None
+            if suite_context is None or suite_context.get("review_artifact") is None
+            else str(suite_context["review_artifact"]["path"])
+        ),
+        "validation_summary_path": str(validation_context["summary_path"]),
+        "validation_findings_path": str(validation_context["findings_path"]),
+        "validation_review_handoff_path": validation_context["review_handoff_path"],
+        "analysis_summary_locator": "shared_comparison.milestone_1_decision_panel",
+    }
+    analysis_summary_card = copy.deepcopy(
+        analysis_pane["shared_comparison"]["milestone_1_decision_panel"]
+    )
+    highlight_presentation = _build_highlight_presentation(
+        comparison_act=comparison_act,
+        highlight_selection=highlight_selection,
+    )
+    summary_analysis_landing = _build_summary_analysis_landing(
+        analysis_summary_card=analysis_summary_card,
+        closing_analysis_assets=closing_analysis_assets,
+        comparison_act=comparison_act,
+        highlight_presentation=highlight_presentation,
+    )
     return {
         "scene_choice": {
             "source_kind": str(scene_context["source_kind"]),
@@ -1198,30 +1610,12 @@ def _build_narrative_context(
             "condition_ids": list(selected_pair["condition_ids"]),
             "selected_readout_id": str(time_series_context["selected_readout_id"]),
         },
+        "comparison_act": comparison_act,
         "highlight_selection": highlight_selection,
-        "closing_analysis_assets": {
-            "analysis_ui_payload_path": str(analysis_context["ui_payload_path"]),
-            "analysis_offline_report_path": analysis_context["offline_report_path"],
-            "suite_summary_table_path": (
-                None
-                if suite_context is None or suite_context.get("summary_table_artifact") is None
-                else str(suite_context["summary_table_artifact"]["path"])
-            ),
-            "suite_comparison_plot_path": (
-                None
-                if suite_context is None or suite_context.get("comparison_plot_artifact") is None
-                else str(suite_context["comparison_plot_artifact"]["path"])
-            ),
-            "suite_review_artifact_path": (
-                None
-                if suite_context is None or suite_context.get("review_artifact") is None
-                else str(suite_context["review_artifact"]["path"])
-            ),
-            "analysis_summary_locator": "shared_comparison.milestone_1_decision_panel",
-        },
-        "analysis_summary_card": copy.deepcopy(
-            analysis_pane["shared_comparison"]["milestone_1_decision_panel"]
-        ),
+        "highlight_presentation": highlight_presentation,
+        "closing_analysis_assets": closing_analysis_assets,
+        "summary_analysis_landing": summary_analysis_landing,
+        "analysis_summary_card": analysis_summary_card,
     }
 
 
@@ -1400,6 +1794,188 @@ def _resolve_highlight_selection(
     }
 
 
+def _build_dashboard_inspection_escape_hatch(
+    *,
+    dashboard_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    dashboard_paths = discover_dashboard_session_bundle_paths(dashboard_context["metadata"])
+    metadata_path = Path(dashboard_paths[DASHBOARD_METADATA_JSON_KEY]).resolve()
+    app_shell_path = Path(dashboard_paths[APP_SHELL_INDEX_ARTIFACT_ID]).resolve()
+    return {
+        "available": True,
+        "entrypoint_id": "open_underlying_dashboard",
+        "entrypoint_kind": "dashboard_bundle",
+        "dashboard_session_metadata_path": str(metadata_path),
+        "dashboard_app_shell_path": str(app_shell_path),
+        "open_command": (
+            "python scripts/29_dashboard_shell.py open "
+            f"--dashboard-session-metadata {metadata_path}"
+        ),
+    }
+
+
+def _build_camera_choreography(
+    *,
+    sequence_id: str,
+    focus_pane_id: str,
+    anchor_id: str,
+    framing_mode: str,
+    transition_id: str,
+    transition_kind: str,
+    duration_ms: int,
+    hold_duration_ms: int,
+    easing: str,
+    from_anchor_id: str,
+    linked_pane_ids: Sequence[str],
+    narration_lead_in_ms: int,
+    annotation_stagger_ms: int,
+    source_kind: str | None = None,
+    active_layer_id: str | None = None,
+    surface_kind: str | None = None,
+    target_root_ids: Sequence[int] | None = None,
+    recommended_sample_index: int | None = None,
+    recommended_time_ms: float | None = None,
+) -> dict[str, Any]:
+    anchor: dict[str, Any] = {
+        "anchor_id": str(anchor_id),
+        "framing_mode": str(framing_mode),
+        "focus_pane_id": str(focus_pane_id),
+    }
+    if source_kind is not None:
+        anchor["source_kind"] = str(source_kind)
+    if active_layer_id is not None:
+        anchor["active_layer_id"] = str(active_layer_id)
+    if surface_kind is not None:
+        anchor["surface_kind"] = str(surface_kind)
+    if target_root_ids is not None:
+        anchor["target_root_ids"] = [int(root_id) for root_id in target_root_ids]
+
+    timing: dict[str, Any] = {
+        "narration_lead_in_ms": int(narration_lead_in_ms),
+        "annotation_stagger_ms": int(annotation_stagger_ms),
+    }
+    if recommended_sample_index is not None:
+        timing["recommended_sample_index"] = int(recommended_sample_index)
+    if recommended_time_ms is not None:
+        timing["recommended_time_ms"] = float(recommended_time_ms)
+
+    return {
+        "sequence_id": str(sequence_id),
+        "anchor": anchor,
+        "transition": {
+            "transition_id": str(transition_id),
+            "transition_kind": str(transition_kind),
+            "duration_ms": int(duration_ms),
+            "hold_duration_ms": int(hold_duration_ms),
+            "easing": str(easing),
+            "from_anchor_id": str(from_anchor_id),
+            "to_anchor_id": str(anchor_id),
+            "manual_override_required": False,
+        },
+        "timing": timing,
+        "linked_pane_ids": [str(pane_id) for pane_id in linked_pane_ids],
+    }
+
+
+def _build_annotation_placement(
+    *,
+    annotation_id: str,
+    pane_id: str,
+    placement: str,
+    alignment: str,
+    delay_ms: int,
+) -> dict[str, Any]:
+    return {
+        "annotation_id": str(annotation_id),
+        "pane_id": str(pane_id),
+        "placement": str(placement),
+        "alignment": str(alignment),
+        "delay_ms": int(delay_ms),
+    }
+
+
+def _build_annotation_layout(
+    *,
+    layout_id: str,
+    focus_pane_id: str,
+    placements: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "layout_id": str(layout_id),
+        "focus_pane_id": str(focus_pane_id),
+        "placements": [copy.deepcopy(dict(item)) for item in placements],
+    }
+
+
+def _build_presentation_link(
+    *,
+    link_id: str,
+    link_kind: str,
+    source_pane_id: str,
+    target_pane_ids: Sequence[str],
+    shared_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "link_id": str(link_id),
+        "link_kind": str(link_kind),
+        "source_pane_id": str(source_pane_id),
+        "target_pane_ids": [str(pane_id) for pane_id in target_pane_ids],
+        "shared_context": copy.deepcopy(dict(shared_context)),
+    }
+
+
+def _build_emphasis_state(
+    *,
+    emphasis_id: str,
+    emphasis_kind: str,
+    linked_pane_ids: Sequence[str],
+    overlay_ids_by_pane: Mapping[str, Sequence[str]],
+    focus_root_ids: Sequence[int] | None = None,
+    selected_neuron_id: int | None = None,
+    selected_readout_id: str | None = None,
+    scene_surface: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "emphasis_id": str(emphasis_id),
+        "emphasis_kind": str(emphasis_kind),
+        "linked_pane_ids": [str(pane_id) for pane_id in linked_pane_ids],
+        "overlay_ids_by_pane": {
+            str(pane_id): [str(overlay_id) for overlay_id in overlay_ids]
+            for pane_id, overlay_ids in overlay_ids_by_pane.items()
+        },
+    }
+    if focus_root_ids is not None:
+        payload["focus_root_ids"] = [int(root_id) for root_id in focus_root_ids]
+    if selected_neuron_id is not None:
+        payload["selected_neuron_id"] = int(selected_neuron_id)
+    if selected_readout_id is not None:
+        payload["selected_readout_id"] = str(selected_readout_id)
+    if scene_surface is not None:
+        payload["scene_surface"] = copy.deepcopy(dict(scene_surface))
+    return payload
+
+
+def _build_showcase_ui_state(
+    *,
+    mode_id: str,
+    primary_pane_id: str,
+    support_pane_ids: Sequence[str],
+    inspection_escape_hatch: Mapping[str, Any],
+    guided_variant: Mapping[str, Any],
+    rehearsal_variant: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "mode_id": str(mode_id),
+        "primary_pane_id": str(primary_pane_id),
+        "support_pane_ids": [str(pane_id) for pane_id in support_pane_ids],
+        "inspection_escape_hatch": copy.deepcopy(dict(inspection_escape_hatch)),
+        "runtime_mode_variants": {
+            GUIDED_AUTOPLAY_MODE: copy.deepcopy(dict(guided_variant)),
+            PRESENTER_REHEARSAL_MODE: copy.deepcopy(dict(rehearsal_variant)),
+        },
+    }
+
+
 def _build_saved_presets(
     *,
     dashboard_context: Mapping[str, Any],
@@ -1417,6 +1993,53 @@ def _build_saved_presets(
     available_overlays = set(payload["overlay_catalog"]["available_overlay_ids"])
     scene_context = payload["pane_inputs"][SCENE_PANE_ID]
     active_arm_pair = payload["global_interaction_state"]["selected_arm_pair"]
+    replay_model = payload["pane_inputs"][TIME_SERIES_PANE_ID]["replay_model"]
+    canonical_time_ms = [float(value) for value in replay_model.get("canonical_time_ms", [])]
+    scene_surface = {
+        "source_kind": str(scene_context["source_kind"]),
+        "active_layer_id": str(scene_context["active_layer_id"]),
+    }
+    dashboard_escape_hatch = _build_dashboard_inspection_escape_hatch(
+        dashboard_context=dashboard_context
+    )
+    selected_root_preview = selected_root_ids[:1]
+    scene_overlay_id = (
+        STIMULUS_CONTEXT_FRAME_OVERLAY_ID
+        if STIMULUS_CONTEXT_FRAME_OVERLAY_ID in available_overlays
+        else payload["global_interaction_state"]["active_overlay_id"]
+    )
+    subset_overlay_id = _preferred_overlay(
+        available_overlays,
+        SELECTED_SUBSET_HIGHLIGHT_OVERLAY_ID,
+        SHARED_READOUT_ACTIVITY_OVERLAY_ID,
+    )
+    propagation_overlay_id = _preferred_overlay(
+        available_overlays,
+        SHARED_READOUT_ACTIVITY_OVERLAY_ID,
+        WAVE_PATCH_ACTIVITY_OVERLAY_ID,
+    )
+    comparison_overlay_id = _preferred_overlay(
+        available_overlays,
+        PAIRED_READOUT_DELTA_OVERLAY_ID,
+        SHARED_READOUT_ACTIVITY_OVERLAY_ID,
+    )
+    highlight_overlay_id = _preferred_overlay(
+        available_overlays,
+        PHASE_MAP_REFERENCE_OVERLAY_ID,
+        WAVE_PATCH_ACTIVITY_OVERLAY_ID,
+        SHARED_READOUT_ACTIVITY_OVERLAY_ID,
+    )
+    summary_overlay_id = _preferred_overlay(
+        available_overlays,
+        REVIEWER_FINDINGS_OVERLAY_ID,
+        SHARED_READOUT_ACTIVITY_OVERLAY_ID,
+    )
+    recommended_propagation_sample_index = min(2, max(0, len(canonical_time_ms) - 1))
+    recommended_propagation_time_ms = (
+        canonical_time_ms[recommended_propagation_sample_index]
+        if canonical_time_ms
+        else 0.0
+    )
     step_defaults = {
         SCENE_CONTEXT_PRESET_ID: {
             "step_id": SCENE_SELECTION_STEP_ID,
@@ -1425,11 +2048,8 @@ def _build_saved_presets(
             "presentation_status": PRESENTATION_STATUS_READY,
             "presentation_state_patch": {
                 "active_pane_id": SCENE_PANE_ID,
-                "focus_root_ids": selected_root_ids[:1],
-                "scene_surface": {
-                    "source_kind": str(scene_context["source_kind"]),
-                    "active_layer_id": str(scene_context["active_layer_id"]),
-                },
+                "focus_root_ids": selected_root_preview,
+                "scene_surface": copy.deepcopy(dict(scene_surface)),
                 "rehearsal_metadata": {
                     "fixture_mode": fixture_mode,
                     "story_role": "scene_choice",
@@ -1438,14 +2058,129 @@ def _build_saved_presets(
                         "framing_mode": "wide_establishing",
                         "source_kind": str(scene_context["source_kind"]),
                         "active_layer_id": str(scene_context["active_layer_id"]),
-                        "target_root_ids": selected_root_ids[:1],
+                        "target_root_ids": selected_root_preview,
                     },
+                    "camera_choreography": _build_camera_choreography(
+                        sequence_id="scene_selection_opening",
+                        focus_pane_id=SCENE_PANE_ID,
+                        anchor_id="opening_scene_context",
+                        framing_mode="wide_establishing",
+                        transition_id="dashboard_context_to_opening_scene",
+                        transition_kind="dolly_in",
+                        duration_ms=900,
+                        hold_duration_ms=1600,
+                        easing="ease_in_out_cubic",
+                        from_anchor_id="dashboard_default_context",
+                        linked_pane_ids=[SCENE_PANE_ID, CIRCUIT_PANE_ID],
+                        narration_lead_in_ms=120,
+                        annotation_stagger_ms=240,
+                        source_kind=str(scene_context["source_kind"]),
+                        active_layer_id=str(scene_context["active_layer_id"]),
+                        target_root_ids=selected_root_preview,
+                    ),
+                    "annotation_layout": _build_annotation_layout(
+                        layout_id="scene_selection_annotations",
+                        focus_pane_id=SCENE_PANE_ID,
+                        placements=[
+                            _build_annotation_placement(
+                                annotation_id=STORY_CONTEXT_ANNOTATION_ID,
+                                pane_id=SCENE_PANE_ID,
+                                placement="hero_top_left",
+                                alignment="start",
+                                delay_ms=120,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id="operator_prompt",
+                                pane_id=SCENE_PANE_ID,
+                                placement="footer_right",
+                                alignment="end",
+                                delay_ms=780,
+                            ),
+                        ],
+                    ),
+                    "presentation_links": [
+                        _build_presentation_link(
+                            link_id="scene_choice_to_subset_preview",
+                            link_kind="scene_context_bridge",
+                            source_pane_id=SCENE_PANE_ID,
+                            target_pane_ids=[SCENE_PANE_ID, CIRCUIT_PANE_ID],
+                            shared_context={
+                                **scene_surface,
+                                "surface_kind": str(
+                                    narrative_context["input_surface"]["surface_kind"]
+                                ),
+                                "focus_root_ids": selected_root_preview,
+                                "root_count": int(
+                                    narrative_context["active_subset_focus_targets"][
+                                        "root_count"
+                                    ]
+                                ),
+                            },
+                        )
+                    ],
+                    "emphasis_state": _build_emphasis_state(
+                        emphasis_id="scene_selection_context_frame",
+                        emphasis_kind="scene_context",
+                        linked_pane_ids=[SCENE_PANE_ID, CIRCUIT_PANE_ID],
+                        overlay_ids_by_pane={
+                            SCENE_PANE_ID: [scene_overlay_id],
+                        },
+                        focus_root_ids=selected_root_preview,
+                        scene_surface=scene_surface,
+                    ),
+                    "showcase_ui_state": _build_showcase_ui_state(
+                        mode_id="scene_selection_showcase",
+                        primary_pane_id=SCENE_PANE_ID,
+                        support_pane_ids=[CIRCUIT_PANE_ID],
+                        inspection_escape_hatch=dashboard_escape_hatch,
+                        guided_variant={
+                            "chrome_treatment": "narrative_minimal",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "playback_transport",
+                                "inspection_escape_hatch",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                                "overlay_controls",
+                                "neuron_detail_controls",
+                                "readout_detail_controls",
+                                "time_scrub",
+                            ],
+                            "reorganized_control_groups": [
+                                "scene_context_controls",
+                            ],
+                            "inspection_panel_state": "collapsed",
+                        },
+                        rehearsal_variant={
+                            "chrome_treatment": "scene_hero",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "playback_transport",
+                                "inspection_escape_hatch",
+                                "inspection_drawer",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "scene_context_controls",
+                                "overlay_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "inspection_panel_state": "peek",
+                        },
+                    ),
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
+                        "active_overlay_id": scene_overlay_id,
                         "time_cursor": {"sample_index": 0, "time_ms": 0.0},
                     },
                     "replay_state": {
+                        "active_overlay_id": scene_overlay_id,
                         "time_cursor": {"sample_index": 0, "time_ms": 0.0},
                     },
                 },
@@ -1458,10 +2193,8 @@ def _build_saved_presets(
             "presentation_status": PRESENTATION_STATUS_READY,
             "presentation_state_patch": {
                 "active_pane_id": SCENE_PANE_ID,
-                "scene_surface": {
-                    "source_kind": str(scene_context["source_kind"]),
-                    "active_layer_id": str(scene_context["active_layer_id"]),
-                },
+                "focus_root_ids": selected_root_preview,
+                "scene_surface": copy.deepcopy(dict(scene_surface)),
                 "rehearsal_metadata": {
                     "fixture_mode": fixture_mode,
                     "story_role": "fly_view_framing",
@@ -1471,21 +2204,122 @@ def _build_saved_presets(
                         "surface_kind": str(narrative_context["input_surface"]["surface_kind"]),
                         "active_layer_id": str(scene_context["active_layer_id"]),
                     },
+                    "camera_choreography": _build_camera_choreography(
+                        sequence_id="scene_to_retinal_input",
+                        focus_pane_id=SCENE_PANE_ID,
+                        anchor_id="retinal_input_hold",
+                        framing_mode="input_surface_hold",
+                        transition_id="opening_scene_to_retinal_input",
+                        transition_kind="rack_focus",
+                        duration_ms=720,
+                        hold_duration_ms=1500,
+                        easing="ease_out_quart",
+                        from_anchor_id="opening_scene_context",
+                        linked_pane_ids=[SCENE_PANE_ID, TIME_SERIES_PANE_ID],
+                        narration_lead_in_ms=100,
+                        annotation_stagger_ms=220,
+                        source_kind=str(scene_context["source_kind"]),
+                        active_layer_id=str(scene_context["active_layer_id"]),
+                        surface_kind=str(narrative_context["input_surface"]["surface_kind"]),
+                        target_root_ids=selected_root_preview,
+                    ),
+                    "annotation_layout": _build_annotation_layout(
+                        layout_id="retinal_input_focus_annotations",
+                        focus_pane_id=SCENE_PANE_ID,
+                        placements=[
+                            _build_annotation_placement(
+                                annotation_id=INPUT_SAMPLING_ANNOTATION_ID,
+                                pane_id=SCENE_PANE_ID,
+                                placement="hero_bottom_left",
+                                alignment="start",
+                                delay_ms=100,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
+                                pane_id=SCENE_PANE_ID,
+                                placement="footer_right",
+                                alignment="end",
+                                delay_ms=640,
+                            ),
+                        ],
+                    ),
+                    "presentation_links": [
+                        _build_presentation_link(
+                            link_id="scene_to_input_surface",
+                            link_kind="shared_scene_surface",
+                            source_pane_id=SCENE_PANE_ID,
+                            target_pane_ids=[SCENE_PANE_ID, TIME_SERIES_PANE_ID],
+                            shared_context={
+                                **scene_surface,
+                                "surface_kind": str(
+                                    narrative_context["input_surface"]["surface_kind"]
+                                ),
+                                "focus_root_ids": selected_root_preview,
+                            },
+                        )
+                    ],
+                    "emphasis_state": _build_emphasis_state(
+                        emphasis_id="retinal_input_focus_frame",
+                        emphasis_kind="input_surface",
+                        linked_pane_ids=[SCENE_PANE_ID, TIME_SERIES_PANE_ID],
+                        overlay_ids_by_pane={
+                            SCENE_PANE_ID: [scene_overlay_id],
+                        },
+                        focus_root_ids=selected_root_preview,
+                        scene_surface=scene_surface,
+                    ),
+                    "showcase_ui_state": _build_showcase_ui_state(
+                        mode_id="retinal_input_showcase",
+                        primary_pane_id=SCENE_PANE_ID,
+                        support_pane_ids=[TIME_SERIES_PANE_ID],
+                        inspection_escape_hatch=dashboard_escape_hatch,
+                        guided_variant={
+                            "chrome_treatment": "input_focus",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "playback_transport",
+                                "time_scrub",
+                                "inspection_escape_hatch",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                                "overlay_controls",
+                                "neuron_detail_controls",
+                                "readout_detail_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "scene_context_controls",
+                            ],
+                            "inspection_panel_state": "collapsed",
+                        },
+                        rehearsal_variant={
+                            "chrome_treatment": "input_focus_rehearsal",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "playback_transport",
+                                "time_scrub",
+                                "inspection_escape_hatch",
+                                "inspection_drawer",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "scene_context_controls",
+                                "overlay_controls",
+                            ],
+                            "inspection_panel_state": "peek",
+                        },
+                    ),
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
-                        "active_overlay_id": (
-                            STIMULUS_CONTEXT_FRAME_OVERLAY_ID
-                            if STIMULUS_CONTEXT_FRAME_OVERLAY_ID in available_overlays
-                            else payload["global_interaction_state"]["active_overlay_id"]
-                        ),
+                        "active_overlay_id": scene_overlay_id,
                     },
                     "replay_state": {
-                        "active_overlay_id": (
-                            STIMULUS_CONTEXT_FRAME_OVERLAY_ID
-                            if STIMULUS_CONTEXT_FRAME_OVERLAY_ID in available_overlays
-                            else state["replay_state"]["active_overlay_id"]
-                        ),
+                        "active_overlay_id": scene_overlay_id,
                     },
                 },
             },
@@ -1498,18 +2332,133 @@ def _build_saved_presets(
             "presentation_state_patch": {
                 "active_pane_id": CIRCUIT_PANE_ID,
                 "focus_root_ids": selected_root_ids,
+                "scene_surface": copy.deepcopy(dict(scene_surface)),
                 "rehearsal_metadata": {
                     "fixture_mode": fixture_mode,
                     "story_role": "active_subset_emphasis",
                     "subset_focus": copy.deepcopy(
                         dict(narrative_context["active_subset_focus_targets"])
                     ),
+                    "camera_anchor": {
+                        "anchor_id": "active_subset_cluster",
+                        "framing_mode": "cluster_focus",
+                        "target_root_ids": selected_root_ids,
+                    },
+                    "camera_choreography": _build_camera_choreography(
+                        sequence_id="retinal_input_to_subset_context",
+                        focus_pane_id=CIRCUIT_PANE_ID,
+                        anchor_id="active_subset_cluster",
+                        framing_mode="cluster_focus",
+                        transition_id="retinal_input_to_subset_cluster",
+                        transition_kind="orbit_focus",
+                        duration_ms=680,
+                        hold_duration_ms=1500,
+                        easing="ease_in_out_sine",
+                        from_anchor_id="retinal_input_hold",
+                        linked_pane_ids=[CIRCUIT_PANE_ID, MORPHOLOGY_PANE_ID],
+                        narration_lead_in_ms=120,
+                        annotation_stagger_ms=260,
+                        target_root_ids=selected_root_ids,
+                    ),
+                    "annotation_layout": _build_annotation_layout(
+                        layout_id="subset_context_annotations",
+                        focus_pane_id=CIRCUIT_PANE_ID,
+                        placements=[
+                            _build_annotation_placement(
+                                annotation_id=STORY_CONTEXT_ANNOTATION_ID,
+                                pane_id=CIRCUIT_PANE_ID,
+                                placement="hero_top_left",
+                                alignment="start",
+                                delay_ms=120,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
+                                pane_id=MORPHOLOGY_PANE_ID,
+                                placement="pane_footer",
+                                alignment="end",
+                                delay_ms=760,
+                            ),
+                        ],
+                    ),
+                    "presentation_links": [
+                        _build_presentation_link(
+                            link_id="input_surface_to_active_subset",
+                            link_kind="subset_story_binding",
+                            source_pane_id=SCENE_PANE_ID,
+                            target_pane_ids=[CIRCUIT_PANE_ID, MORPHOLOGY_PANE_ID],
+                            shared_context={
+                                **scene_surface,
+                                "surface_kind": str(
+                                    narrative_context["input_surface"]["surface_kind"]
+                                ),
+                                "selected_root_ids": selected_root_ids,
+                                "selected_neuron_id": selected_neuron_id,
+                            },
+                        )
+                    ],
+                    "emphasis_state": _build_emphasis_state(
+                        emphasis_id="active_subset_selection",
+                        emphasis_kind="subset_context",
+                        linked_pane_ids=[CIRCUIT_PANE_ID, MORPHOLOGY_PANE_ID],
+                        overlay_ids_by_pane={
+                            CIRCUIT_PANE_ID: [subset_overlay_id],
+                            MORPHOLOGY_PANE_ID: [subset_overlay_id],
+                        },
+                        focus_root_ids=selected_root_ids,
+                        selected_neuron_id=selected_neuron_id,
+                        scene_surface=scene_surface,
+                    ),
+                    "showcase_ui_state": _build_showcase_ui_state(
+                        mode_id="subset_context_showcase",
+                        primary_pane_id=CIRCUIT_PANE_ID,
+                        support_pane_ids=[MORPHOLOGY_PANE_ID, SCENE_PANE_ID],
+                        inspection_escape_hatch=dashboard_escape_hatch,
+                        guided_variant={
+                            "chrome_treatment": "subset_focus",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "inspection_escape_hatch",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                                "overlay_controls",
+                                "playback_transport",
+                                "readout_detail_controls",
+                                "time_scrub",
+                            ],
+                            "reorganized_control_groups": [
+                                "subset_focus_controls",
+                            ],
+                            "inspection_panel_state": "collapsed",
+                        },
+                        rehearsal_variant={
+                            "chrome_treatment": "subset_focus_rehearsal",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "inspection_escape_hatch",
+                                "inspection_drawer",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "subset_focus_controls",
+                                "overlay_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "inspection_panel_state": "peek",
+                        },
+                    ),
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
+                        "active_overlay_id": subset_overlay_id,
                         "selected_neuron_id": selected_neuron_id,
                     },
                     "replay_state": {
+                        "active_overlay_id": subset_overlay_id,
                         "selected_neuron_id": selected_neuron_id,
                     },
                 },
@@ -1522,32 +2471,160 @@ def _build_saved_presets(
             "presentation_status": PRESENTATION_STATUS_READY,
             "presentation_state_patch": {
                 "active_pane_id": TIME_SERIES_PANE_ID,
-                "focus_root_ids": selected_root_ids[:1],
+                "focus_root_ids": selected_root_preview,
+                "scene_surface": copy.deepcopy(dict(scene_surface)),
                 "rehearsal_metadata": {
                     "fixture_mode": fixture_mode,
                     "story_role": "propagation_view",
                     "propagation_view": copy.deepcopy(
                         dict(narrative_context["activity_propagation_views"])
                     ),
+                    "camera_anchor": {
+                        "anchor_id": "propagation_path_follow",
+                        "framing_mode": "signal_follow",
+                        "target_root_ids": selected_root_preview,
+                    },
+                    "camera_choreography": _build_camera_choreography(
+                        sequence_id="subset_context_to_propagation",
+                        focus_pane_id=TIME_SERIES_PANE_ID,
+                        anchor_id="propagation_path_follow",
+                        framing_mode="signal_follow",
+                        transition_id="subset_cluster_to_propagation",
+                        transition_kind="follow_signal",
+                        duration_ms=760,
+                        hold_duration_ms=1800,
+                        easing="ease_in_out_quad",
+                        from_anchor_id="active_subset_cluster",
+                        linked_pane_ids=[
+                            CIRCUIT_PANE_ID,
+                            MORPHOLOGY_PANE_ID,
+                            TIME_SERIES_PANE_ID,
+                            ANALYSIS_PANE_ID,
+                        ],
+                        narration_lead_in_ms=140,
+                        annotation_stagger_ms=240,
+                        target_root_ids=selected_root_preview,
+                        recommended_sample_index=recommended_propagation_sample_index,
+                        recommended_time_ms=recommended_propagation_time_ms,
+                    ),
+                    "annotation_layout": _build_annotation_layout(
+                        layout_id="propagation_replay_annotations",
+                        focus_pane_id=TIME_SERIES_PANE_ID,
+                        placements=[
+                            _build_annotation_placement(
+                                annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
+                                pane_id=TIME_SERIES_PANE_ID,
+                                placement="hero_top_left",
+                                alignment="start",
+                                delay_ms=140,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id=FAIRNESS_BOUNDARY_ANNOTATION_ID,
+                                pane_id=ANALYSIS_PANE_ID,
+                                placement="pane_footer",
+                                alignment="end",
+                                delay_ms=760,
+                            ),
+                        ],
+                    ),
+                    "presentation_links": [
+                        _build_presentation_link(
+                            link_id="subset_to_propagation_view",
+                            link_kind="shared_replay_context",
+                            source_pane_id=CIRCUIT_PANE_ID,
+                            target_pane_ids=[
+                                MORPHOLOGY_PANE_ID,
+                                TIME_SERIES_PANE_ID,
+                                ANALYSIS_PANE_ID,
+                            ],
+                            shared_context={
+                                "selected_root_ids": selected_root_ids,
+                                "selected_readout_id": str(selected_readout_id),
+                                "comparison_mode": str(
+                                    state["replay_state"]["comparison_mode"]
+                                ),
+                                "shared_timebase_status": copy.deepcopy(
+                                    dict(
+                                        narrative_context["activity_propagation_views"][
+                                            "shared_timebase_status"
+                                        ]
+                                    )
+                                ),
+                            },
+                        )
+                    ],
+                    "emphasis_state": _build_emphasis_state(
+                        emphasis_id="propagation_replay_focus",
+                        emphasis_kind="propagation_view",
+                        linked_pane_ids=[
+                            MORPHOLOGY_PANE_ID,
+                            TIME_SERIES_PANE_ID,
+                            ANALYSIS_PANE_ID,
+                        ],
+                        overlay_ids_by_pane={
+                            MORPHOLOGY_PANE_ID: [propagation_overlay_id],
+                            TIME_SERIES_PANE_ID: [propagation_overlay_id],
+                            ANALYSIS_PANE_ID: [propagation_overlay_id],
+                        },
+                        focus_root_ids=selected_root_preview,
+                        selected_readout_id=str(selected_readout_id),
+                    ),
+                    "showcase_ui_state": _build_showcase_ui_state(
+                        mode_id="propagation_replay_showcase",
+                        primary_pane_id=TIME_SERIES_PANE_ID,
+                        support_pane_ids=[CIRCUIT_PANE_ID, ANALYSIS_PANE_ID],
+                        inspection_escape_hatch=dashboard_escape_hatch,
+                        guided_variant={
+                            "chrome_treatment": "propagation_focus",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "playback_transport",
+                                "time_scrub",
+                                "inspection_escape_hatch",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                                "overlay_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "readout_detail_controls",
+                            ],
+                            "inspection_panel_state": "collapsed",
+                        },
+                        rehearsal_variant={
+                            "chrome_treatment": "propagation_focus_rehearsal",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "playback_transport",
+                                "time_scrub",
+                                "inspection_escape_hatch",
+                                "inspection_drawer",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "overlay_controls",
+                                "readout_detail_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "inspection_panel_state": "peek",
+                        },
+                    ),
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
                         "selected_readout_id": selected_readout_id,
                         "comparison_mode": state["replay_state"]["comparison_mode"],
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            WAVE_PATCH_ACTIVITY_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "active_overlay_id": propagation_overlay_id,
                     },
                     "replay_state": {
                         "selected_readout_id": selected_readout_id,
                         "comparison_mode": state["replay_state"]["comparison_mode"],
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            WAVE_PATCH_ACTIVITY_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "active_overlay_id": propagation_overlay_id,
                     },
                 },
             },
@@ -1559,29 +2636,151 @@ def _build_saved_presets(
             "presentation_status": PRESENTATION_STATUS_READY,
             "presentation_state_patch": {
                 "active_pane_id": ANALYSIS_PANE_ID,
+                "focus_root_ids": selected_root_preview,
                 "rehearsal_metadata": {
                     "fixture_mode": fixture_mode,
                     "story_role": "comparison_pairing",
                     "comparison_pairing": copy.deepcopy(
                         dict(narrative_context["approved_comparison_arms"])
                     ),
+                    "comparison_act": copy.deepcopy(
+                        dict(narrative_context["comparison_act"])
+                    ),
+                    "presentation_view": copy.deepcopy(
+                        dict(narrative_context["comparison_act"])
+                    ),
+                    "fairness_boundary": copy.deepcopy(
+                        dict(narrative_context["comparison_act"]["fairness_boundary"])
+                    ),
+                    "camera_anchor": {
+                        "anchor_id": "paired_comparison_focus",
+                        "framing_mode": "paired_analysis_focus",
+                        "target_root_ids": selected_root_preview,
+                    },
+                    "camera_choreography": _build_camera_choreography(
+                        sequence_id="propagation_to_paired_comparison",
+                        focus_pane_id=ANALYSIS_PANE_ID,
+                        anchor_id="paired_comparison_focus",
+                        framing_mode="paired_analysis_focus",
+                        transition_id="propagation_to_paired_comparison",
+                        transition_kind="comparison_lock",
+                        duration_ms=720,
+                        hold_duration_ms=1650,
+                        easing="ease_in_out_quad",
+                        from_anchor_id="propagation_path_follow",
+                        linked_pane_ids=[TIME_SERIES_PANE_ID, ANALYSIS_PANE_ID],
+                        narration_lead_in_ms=120,
+                        annotation_stagger_ms=220,
+                        target_root_ids=selected_root_preview,
+                        recommended_sample_index=recommended_propagation_sample_index,
+                        recommended_time_ms=recommended_propagation_time_ms,
+                    ),
+                    "annotation_layout": _build_annotation_layout(
+                        layout_id="paired_comparison_annotations",
+                        focus_pane_id=ANALYSIS_PANE_ID,
+                        placements=[
+                            _build_annotation_placement(
+                                annotation_id=FAIRNESS_BOUNDARY_ANNOTATION_ID,
+                                pane_id=ANALYSIS_PANE_ID,
+                                placement="hero_top_left",
+                                alignment="start",
+                                delay_ms=120,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
+                                pane_id=TIME_SERIES_PANE_ID,
+                                placement="pane_footer",
+                                alignment="end",
+                                delay_ms=680,
+                            ),
+                        ],
+                    ),
+                    "presentation_links": [
+                        _build_presentation_link(
+                            link_id="propagation_to_paired_comparison",
+                            link_kind="matched_pair_bridge",
+                            source_pane_id=TIME_SERIES_PANE_ID,
+                            target_pane_ids=[ANALYSIS_PANE_ID, CIRCUIT_PANE_ID],
+                            shared_context={
+                                "pairing_id": str(
+                                    narrative_context["comparison_act"]["pairing_id"]
+                                ),
+                                "selected_readout_id": str(selected_readout_id),
+                                "shared_timebase_signature": str(
+                                    narrative_context["comparison_act"][
+                                        "stable_pairing_semantics"
+                                    ]["shared_timebase_signature"]
+                                ),
+                                "content_scope_label": _SHARED_COMPARISON_SCOPE_LABEL,
+                            },
+                        )
+                    ],
+                    "emphasis_state": _build_emphasis_state(
+                        emphasis_id="paired_comparison_focus",
+                        emphasis_kind="comparison_act",
+                        linked_pane_ids=[TIME_SERIES_PANE_ID, ANALYSIS_PANE_ID],
+                        overlay_ids_by_pane={
+                            TIME_SERIES_PANE_ID: [comparison_overlay_id],
+                            ANALYSIS_PANE_ID: [comparison_overlay_id],
+                        },
+                        focus_root_ids=selected_root_preview,
+                        selected_readout_id=str(selected_readout_id),
+                    ),
+                    "showcase_ui_state": _build_showcase_ui_state(
+                        mode_id="paired_comparison_showcase",
+                        primary_pane_id=ANALYSIS_PANE_ID,
+                        support_pane_ids=[TIME_SERIES_PANE_ID, CIRCUIT_PANE_ID],
+                        inspection_escape_hatch=dashboard_escape_hatch,
+                        guided_variant={
+                            "chrome_treatment": "paired_comparison_focus",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "comparison_controls",
+                                "playback_transport",
+                                "time_scrub",
+                                "inspection_escape_hatch",
+                            ],
+                            "suppressed_control_groups": [
+                                "overlay_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "readout_detail_controls",
+                            ],
+                            "inspection_panel_state": "collapsed",
+                        },
+                        rehearsal_variant={
+                            "chrome_treatment": "paired_comparison_focus_rehearsal",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "comparison_controls",
+                                "playback_transport",
+                                "time_scrub",
+                                "inspection_escape_hatch",
+                                "inspection_drawer",
+                            ],
+                            "suppressed_control_groups": [],
+                            "reorganized_control_groups": [
+                                "overlay_controls",
+                                "readout_detail_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "inspection_panel_state": "peek",
+                        },
+                    ),
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
-                        "comparison_mode": "paired_baseline_vs_wave",
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            PAIRED_READOUT_DELTA_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "comparison_mode": PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
+                        "selected_readout_id": selected_readout_id,
+                        "active_overlay_id": comparison_overlay_id,
                     },
                     "replay_state": {
-                        "comparison_mode": "paired_baseline_vs_wave",
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            PAIRED_READOUT_DELTA_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "comparison_mode": PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
+                        "selected_readout_id": selected_readout_id,
+                        "active_overlay_id": comparison_overlay_id,
                     },
                 },
             },
@@ -1603,31 +2802,146 @@ def _build_saved_presets(
                     "highlight_metadata": copy.deepcopy(
                         dict(narrative_context["highlight_selection"])
                     ),
+                    "highlight_presentation": copy.deepcopy(
+                        dict(narrative_context["highlight_presentation"])
+                    ),
+                    "presentation_view": copy.deepcopy(
+                        dict(narrative_context["highlight_presentation"])
+                    ),
+                    "fairness_boundary": copy.deepcopy(
+                        dict(narrative_context["highlight_presentation"]["fairness_boundary"])
+                    ),
+                    "camera_anchor": {
+                        "anchor_id": "approved_wave_highlight_focus",
+                        "framing_mode": "wave_only_focus",
+                        "target_root_ids": selected_root_preview,
+                    },
+                    "camera_choreography": _build_camera_choreography(
+                        sequence_id="paired_comparison_to_wave_highlight",
+                        focus_pane_id=ANALYSIS_PANE_ID,
+                        anchor_id="approved_wave_highlight_focus",
+                        framing_mode="wave_only_focus",
+                        transition_id="paired_comparison_to_wave_highlight",
+                        transition_kind="single_arm_focus",
+                        duration_ms=660,
+                        hold_duration_ms=1550,
+                        easing="ease_in_out_sine",
+                        from_anchor_id="paired_comparison_focus",
+                        linked_pane_ids=[TIME_SERIES_PANE_ID, ANALYSIS_PANE_ID],
+                        narration_lead_in_ms=120,
+                        annotation_stagger_ms=220,
+                        target_root_ids=selected_root_preview,
+                    ),
+                    "annotation_layout": _build_annotation_layout(
+                        layout_id="approved_wave_highlight_annotations",
+                        focus_pane_id=ANALYSIS_PANE_ID,
+                        placements=[
+                            _build_annotation_placement(
+                                annotation_id=SCIENTIFIC_GUARDRAIL_ANNOTATION_ID,
+                                pane_id=ANALYSIS_PANE_ID,
+                                placement="hero_top_left",
+                                alignment="start",
+                                delay_ms=120,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
+                                pane_id=TIME_SERIES_PANE_ID,
+                                placement="pane_footer",
+                                alignment="end",
+                                delay_ms=700,
+                            ),
+                        ],
+                    ),
+                    "presentation_links": [
+                        _build_presentation_link(
+                            link_id="paired_comparison_to_wave_highlight",
+                            link_kind="wave_only_diagnostic_bridge",
+                            source_pane_id=ANALYSIS_PANE_ID,
+                            target_pane_ids=[TIME_SERIES_PANE_ID],
+                            shared_context={
+                                "pairing_id": str(
+                                    narrative_context["comparison_act"]["pairing_id"]
+                                ),
+                                "phenomenon_id": str(
+                                    narrative_context["highlight_selection"]["phenomenon_id"]
+                                ),
+                                "content_scope_label": str(
+                                    narrative_context["highlight_presentation"][
+                                        "active_scope_label"
+                                    ]
+                                ),
+                            },
+                        )
+                    ],
+                    "emphasis_state": _build_emphasis_state(
+                        emphasis_id="approved_wave_highlight_focus",
+                        emphasis_kind="wave_highlight",
+                        linked_pane_ids=[TIME_SERIES_PANE_ID, ANALYSIS_PANE_ID],
+                        overlay_ids_by_pane={
+                            TIME_SERIES_PANE_ID: [highlight_overlay_id],
+                            ANALYSIS_PANE_ID: [highlight_overlay_id],
+                        },
+                        focus_root_ids=selected_root_preview,
+                        selected_readout_id=str(selected_readout_id),
+                    ),
+                    "showcase_ui_state": _build_showcase_ui_state(
+                        mode_id="approved_wave_highlight_showcase",
+                        primary_pane_id=ANALYSIS_PANE_ID,
+                        support_pane_ids=[TIME_SERIES_PANE_ID, CIRCUIT_PANE_ID],
+                        inspection_escape_hatch=dashboard_escape_hatch,
+                        guided_variant={
+                            "chrome_treatment": "wave_highlight_focus",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "inspection_escape_hatch",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                                "overlay_controls",
+                                "playback_transport",
+                                "time_scrub",
+                                "readout_detail_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "reorganized_control_groups": [],
+                            "inspection_panel_state": "collapsed",
+                        },
+                        rehearsal_variant={
+                            "chrome_treatment": "wave_highlight_focus_rehearsal",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "inspection_escape_hatch",
+                                "inspection_drawer",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "overlay_controls",
+                                "readout_detail_controls",
+                            ],
+                            "inspection_panel_state": "peek",
+                        },
+                    ),
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
-                        "comparison_mode": "single_arm",
+                        "comparison_mode": SINGLE_ARM_COMPARISON_MODE,
                         "selected_arm_pair": {
                             "active_arm_id": str(active_arm_pair["wave_arm_id"]),
                         },
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            PHASE_MAP_REFERENCE_OVERLAY_ID,
-                            WAVE_PATCH_ACTIVITY_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "selected_readout_id": selected_readout_id,
+                        "active_overlay_id": highlight_overlay_id,
                     },
                     "replay_state": {
-                        "comparison_mode": "single_arm",
+                        "comparison_mode": SINGLE_ARM_COMPARISON_MODE,
                         "selected_arm_pair": {
                             "active_arm_id": str(active_arm_pair["wave_arm_id"]),
                         },
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            PHASE_MAP_REFERENCE_OVERLAY_ID,
-                            WAVE_PATCH_ACTIVITY_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "selected_readout_id": selected_readout_id,
+                        "active_overlay_id": highlight_overlay_id,
                     },
                 },
             },
@@ -1639,6 +2953,7 @@ def _build_saved_presets(
             "presentation_status": PRESENTATION_STATUS_FALLBACK,
             "presentation_state_patch": {
                 "active_pane_id": ANALYSIS_PANE_ID,
+                "focus_root_ids": selected_root_preview,
                 "highlight_selection": copy.deepcopy(
                     dict(narrative_context["highlight_selection"])
                 ),
@@ -1648,23 +2963,146 @@ def _build_saved_presets(
                     "highlight_metadata": copy.deepcopy(
                         dict(narrative_context["highlight_selection"])
                     ),
+                    "highlight_presentation": copy.deepcopy(
+                        dict(narrative_context["highlight_presentation"])
+                    ),
+                    "presentation_view": copy.deepcopy(
+                        dict(narrative_context["highlight_presentation"])
+                    ),
+                    "fairness_boundary": copy.deepcopy(
+                        dict(narrative_context["highlight_presentation"]["fairness_boundary"])
+                    ),
+                    "camera_anchor": {
+                        "anchor_id": "wave_highlight_fallback_return",
+                        "framing_mode": "paired_return",
+                        "target_root_ids": selected_root_preview,
+                    },
+                    "camera_choreography": _build_camera_choreography(
+                        sequence_id="wave_highlight_fallback_return",
+                        focus_pane_id=ANALYSIS_PANE_ID,
+                        anchor_id="wave_highlight_fallback_return",
+                        framing_mode="paired_return",
+                        transition_id="wave_highlight_fallback_return",
+                        transition_kind="fallback_return",
+                        duration_ms=540,
+                        hold_duration_ms=1500,
+                        easing="ease_in_out_quad",
+                        from_anchor_id="paired_comparison_focus",
+                        linked_pane_ids=[TIME_SERIES_PANE_ID, ANALYSIS_PANE_ID],
+                        narration_lead_in_ms=100,
+                        annotation_stagger_ms=220,
+                        target_root_ids=selected_root_preview,
+                    ),
+                    "annotation_layout": _build_annotation_layout(
+                        layout_id="wave_highlight_fallback_annotations",
+                        focus_pane_id=ANALYSIS_PANE_ID,
+                        placements=[
+                            _build_annotation_placement(
+                                annotation_id=SCIENTIFIC_GUARDRAIL_ANNOTATION_ID,
+                                pane_id=ANALYSIS_PANE_ID,
+                                placement="hero_top_left",
+                                alignment="start",
+                                delay_ms=100,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id=FALLBACK_NOTICE_ANNOTATION_ID,
+                                pane_id=ANALYSIS_PANE_ID,
+                                placement="hero_bottom_left",
+                                alignment="start",
+                                delay_ms=620,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
+                                pane_id=TIME_SERIES_PANE_ID,
+                                placement="pane_footer",
+                                alignment="end",
+                                delay_ms=860,
+                            ),
+                        ],
+                    ),
+                    "presentation_links": [
+                        _build_presentation_link(
+                            link_id="wave_highlight_fallback_to_paired_comparison",
+                            link_kind="highlight_fallback_return",
+                            source_pane_id=ANALYSIS_PANE_ID,
+                            target_pane_ids=[TIME_SERIES_PANE_ID],
+                            shared_context={
+                                "pairing_id": str(
+                                    narrative_context["comparison_act"]["pairing_id"]
+                                ),
+                                "fallback_step_id": str(
+                                    narrative_context["highlight_selection"][
+                                        "fallback_path"
+                                    ]["fallback_step_id"]
+                                ),
+                                "content_scope_label": _SHARED_COMPARISON_SCOPE_LABEL,
+                            },
+                        )
+                    ],
+                    "emphasis_state": _build_emphasis_state(
+                        emphasis_id="wave_highlight_fallback_focus",
+                        emphasis_kind="highlight_fallback",
+                        linked_pane_ids=[TIME_SERIES_PANE_ID, ANALYSIS_PANE_ID],
+                        overlay_ids_by_pane={
+                            TIME_SERIES_PANE_ID: [comparison_overlay_id],
+                            ANALYSIS_PANE_ID: [comparison_overlay_id],
+                        },
+                        focus_root_ids=selected_root_preview,
+                        selected_readout_id=str(selected_readout_id),
+                    ),
+                    "showcase_ui_state": _build_showcase_ui_state(
+                        mode_id="wave_highlight_fallback_showcase",
+                        primary_pane_id=ANALYSIS_PANE_ID,
+                        support_pane_ids=[TIME_SERIES_PANE_ID, CIRCUIT_PANE_ID],
+                        inspection_escape_hatch=dashboard_escape_hatch,
+                        guided_variant={
+                            "chrome_treatment": "highlight_fallback",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "comparison_controls",
+                                "inspection_escape_hatch",
+                            ],
+                            "suppressed_control_groups": [
+                                "overlay_controls",
+                                "playback_transport",
+                                "time_scrub",
+                                "neuron_detail_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "readout_detail_controls",
+                            ],
+                            "inspection_panel_state": "collapsed",
+                        },
+                        rehearsal_variant={
+                            "chrome_treatment": "highlight_fallback_rehearsal",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "comparison_controls",
+                                "inspection_escape_hatch",
+                                "inspection_drawer",
+                            ],
+                            "suppressed_control_groups": [],
+                            "reorganized_control_groups": [
+                                "overlay_controls",
+                                "readout_detail_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "inspection_panel_state": "peek",
+                        },
+                    ),
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
-                        "comparison_mode": "paired_baseline_vs_wave",
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            PAIRED_READOUT_DELTA_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "comparison_mode": PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
+                        "selected_readout_id": selected_readout_id,
+                        "active_overlay_id": comparison_overlay_id,
                     },
                     "replay_state": {
-                        "comparison_mode": "paired_baseline_vs_wave",
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            PAIRED_READOUT_DELTA_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "comparison_mode": PAIRED_BASELINE_VS_WAVE_COMPARISON_MODE,
+                        "selected_readout_id": selected_readout_id,
+                        "active_overlay_id": comparison_overlay_id,
                     },
                 },
             },
@@ -1676,6 +3114,7 @@ def _build_saved_presets(
             "presentation_status": PRESENTATION_STATUS_READY,
             "presentation_state_patch": {
                 "active_pane_id": ANALYSIS_PANE_ID,
+                "focus_root_ids": selected_root_preview,
                 "rehearsal_metadata": {
                     "fixture_mode": fixture_mode,
                     "story_role": "final_analysis_landing",
@@ -1694,22 +3133,152 @@ def _build_saved_presets(
                         "suite_review_artifact_path": narrative_context[
                             "closing_analysis_assets"
                         ]["suite_review_artifact_path"],
+                        "validation_summary_path": narrative_context[
+                            "closing_analysis_assets"
+                        ]["validation_summary_path"],
+                        "validation_findings_path": narrative_context[
+                            "closing_analysis_assets"
+                        ]["validation_findings_path"],
+                        "validation_review_handoff_path": narrative_context[
+                            "closing_analysis_assets"
+                        ]["validation_review_handoff_path"],
                     },
+                    "summary_analysis_landing": copy.deepcopy(
+                        dict(narrative_context["summary_analysis_landing"])
+                    ),
+                    "presentation_view": copy.deepcopy(
+                        dict(narrative_context["summary_analysis_landing"])
+                    ),
+                    "fairness_boundary": copy.deepcopy(
+                        dict(narrative_context["comparison_act"]["fairness_boundary"])
+                    ),
+                    "camera_anchor": {
+                        "anchor_id": "analysis_summary_close",
+                        "framing_mode": "closing_analysis_focus",
+                        "target_root_ids": selected_root_preview,
+                    },
+                    "camera_choreography": _build_camera_choreography(
+                        sequence_id="wave_highlight_to_analysis_summary",
+                        focus_pane_id=ANALYSIS_PANE_ID,
+                        anchor_id="analysis_summary_close",
+                        framing_mode="closing_analysis_focus",
+                        transition_id="wave_highlight_to_analysis_summary",
+                        transition_kind="summary_lock",
+                        duration_ms=620,
+                        hold_duration_ms=1800,
+                        easing="ease_in_out_cubic",
+                        from_anchor_id="approved_wave_highlight_focus",
+                        linked_pane_ids=[TIME_SERIES_PANE_ID, ANALYSIS_PANE_ID],
+                        narration_lead_in_ms=120,
+                        annotation_stagger_ms=220,
+                        target_root_ids=selected_root_preview,
+                    ),
+                    "annotation_layout": _build_annotation_layout(
+                        layout_id="analysis_summary_annotations",
+                        focus_pane_id=ANALYSIS_PANE_ID,
+                        placements=[
+                            _build_annotation_placement(
+                                annotation_id=STORY_CONTEXT_ANNOTATION_ID,
+                                pane_id=ANALYSIS_PANE_ID,
+                                placement="hero_top_left",
+                                alignment="start",
+                                delay_ms=120,
+                            ),
+                            _build_annotation_placement(
+                                annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
+                                pane_id=ANALYSIS_PANE_ID,
+                                placement="pane_footer",
+                                alignment="end",
+                                delay_ms=640,
+                            ),
+                        ],
+                    ),
+                    "presentation_links": [
+                        _build_presentation_link(
+                            link_id="analysis_summary_evidence_trace",
+                            link_kind="summary_evidence_trace",
+                            source_pane_id=ANALYSIS_PANE_ID,
+                            target_pane_ids=[TIME_SERIES_PANE_ID, CIRCUIT_PANE_ID],
+                            shared_context={
+                                "pairing_id": str(
+                                    narrative_context["comparison_act"]["pairing_id"]
+                                ),
+                                "highlight_status": str(
+                                    narrative_context["highlight_presentation"][
+                                        "presentation_status"
+                                    ]
+                                ),
+                                "analysis_summary_locator": str(
+                                    narrative_context["closing_analysis_assets"][
+                                        "analysis_summary_locator"
+                                    ]
+                                ),
+                            },
+                        )
+                    ],
+                    "emphasis_state": _build_emphasis_state(
+                        emphasis_id="analysis_summary_focus",
+                        emphasis_kind="summary_analysis",
+                        linked_pane_ids=[ANALYSIS_PANE_ID, TIME_SERIES_PANE_ID],
+                        overlay_ids_by_pane={
+                            ANALYSIS_PANE_ID: [summary_overlay_id],
+                            TIME_SERIES_PANE_ID: [comparison_overlay_id],
+                        },
+                        focus_root_ids=selected_root_preview,
+                        selected_readout_id=str(selected_readout_id),
+                    ),
+                    "showcase_ui_state": _build_showcase_ui_state(
+                        mode_id="analysis_summary_showcase",
+                        primary_pane_id=ANALYSIS_PANE_ID,
+                        support_pane_ids=[TIME_SERIES_PANE_ID, CIRCUIT_PANE_ID],
+                        inspection_escape_hatch=dashboard_escape_hatch,
+                        guided_variant={
+                            "chrome_treatment": "analysis_summary_focus",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "inspection_escape_hatch",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                                "overlay_controls",
+                                "playback_transport",
+                                "time_scrub",
+                                "neuron_detail_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "readout_detail_controls",
+                            ],
+                            "inspection_panel_state": "collapsed",
+                        },
+                        rehearsal_variant={
+                            "chrome_treatment": "analysis_summary_focus_rehearsal",
+                            "visible_control_groups": [
+                                "story_header",
+                                "story_annotations",
+                                "inspection_escape_hatch",
+                                "inspection_drawer",
+                            ],
+                            "suppressed_control_groups": [
+                                "comparison_controls",
+                            ],
+                            "reorganized_control_groups": [
+                                "overlay_controls",
+                                "readout_detail_controls",
+                                "neuron_detail_controls",
+                            ],
+                            "inspection_panel_state": "peek",
+                        },
+                    ),
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            REVIEWER_FINDINGS_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "selected_readout_id": selected_readout_id,
+                        "active_overlay_id": summary_overlay_id,
                     },
                     "replay_state": {
-                        "active_overlay_id": _preferred_overlay(
-                            available_overlays,
-                            REVIEWER_FINDINGS_OVERLAY_ID,
-                            SHARED_READOUT_ACTIVITY_OVERLAY_ID,
-                        ),
+                        "selected_readout_id": selected_readout_id,
+                        "active_overlay_id": summary_overlay_id,
                     },
                 },
             },
@@ -1924,15 +3493,22 @@ def _build_showcase_steps(
             narrative_annotations=[
                 build_showcase_narrative_annotation(
                     annotation_id=FAIRNESS_BOUNDARY_ANNOTATION_ID,
-                    text="This is the fair baseline-versus-wave comparison beat.",
+                    text=(
+                        "This beat stays on the shared-comparison surface; "
+                        "wave-only diagnostics remain separate."
+                    ),
                     linked_evidence_role_ids=["shared_comparison_evidence"],
                 ),
                 build_showcase_narrative_annotation(
                     annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
                     text=(
-                        "Pair the shared-comparison payload with suite rollups."
+                        "Pair the shared-comparison payload with suite rollups before "
+                        "showing any wave-only diagnostic."
                         if suite_summary_available
-                        else "Pair the shared-comparison payload with packaged experiment analysis."
+                        else (
+                            "Pair the shared-comparison payload with packaged experiment "
+                            "analysis before any wave-only diagnostic."
+                        )
                     ),
                     linked_evidence_role_ids=(
                         ["shared_comparison_evidence", SUITE_ROLLUP_EVIDENCE_ROLE_ID]
@@ -1979,7 +3555,9 @@ def _build_showcase_steps(
             evidence_references=[
                 build_showcase_evidence_reference(
                     evidence_role_id=APPROVED_WAVE_HIGHLIGHT_EVIDENCE_ROLE_ID,
-                    artifact_role_id=ANALYSIS_UI_PAYLOAD_ROLE_ID,
+                    artifact_role_id=str(
+                        narrative_context["highlight_selection"]["artifact_role_id"]
+                    ),
                     citation_label=str(
                         narrative_context["highlight_selection"]["citation_label"]
                     ),
@@ -2057,20 +3635,36 @@ def _build_showcase_steps(
             narrative_annotations=[
                 build_showcase_narrative_annotation(
                     annotation_id=STORY_CONTEXT_ANNOTATION_ID,
-                    text="Close on the packaged analysis and review-facing summary.",
-                    linked_evidence_role_ids=[SUMMARY_ANALYSIS_EVIDENCE_ROLE_ID],
+                    text=(
+                        "Close on a newcomer-readable summary that stays anchored to "
+                        "packaged evidence."
+                    ),
+                    linked_evidence_role_ids=[
+                        SUMMARY_ANALYSIS_EVIDENCE_ROLE_ID,
+                        VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
+                    ],
                 ),
                 build_showcase_narrative_annotation(
                     annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
                     text=(
-                        "Anchor the closing beat to analysis and suite outputs."
+                        "Anchor the closing beat to analysis, suite, and validation outputs."
                         if suite_summary_available
-                        else "Anchor the closing beat to packaged experiment analysis."
+                        else (
+                            "Anchor the closing beat to packaged experiment analysis plus "
+                            "validation evidence."
+                        )
                     ),
                     linked_evidence_role_ids=(
-                        [SUMMARY_ANALYSIS_EVIDENCE_ROLE_ID, SUITE_ROLLUP_EVIDENCE_ROLE_ID]
+                        [
+                            SUMMARY_ANALYSIS_EVIDENCE_ROLE_ID,
+                            SUITE_ROLLUP_EVIDENCE_ROLE_ID,
+                            VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
+                        ]
                         if suite_summary_available
-                        else [SUMMARY_ANALYSIS_EVIDENCE_ROLE_ID]
+                        else [
+                            SUMMARY_ANALYSIS_EVIDENCE_ROLE_ID,
+                            VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
+                        ]
                     ),
                 ),
             ],
@@ -2100,6 +3694,34 @@ def _build_showcase_steps(
                     ]
                     if summary_evidence_role is not None
                     else []
+                ),
+                build_showcase_evidence_reference(
+                    evidence_role_id=VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
+                    artifact_role_id=(
+                        VALIDATION_REVIEW_HANDOFF_ROLE_ID
+                        if narrative_context["closing_analysis_assets"][
+                            "validation_review_handoff_path"
+                        ]
+                        is not None
+                        else VALIDATION_FINDINGS_ROLE_ID
+                    ),
+                    citation_label=(
+                        "Validation review handoff"
+                        if narrative_context["closing_analysis_assets"][
+                            "validation_review_handoff_path"
+                        ]
+                        is not None
+                        else "Validation findings"
+                    ),
+                    locator=(
+                        "scientific_plausibility_decision"
+                        if narrative_context["closing_analysis_assets"][
+                            "validation_review_handoff_path"
+                        ]
+                        is not None
+                        else "validator_findings"
+                    ),
+                    required=False,
                 ),
             ],
             operator_control_ids=["trigger_export", "previous_step"],
@@ -2470,7 +4092,14 @@ def _build_narrative_preset_catalog(
         },
         "story_arc_preset_ids": _story_arc_preset_ids(),
         "preset_discovery_order": preset_discovery_order,
+        "comparison_act": copy.deepcopy(dict(narrative_context["comparison_act"])),
         "highlight_metadata": copy.deepcopy(dict(narrative_context["highlight_selection"])),
+        "highlight_presentation": copy.deepcopy(
+            dict(narrative_context["highlight_presentation"])
+        ),
+        "summary_analysis_landing": copy.deepcopy(
+            dict(narrative_context["summary_analysis_landing"])
+        ),
         "highlight_step_evidence_references": copy.deepcopy(
             list(highlight_step["evidence_references"])
         ),
@@ -2811,9 +4440,13 @@ def _validate_presentation_state_patch(
             )
 
     if "rehearsal_metadata" in patch:
-        _require_mapping(
-            patch["rehearsal_metadata"],
-            field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata",
+        _validate_rehearsal_metadata(
+            preset_id=preset_id,
+            metadata=_require_mapping(
+                patch["rehearsal_metadata"],
+                field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata",
+            ),
+            dashboard_payload=dashboard_payload,
         )
 
     dashboard_state_patch = patch.get("dashboard_state_patch")
@@ -2823,6 +4456,344 @@ def _validate_presentation_state_patch(
             patch=dashboard_state_patch,
             dashboard_payload=dashboard_payload,
         )
+
+
+def _validate_rehearsal_metadata(
+    *,
+    preset_id: str,
+    metadata: Mapping[str, Any],
+    dashboard_payload: Mapping[str, Any],
+) -> None:
+    valid_layers = {
+        str(item["layer_id"])
+        for item in dashboard_payload["pane_inputs"][SCENE_PANE_ID]["render_layers"]
+    }
+    selected_root_ids = {
+        int(root_id)
+        for root_id in dashboard_payload["pane_inputs"][CIRCUIT_PANE_ID]["selected_root_ids"]
+    }
+    available_overlays = set(dashboard_payload["overlay_catalog"]["available_overlay_ids"])
+    selected_readout_id = str(
+        dashboard_payload["pane_inputs"][TIME_SERIES_PANE_ID]["selected_readout_id"]
+    )
+    sample_count = len(
+        dashboard_payload["pane_inputs"][TIME_SERIES_PANE_ID]["replay_model"].get(
+            "canonical_time_ms",
+            [],
+        )
+    )
+
+    camera_anchor = metadata.get("camera_anchor")
+    if camera_anchor is not None:
+        _require_mapping(
+            camera_anchor,
+            field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata.camera_anchor",
+        )
+
+    camera_choreography = metadata.get("camera_choreography")
+    if camera_choreography is not None:
+        record = _require_mapping(
+            camera_choreography,
+            field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata.camera_choreography",
+        )
+        anchor = _require_mapping(
+            record.get("anchor"),
+            field_name=(
+                f"saved_presets[{preset_id!r}].rehearsal_metadata.camera_choreography.anchor"
+            ),
+        )
+        if str(anchor["focus_pane_id"]) not in _SUPPORTED_PANE_IDS:
+            raise ValueError(
+                f"saved preset {preset_id!r} camera_choreography.focus_pane_id "
+                f"{anchor['focus_pane_id']!r} is unsupported."
+            )
+        if anchor.get("active_layer_id") is not None and str(anchor["active_layer_id"]) not in valid_layers:
+            raise ValueError(
+                f"saved preset {preset_id!r} camera_choreography.anchor.active_layer_id "
+                f"{anchor['active_layer_id']!r} is unavailable."
+            )
+        if anchor.get("target_root_ids") is not None:
+            missing = sorted(
+                int(root_id)
+                for root_id in anchor["target_root_ids"]
+                if int(root_id) not in selected_root_ids
+            )
+            if missing:
+                raise ValueError(
+                    f"saved preset {preset_id!r} camera_choreography.anchor.target_root_ids "
+                    f"references unavailable roots {missing!r}."
+                )
+        transition = _require_mapping(
+            record.get("transition"),
+            field_name=(
+                f"saved_presets[{preset_id!r}].rehearsal_metadata.camera_choreography.transition"
+            ),
+        )
+        for field_name in ("duration_ms", "hold_duration_ms"):
+            value = transition.get(field_name)
+            if not isinstance(value, int) or value < 0:
+                raise ValueError(
+                    f"saved preset {preset_id!r} camera_choreography.transition.{field_name} "
+                    "must be a non-negative integer."
+                )
+        linked_pane_ids = record.get("linked_pane_ids", [])
+        if not isinstance(linked_pane_ids, Sequence) or isinstance(
+            linked_pane_ids, (str, bytes)
+        ):
+            raise ValueError(
+                f"saved preset {preset_id!r} camera_choreography.linked_pane_ids "
+                "must be a sequence."
+            )
+        for pane_id in linked_pane_ids:
+            if str(pane_id) not in _SUPPORTED_PANE_IDS:
+                raise ValueError(
+                    f"saved preset {preset_id!r} camera_choreography.linked_pane_ids "
+                    f"references unsupported pane {pane_id!r}."
+                )
+        timing = _require_mapping(
+            record.get("timing"),
+            field_name=(
+                f"saved_presets[{preset_id!r}].rehearsal_metadata.camera_choreography.timing"
+            ),
+        )
+        for field_name in ("narration_lead_in_ms", "annotation_stagger_ms"):
+            value = timing.get(field_name)
+            if not isinstance(value, int) or value < 0:
+                raise ValueError(
+                    f"saved preset {preset_id!r} camera_choreography.timing.{field_name} "
+                    "must be a non-negative integer."
+                )
+        if timing.get("recommended_sample_index") is not None:
+            sample_index = timing["recommended_sample_index"]
+            if not isinstance(sample_index, int) or sample_index < 0 or sample_index >= max(sample_count, 1):
+                raise ValueError(
+                    f"saved preset {preset_id!r} camera_choreography.timing.recommended_sample_index "
+                    "must fit within the packaged replay timebase."
+                )
+
+    annotation_layout = metadata.get("annotation_layout")
+    if annotation_layout is not None:
+        record = _require_mapping(
+            annotation_layout,
+            field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata.annotation_layout",
+        )
+        if str(record["focus_pane_id"]) not in _SUPPORTED_PANE_IDS:
+            raise ValueError(
+                f"saved preset {preset_id!r} annotation_layout.focus_pane_id "
+                f"{record['focus_pane_id']!r} is unsupported."
+            )
+        placements = record.get("placements", [])
+        if not isinstance(placements, Sequence) or isinstance(placements, (str, bytes)):
+            raise ValueError(
+                f"saved preset {preset_id!r} annotation_layout.placements must be a sequence."
+            )
+        for index, placement in enumerate(placements):
+            record_item = _require_mapping(
+                placement,
+                field_name=(
+                    f"saved_presets[{preset_id!r}].rehearsal_metadata.annotation_layout.placements[{index}]"
+                ),
+            )
+            if str(record_item["pane_id"]) not in _SUPPORTED_PANE_IDS:
+                raise ValueError(
+                    f"saved preset {preset_id!r} annotation placement pane_id "
+                    f"{record_item['pane_id']!r} is unsupported."
+                )
+            if not isinstance(record_item.get("delay_ms"), int) or int(record_item["delay_ms"]) < 0:
+                raise ValueError(
+                    f"saved preset {preset_id!r} annotation placement delay_ms must be a non-negative integer."
+                )
+
+    presentation_links = metadata.get("presentation_links")
+    if presentation_links is not None:
+        if not isinstance(presentation_links, Sequence) or isinstance(
+            presentation_links, (str, bytes)
+        ):
+            raise ValueError(
+                f"saved preset {preset_id!r} rehearsal_metadata.presentation_links must be a sequence."
+            )
+        for index, item in enumerate(presentation_links):
+            record = _require_mapping(
+                item,
+                field_name=(
+                    f"saved_presets[{preset_id!r}].rehearsal_metadata.presentation_links[{index}]"
+                ),
+            )
+            if str(record["source_pane_id"]) not in _SUPPORTED_PANE_IDS:
+                raise ValueError(
+                    f"saved preset {preset_id!r} presentation link source_pane_id "
+                    f"{record['source_pane_id']!r} is unsupported."
+                )
+            target_pane_ids = record.get("target_pane_ids", [])
+            if not isinstance(target_pane_ids, Sequence) or isinstance(
+                target_pane_ids, (str, bytes)
+            ):
+                raise ValueError(
+                    f"saved preset {preset_id!r} presentation link target_pane_ids must be a sequence."
+                )
+            for pane_id in target_pane_ids:
+                if str(pane_id) not in _SUPPORTED_PANE_IDS:
+                    raise ValueError(
+                        f"saved preset {preset_id!r} presentation link target_pane_ids "
+                        f"references unsupported pane {pane_id!r}."
+                    )
+            _require_mapping(
+                record.get("shared_context"),
+                field_name=(
+                    f"saved_presets[{preset_id!r}].rehearsal_metadata.presentation_links[{index}].shared_context"
+                ),
+            )
+
+    emphasis_state = metadata.get("emphasis_state")
+    if emphasis_state is not None:
+        record = _require_mapping(
+            emphasis_state,
+            field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata.emphasis_state",
+        )
+        linked_pane_ids = record.get("linked_pane_ids", [])
+        if not isinstance(linked_pane_ids, Sequence) or isinstance(
+            linked_pane_ids, (str, bytes)
+        ):
+            raise ValueError(
+                f"saved preset {preset_id!r} emphasis_state.linked_pane_ids must be a sequence."
+            )
+        for pane_id in linked_pane_ids:
+            if str(pane_id) not in _SUPPORTED_PANE_IDS:
+                raise ValueError(
+                    f"saved preset {preset_id!r} emphasis_state.linked_pane_ids "
+                    f"references unsupported pane {pane_id!r}."
+                )
+        overlay_ids_by_pane = _require_mapping(
+            record.get("overlay_ids_by_pane"),
+            field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata.emphasis_state.overlay_ids_by_pane",
+        )
+        for pane_id, overlay_ids in overlay_ids_by_pane.items():
+            if str(pane_id) not in _SUPPORTED_PANE_IDS:
+                raise ValueError(
+                    f"saved preset {preset_id!r} emphasis_state.overlay_ids_by_pane "
+                    f"references unsupported pane {pane_id!r}."
+                )
+            if not isinstance(overlay_ids, Sequence) or isinstance(overlay_ids, (str, bytes)):
+                raise ValueError(
+                    f"saved preset {preset_id!r} emphasis_state.overlay_ids_by_pane[{pane_id!r}] "
+                    "must be a sequence."
+                )
+            for overlay_id in overlay_ids:
+                if str(overlay_id) not in available_overlays:
+                    raise ValueError(
+                        f"saved preset {preset_id!r} emphasis_state.overlay_ids_by_pane "
+                        f"references unavailable overlay {overlay_id!r}."
+                    )
+        if record.get("focus_root_ids") is not None:
+            missing = sorted(
+                int(root_id)
+                for root_id in record["focus_root_ids"]
+                if int(root_id) not in selected_root_ids
+            )
+            if missing:
+                raise ValueError(
+                    f"saved preset {preset_id!r} emphasis_state.focus_root_ids "
+                    f"references unavailable roots {missing!r}."
+                )
+        if (
+            record.get("selected_neuron_id") is not None
+            and int(record["selected_neuron_id"]) not in selected_root_ids
+        ):
+            raise ValueError(
+                f"saved preset {preset_id!r} emphasis_state.selected_neuron_id "
+                f"{record['selected_neuron_id']!r} is unavailable."
+            )
+        if (
+            record.get("selected_readout_id") is not None
+            and str(record["selected_readout_id"]) != selected_readout_id
+        ):
+            raise ValueError(
+                f"saved preset {preset_id!r} emphasis_state.selected_readout_id "
+                f"{record['selected_readout_id']!r} is unavailable."
+            )
+
+    showcase_ui_state = metadata.get("showcase_ui_state")
+    if showcase_ui_state is not None:
+        record = _require_mapping(
+            showcase_ui_state,
+            field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata.showcase_ui_state",
+        )
+        if str(record["primary_pane_id"]) not in _SUPPORTED_PANE_IDS:
+            raise ValueError(
+                f"saved preset {preset_id!r} showcase_ui_state.primary_pane_id "
+                f"{record['primary_pane_id']!r} is unsupported."
+            )
+        support_pane_ids = record.get("support_pane_ids", [])
+        if not isinstance(support_pane_ids, Sequence) or isinstance(
+            support_pane_ids, (str, bytes)
+        ):
+            raise ValueError(
+                f"saved preset {preset_id!r} showcase_ui_state.support_pane_ids must be a sequence."
+            )
+        for pane_id in support_pane_ids:
+            if str(pane_id) not in _SUPPORTED_PANE_IDS:
+                raise ValueError(
+                    f"saved preset {preset_id!r} showcase_ui_state.support_pane_ids "
+                    f"references unsupported pane {pane_id!r}."
+                )
+        escape_hatch = _require_mapping(
+            record.get("inspection_escape_hatch"),
+            field_name=(
+                f"saved_presets[{preset_id!r}].rehearsal_metadata.showcase_ui_state.inspection_escape_hatch"
+            ),
+        )
+        if not bool(escape_hatch.get("available")):
+            raise ValueError(
+                f"saved preset {preset_id!r} showcase_ui_state must keep an available inspection escape hatch."
+            )
+        for path_field in ("dashboard_session_metadata_path", "dashboard_app_shell_path"):
+            if not escape_hatch.get(path_field):
+                raise ValueError(
+                    f"saved preset {preset_id!r} showcase_ui_state.inspection_escape_hatch "
+                    f"is missing {path_field!r}."
+                )
+        variants = _require_mapping(
+            record.get("runtime_mode_variants"),
+            field_name=(
+                f"saved_presets[{preset_id!r}].rehearsal_metadata.showcase_ui_state.runtime_mode_variants"
+            ),
+        )
+        unsupported_modes = set(variants) - set(SUPPORTED_SHOWCASE_PLAYER_MODES)
+        if unsupported_modes:
+            raise ValueError(
+                f"saved preset {preset_id!r} showcase_ui_state.runtime_mode_variants "
+                f"references unsupported runtime modes {sorted(unsupported_modes)!r}."
+            )
+        for runtime_mode, variant in variants.items():
+            record_variant = _require_mapping(
+                variant,
+                field_name=(
+                    "saved_presets"
+                    f"[{preset_id!r}].rehearsal_metadata.showcase_ui_state.runtime_mode_variants[{runtime_mode!r}]"
+                ),
+            )
+            for field_name in (
+                "visible_control_groups",
+                "suppressed_control_groups",
+                "reorganized_control_groups",
+            ):
+                control_groups = record_variant.get(field_name, [])
+                if not isinstance(control_groups, Sequence) or isinstance(
+                    control_groups, (str, bytes)
+                ):
+                    raise ValueError(
+                        f"saved preset {preset_id!r} showcase_ui_state {field_name} must be a sequence."
+                    )
+                unsupported_groups = sorted(
+                    str(value)
+                    for value in control_groups
+                    if str(value) not in _SHOWCASE_CONTROL_GROUP_IDS
+                )
+                if unsupported_groups:
+                    raise ValueError(
+                        f"saved preset {preset_id!r} showcase_ui_state {field_name} "
+                        f"references unsupported control groups {unsupported_groups!r}."
+                    )
 
 
 def _validate_dashboard_state_patch(
@@ -2932,9 +4903,9 @@ def _highlight_annotations(
         build_showcase_narrative_annotation(
             annotation_id=SCIENTIFIC_GUARDRAIL_ANNOTATION_ID,
             text=(
-                f"Approved highlight: {highlight_selection['citation_label']}."
+                f"Approved wave-only highlight: {highlight_selection['citation_label']}."
                 if highlight_ready
-                else "The requested highlight is not approved for display."
+                else "The requested wave-only highlight is not approved for display."
             ),
             linked_evidence_role_ids=[
                 APPROVED_WAVE_HIGHLIGHT_EVIDENCE_ROLE_ID,

@@ -98,9 +98,31 @@ def build_showcase_player_context(
         raise ValueError(
             "showcase_script_payload.step_sequence must contain at least one narrative step."
         )
-    step_by_id = {str(item["step_id"]): copy.deepcopy(dict(item)) for item in step_sequence}
-    if len(step_by_id) != len(step_sequence):
+    sequence_step_by_id = {
+        str(item["step_id"]): copy.deepcopy(dict(item)) for item in step_sequence
+    }
+    if len(sequence_step_by_id) != len(step_sequence):
         raise ValueError("showcase_script_payload.step_sequence must not repeat step_id values.")
+    session_steps = _normalize_mapping_sequence(
+        showcase_session.get("showcase_steps", []),
+        field_name="showcase_session.showcase_steps",
+    )
+    session_step_by_id = {
+        str(item["step_id"]): copy.deepcopy(dict(item)) for item in session_steps
+    }
+    if len(session_step_by_id) != len(session_steps):
+        raise ValueError("showcase_session.showcase_steps must not repeat step_id values.")
+    if set(session_step_by_id) != set(sequence_step_by_id):
+        raise ValueError(
+            "showcase_session.showcase_steps must align exactly with "
+            "showcase_script_payload.step_sequence."
+        )
+    step_by_id = {}
+    for item in step_sequence:
+        step_id = str(item["step_id"])
+        merged = copy.deepcopy(dict(session_step_by_id[step_id]))
+        merged.update(copy.deepcopy(dict(item)))
+        step_by_id[step_id] = merged
 
     saved_presets = _normalize_mapping_sequence(
         narrative_preset_catalog.get("saved_presets", []),
@@ -128,6 +150,13 @@ def build_showcase_player_context(
                 f"showcase step {step['step_id']!r} references missing fallback preset "
                 f"{fallback_preset_id!r}."
             )
+    artifact_reference_by_role = {
+        str(item["artifact_role_id"]): copy.deepcopy(dict(item))
+        for item in _normalize_mapping_sequence(
+            showcase_session.get("artifact_references", []),
+            field_name="showcase_session.artifact_references",
+        )
+    }
 
     base_dashboard_session_state = _require_mapping(
         showcase_presentation_state.get("base_dashboard_session_state"),
@@ -188,6 +217,7 @@ def build_showcase_player_context(
         "step_by_id": step_by_id,
         "step_index_by_id": {step_id: index for index, step_id in enumerate(step_order)},
         "preset_by_id": preset_by_id,
+        "artifact_reference_by_role": artifact_reference_by_role,
         "base_dashboard_session_state": copy.deepcopy(dict(base_dashboard_session_state)),
         "operator_defaults": copy.deepcopy(dict(operator_defaults)),
         "replay_model": copy.deepcopy(dict(replay_model)),
@@ -284,6 +314,15 @@ def build_showcase_player_state(
         preset.get("presentation_state_patch"),
         field_name=f"saved_preset[{preset_id!r}].presentation_state_patch",
     )
+    rehearsal_metadata = (
+        {}
+        if patch.get("rehearsal_metadata") is None
+        else copy.deepcopy(dict(patch["rehearsal_metadata"]))
+    )
+    annotation_layout = _resolve_annotation_layout(
+        step=step,
+        rehearsal_metadata=rehearsal_metadata,
+    )
     showcase_seed = _require_mapping(
         context.get("showcase_presentation_state"),
         field_name="context.showcase_presentation_state",
@@ -305,6 +344,8 @@ def build_showcase_player_state(
         "current_step_id": step_id,
         "current_step_index": step_index,
         "current_preset_id": preset_id,
+        "cue_kind_id": str(step["cue_kind_id"]),
+        "fallback_preset_id": step.get("fallback_preset_id"),
         "active_pane_id": str(patch.get("active_pane_id", showcase_seed["active_pane_id"])),
         "focus_root_ids": _normalize_int_list(
             patch.get("focus_root_ids", showcase_seed.get("focus_root_ids", [])),
@@ -320,10 +361,36 @@ def build_showcase_player_state(
             if patch.get("highlight_selection") is None
             else copy.deepcopy(dict(patch["highlight_selection"]))
         ),
-        "rehearsal_metadata": (
-            {}
-            if patch.get("rehearsal_metadata") is None
-            else copy.deepcopy(dict(patch["rehearsal_metadata"]))
+        "rehearsal_metadata": rehearsal_metadata,
+        "presentation_view": _resolve_presentation_view(rehearsal_metadata),
+        "fairness_boundary": _resolve_fairness_boundary(rehearsal_metadata),
+        "comparison_act": _resolve_named_story_state(
+            rehearsal_metadata,
+            key="comparison_act",
+        ),
+        "highlight_presentation": _resolve_named_story_state(
+            rehearsal_metadata,
+            key="highlight_presentation",
+        ),
+        "summary_analysis_landing": _resolve_named_story_state(
+            rehearsal_metadata,
+            key="summary_analysis_landing",
+        ),
+        "camera_choreography": _resolve_camera_choreography(rehearsal_metadata),
+        "annotation_layout": annotation_layout,
+        "narrative_annotations": _resolve_narrative_annotations(
+            step=step,
+            annotation_layout=annotation_layout,
+        ),
+        "evidence_hooks": _resolve_evidence_hooks(
+            step=step,
+            artifact_reference_by_role=context["artifact_reference_by_role"],
+        ),
+        "presentation_links": _resolve_presentation_links(rehearsal_metadata),
+        "emphasis_state": _resolve_emphasis_state(rehearsal_metadata),
+        "showcase_ui_state": _resolve_showcase_ui_state(
+            rehearsal_metadata,
+            runtime_mode=normalized_mode,
         ),
         "dashboard_state_source": copy.deepcopy(
             dict(showcase_seed["dashboard_state_source"])
@@ -359,6 +426,166 @@ def build_showcase_player_state(
         "replay_cursor_state": replay_cursor,
     }
     return state
+
+
+def _resolve_camera_choreography(
+    rehearsal_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    camera = rehearsal_metadata.get("camera_choreography")
+    if isinstance(camera, Mapping):
+        return copy.deepcopy(dict(camera))
+    anchor = rehearsal_metadata.get("camera_anchor")
+    if isinstance(anchor, Mapping):
+        return {
+            "anchor": copy.deepcopy(dict(anchor)),
+            "transition": None,
+            "linked_pane_ids": [],
+            "timing": {},
+        }
+    return {}
+
+
+def _resolve_annotation_layout(
+    *,
+    step: Mapping[str, Any],
+    rehearsal_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    layout = rehearsal_metadata.get("annotation_layout")
+    if not isinstance(layout, Mapping):
+        return {}
+    resolved = copy.deepcopy(dict(layout))
+    placements = resolved.get("placements", [])
+    if not isinstance(placements, Sequence) or isinstance(placements, (str, bytes)):
+        raise ValueError("annotation_layout.placements must be a sequence.")
+    valid_annotation_ids = {
+        str(item["annotation_id"]) for item in step.get("narrative_annotations", [])
+    }
+    for placement in placements:
+        if not isinstance(placement, Mapping):
+            raise ValueError("annotation_layout placements must be mappings.")
+        annotation_id = str(placement.get("annotation_id"))
+        if annotation_id not in valid_annotation_ids:
+            raise ValueError(
+                f"annotation_layout references annotation_id {annotation_id!r} "
+                f"outside the current step annotations {sorted(valid_annotation_ids)!r}."
+            )
+    return resolved
+
+
+def _resolve_narrative_annotations(
+    *,
+    step: Mapping[str, Any],
+    annotation_layout: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    annotations = _normalize_mapping_sequence(
+        step.get("narrative_annotations", []),
+        field_name="step.narrative_annotations",
+    )
+    placements = annotation_layout.get("placements", [])
+    placement_by_id = {
+        str(item["annotation_id"]): copy.deepcopy(dict(item))
+        for item in placements
+        if isinstance(item, Mapping)
+    }
+    for annotation in annotations:
+        annotation["placement"] = placement_by_id.get(str(annotation["annotation_id"]))
+    return annotations
+
+
+def _resolve_presentation_links(
+    rehearsal_metadata: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    links = rehearsal_metadata.get("presentation_links")
+    if not isinstance(links, Sequence) or isinstance(links, (str, bytes)):
+        return []
+    return [copy.deepcopy(dict(item)) for item in links if isinstance(item, Mapping)]
+
+
+def _resolve_emphasis_state(
+    rehearsal_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    emphasis_state = rehearsal_metadata.get("emphasis_state")
+    if not isinstance(emphasis_state, Mapping):
+        return {}
+    return copy.deepcopy(dict(emphasis_state))
+
+
+def _resolve_showcase_ui_state(
+    rehearsal_metadata: Mapping[str, Any],
+    *,
+    runtime_mode: str,
+) -> dict[str, Any]:
+    showcase_ui_state = rehearsal_metadata.get("showcase_ui_state")
+    if not isinstance(showcase_ui_state, Mapping):
+        return {}
+    base = {
+        key: copy.deepcopy(value)
+        for key, value in dict(showcase_ui_state).items()
+        if key != "runtime_mode_variants"
+    }
+    variants = showcase_ui_state.get("runtime_mode_variants", {})
+    if isinstance(variants, Mapping) and isinstance(variants.get(runtime_mode), Mapping):
+        base = _merge_json_objects(base, dict(variants[runtime_mode]))
+    base["runtime_mode"] = str(runtime_mode)
+    return base
+
+
+def _resolve_presentation_view(
+    rehearsal_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    presentation_view = rehearsal_metadata.get("presentation_view")
+    if not isinstance(presentation_view, Mapping):
+        return {}
+    return copy.deepcopy(dict(presentation_view))
+
+
+def _resolve_fairness_boundary(
+    rehearsal_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    fairness_boundary = rehearsal_metadata.get("fairness_boundary")
+    if not isinstance(fairness_boundary, Mapping):
+        return {}
+    return copy.deepcopy(dict(fairness_boundary))
+
+
+def _resolve_named_story_state(
+    rehearsal_metadata: Mapping[str, Any],
+    *,
+    key: str,
+) -> dict[str, Any]:
+    value = rehearsal_metadata.get(key)
+    if not isinstance(value, Mapping):
+        return {}
+    return copy.deepcopy(dict(value))
+
+
+def _resolve_evidence_hooks(
+    *,
+    step: Mapping[str, Any],
+    artifact_reference_by_role: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    hooks = []
+    for reference in _normalize_mapping_sequence(
+        step.get("evidence_references", []),
+        field_name="step.evidence_references",
+    ):
+        artifact_role_id = str(reference["artifact_role_id"])
+        artifact = artifact_reference_by_role.get(artifact_role_id)
+        resolved = copy.deepcopy(dict(reference))
+        if artifact is None:
+            resolved["artifact"] = None
+            resolved["source_path"] = None
+            resolved["source_kind"] = None
+            resolved["bundle_id"] = None
+            resolved["path_exists"] = False
+        else:
+            resolved["artifact"] = copy.deepcopy(dict(artifact))
+            resolved["source_path"] = str(artifact["path"])
+            resolved["source_kind"] = str(artifact["source_kind"])
+            resolved["bundle_id"] = str(artifact["bundle_id"])
+            resolved["path_exists"] = Path(str(artifact["path"])).resolve().exists()
+        hooks.append(resolved)
+    return hooks
 
 
 def resolve_showcase_player_state(
@@ -688,9 +915,22 @@ def execute_showcase_player_command(
         "current_step_id": str(updated_state["current_step_id"]),
         "current_preset_id": str(updated_state["current_preset_id"]),
         "runtime_mode": str(updated_state["runtime_mode"]),
+        "cue_kind_id": str(updated_state["cue_kind_id"]),
         "playback_state": str(updated_state["sequence_state"]["playback_state"]),
         "sample_index": int(updated_state["replay_cursor_state"]["sample_index"]),
         "time_ms": float(updated_state["replay_cursor_state"]["time_ms"]),
+        "camera_anchor_id": updated_state.get("camera_choreography", {})
+        .get("anchor", {})
+        .get("anchor_id"),
+        "showcase_ui_mode_id": updated_state.get("showcase_ui_state", {}).get("mode_id"),
+        "presentation_view_kind": updated_state.get("presentation_view", {}).get(
+            "view_kind"
+        ),
+        "content_scope_label": updated_state.get("presentation_view", {}).get(
+            "content_scope_label",
+            updated_state.get("presentation_view", {}).get("active_scope_label"),
+        ),
+        "evidence_hook_count": len(updated_state.get("evidence_hooks", [])),
         "next_step_id": updated_state["sequence_state"]["next_step_id"],
         "previous_step_id": updated_state["sequence_state"]["previous_step_id"],
         "resume_label": str(updated_state["checkpoint"]["resume_label"]),
@@ -1080,6 +1320,22 @@ def _merge_mapping_values(
                 f"{field_name} disagrees on nested field {key!r}: {merged[key]!r} != {value!r}."
             )
         merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def _merge_json_objects(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+) -> dict[str, Any]:
+    merged = copy.deepcopy(dict(left))
+    for key, value in right.items():
+        if isinstance(merged.get(key), Mapping) and isinstance(value, Mapping):
+            merged[str(key)] = _merge_json_objects(
+                copy.deepcopy(dict(merged[str(key)])),
+                dict(value),
+            )
+            continue
+        merged[str(key)] = copy.deepcopy(value)
     return merged
 
 

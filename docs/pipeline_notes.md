@@ -837,6 +837,98 @@ Contract notes:
 later tickets should cite it instead of re-litigating the showcase vocabulary,
 fallback semantics, or the Jack-versus-Grant ownership boundary.
 
+### Whole-brain context session contract
+
+Milestone 17 now reserves one explicit whole-brain context session surface
+under the versioned contract `whole_brain_context_session.v1`.
+
+The contract is implemented in `flywire_wave.whole_brain_context_contract`.
+
+The library-owned default layout is:
+
+- `config.paths.processed_simulator_results_dir/whole_brain_context_sessions/<experiment_id>/<context_spec_hash>/whole_brain_context_session.json`:
+  authoritative whole-brain-context metadata and discovery anchor
+- `config.paths.processed_simulator_results_dir/whole_brain_context_sessions/<experiment_id>/<context_spec_hash>/context_view_payload.json`:
+  reserved packaged graph-view payload for later Milestone 17 UI work
+- `config.paths.processed_simulator_results_dir/whole_brain_context_sessions/<experiment_id>/<context_spec_hash>/context_query_catalog.json`:
+  reserved packaged query-taxonomy export
+- `config.paths.processed_simulator_results_dir/whole_brain_context_sessions/<experiment_id>/<context_spec_hash>/context_view_state.json`:
+  exportable serialized whole-brain context view state
+
+Contract notes:
+
+- the canonical query-profile ids are:
+  `active_subset_shell`,
+  `upstream_connectivity_context`,
+  `downstream_connectivity_context`,
+  `bidirectional_connectivity_context`,
+  `pathway_highlight_review`,
+  and `downstream_module_review`
+- the canonical node-role ids are:
+  `active_selected`,
+  `context_only`,
+  `active_pathway_highlight`,
+  and `context_pathway_highlight`
+- the canonical edge-role ids are:
+  `active_internal`,
+  `active_to_context`,
+  `context_to_active`,
+  `context_internal`,
+  `pathway_highlight`,
+  and `downstream_module_summary`
+- the canonical context-layer ids are:
+  `active_subset`,
+  `upstream_context`,
+  `downstream_context`,
+  `pathway_highlight`,
+  and `downstream_module`
+- the canonical overlay ids are:
+  `active_boundary`,
+  `upstream_graph`,
+  `downstream_graph`,
+  `pathway_highlight`,
+  `downstream_module`,
+  and `metadata_facet_badges`
+- the canonical reduction-profile ids are:
+  `local_shell_compact`,
+  `balanced_neighborhood`,
+  `pathway_focus`,
+  and `downstream_module_collapsed`
+- the canonical metadata-facet ids are:
+  `cell_class`,
+  `cell_type`,
+  `neuropil`,
+  `side`,
+  `nt_type`,
+  `selection_boundary_status`,
+  and `pathway_relevance_status`
+- the canonical downstream-module-role ids are:
+  `simplified_readout_module`
+  and `collapsed_projection_module`
+- deterministic discovery hooks now exist for:
+  - upstream subset-selection artifacts
+  - the canonical local synapse registry from `coupling_bundle.v1`
+  - packaged dashboard-session artifacts
+  - packaged showcase-session artifacts
+  - whole-brain-context-owned packaged artifacts
+- the active-versus-context boundary is contract state rather than styling:
+  active roles always trace back to the selected subset, context roles stay
+  contextual even when highlighted, and downstream modules stay explicitly
+  labeled as summaries
+- the default local delivery model is `packaged_local_context_bundle`
+- the ownership boundary is explicit:
+  Jack owns deterministic packaging, scalable UI semantics, graph-budget rules,
+  and linked interaction mechanics; Grant owns which broader pathways or
+  downstream summaries are scientifically worth surfacing
+- `whole_brain_context_session.v1` composes with subset-selection outputs,
+  `coupling_bundle.v1`, `dashboard_session.v1`, and `showcase_session.v1`; it
+  does not mutate those earlier contracts
+
+`docs/whole_brain_context_design.md` is the authoritative Milestone 17
+decision note; later tickets should cite it instead of re-litigating the
+query taxonomy, active-versus-context semantics, graph-budget meanings, or the
+Jack-versus-Grant ownership boundary.
+
 ### Showcase rehearsal workflow
 
 Milestone 14 and Milestone 15 readiness fixtures stay intentionally compact so
