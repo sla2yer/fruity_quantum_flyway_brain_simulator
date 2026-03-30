@@ -1060,6 +1060,7 @@ Show where the active visual circuit sits inside the larger female brain context
 - downstream / upstream graph overlays  
 - context-only nodes in network views  
 - optional simplified downstream readout modules
+- stable whole-brain review presets layered on top of the compact dashboard or showcase gate
 
 ### Jack owns
 
@@ -1076,6 +1077,7 @@ Show where the active visual circuit sits inside the larger female brain context
 ### Done when
 
 - the active visual subset can be viewed in larger brain context  
+- the compact dashboard or showcase fixture remains the minimum gate while a richer packaged review path exists for whole-brain context evaluation  
 - context enriches the story without bloating the simulator
 
 ---
@@ -1320,4 +1322,3 @@ If you want, this can be split next into:
 - a **GitHub issues backlog**  
 - a **Grant vs Jack task board**  
 - or a **dependency graph / Kanban structure**
-

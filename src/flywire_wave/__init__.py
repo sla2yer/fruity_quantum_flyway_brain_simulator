@@ -71,4 +71,5 @@ __all__ = [
     "wave_structure_analysis",
     "whole_brain_context_contract",
     "whole_brain_context_planning",
+    "whole_brain_context_query",
 ]

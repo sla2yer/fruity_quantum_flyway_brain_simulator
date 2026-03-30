@@ -22,6 +22,24 @@ The contract composes with earlier milestones instead of rewriting them:
 Milestone 17 adds one downstream context packaging layer that freezes the
 vocabulary for larger-brain graph views around that existing active surface.
 
+## Readiness Vs Review
+
+Milestone 14 and Milestone 16 already ship compact dashboard and showcase
+fixtures on purpose. Those fixtures are the minimum local readiness gate, not
+the richer review surface for whole-brain context behavior.
+
+Milestone 17 therefore layers a downstream review fixture on top of those
+existing packages instead of widening them:
+
+- compact dashboard or showcase packages remain the fast gate
+- the richer context package is built in fixture mode
+  `milestone17_whole_brain_review`
+- `context_query_catalog.json` now owns the deterministic review-preset
+  library for whole-brain context inspection
+- the packaged context bundle keeps explicit links back to dashboard and
+  showcase metadata so reviewers can compare the compact gate against the
+  richer whole-brain view without rebuilding ad hoc exports
+
 ## Default Delivery Model
 
 The default local delivery model is `packaged_local_context_bundle`.
@@ -37,6 +55,12 @@ directory with:
 The goal is the same offline-review property used by Milestones 14 and 16: a
 reviewer should be able to inspect the packaged context session from local disk
 without depending on a backend service.
+
+The richer review fixture packages both:
+
+- one primary `query_execution` for the default context-session landing state
+- one deterministic preset library with stable graph-payload references for
+  richer review workflows
 
 ## Query Taxonomy
 
@@ -57,6 +81,22 @@ The intended split is:
 - highlight and downstream-module review profiles are still deterministic
   packages, but they surface Grant-owned scientific curation decisions more
   directly
+
+## Review Preset Library
+
+The first Milestone 17 review preset ids are fixed:
+
+1. `overview_context`
+2. `upstream_halo`
+3. `downstream_halo`
+4. `pathway_focus`
+5. `dashboard_handoff`
+6. `showcase_handoff`
+
+These presets sit on top of the lower-level query profiles. They package
+stable review states and stable references into `context_view_payload.json`
+instead of forcing later UI or showcase work to invent one-off local graph
+entry points.
 
 ## Active Vs Context Boundary
 

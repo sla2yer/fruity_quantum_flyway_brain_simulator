@@ -47,12 +47,14 @@ from .stimulus_contract import (
     _normalize_identifier,
     _normalize_nonempty_string,
 )
+from .whole_brain_context_query import execute_whole_brain_context_query
 from .whole_brain_context_contract import (
     ACTIVE_BOUNDARY_OVERLAY_ID,
     ACTIVE_SELECTED_NODE_ROLE_ID,
     ACTIVE_SUBSET_SHELL_QUERY_PROFILE_ID,
     ACTIVE_SUBSET_CONTEXT_LAYER_ID,
     ASSET_STATUS_READY as CONTEXT_ASSET_STATUS_READY,
+    BALANCED_NEIGHBORHOOD_REDUCTION_PROFILE_ID,
     BIDIRECTIONAL_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
     CONTEXT_QUERY_CATALOG_ARTIFACT_ID,
     CONTEXT_QUERY_CATALOG_ROLE_ID,
@@ -68,6 +70,9 @@ from .whole_brain_context_contract import (
     DEFAULT_DELIVERY_MODEL,
     DEFAULT_WHOLE_BRAIN_CONTEXT_SESSION_DIRECTORY_NAME,
     DOWNSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+    DOWNSTREAM_GRAPH_OVERLAY_ID,
+    DOWNSTREAM_MODULE_COLLAPSED_REDUCTION_PROFILE_ID,
+    DOWNSTREAM_MODULE_OVERLAY_ID,
     DOWNSTREAM_MODULE_REVIEW_QUERY_PROFILE_ID,
     DOWNSTREAM_MODULE_REVIEW_QUERY_FAMILY,
     JSON_CONTEXT_QUERY_CATALOG_FORMAT,
@@ -78,6 +83,8 @@ from .whole_brain_context_contract import (
     METADATA_FACET_BADGES_OVERLAY_ID,
     METADATA_JSON_KEY,
     NODE_METADATA_FACET_SCOPE,
+    PATHWAY_FOCUS_REDUCTION_PROFILE_ID,
+    PATHWAY_HIGHLIGHT_OVERLAY_ID,
     PATHWAY_HIGHLIGHT_REVIEW_QUERY_PROFILE_ID,
     SELECTED_ROOT_IDS_ROLE_ID,
     SHOWCASE_CONTEXT_SCOPE,
@@ -90,6 +97,8 @@ from .whole_brain_context_contract import (
     SUBSET_SELECTION_SOURCE_KIND,
     SUBSET_STATS_ROLE_ID,
     SYNAPSE_REGISTRY_ROLE_ID,
+    UPSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+    UPSTREAM_GRAPH_OVERLAY_ID,
     WHOLE_BRAIN_CONTEXT_SESSION_CONTRACT_VERSION,
     WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
     build_whole_brain_context_artifact_reference,
@@ -111,10 +120,33 @@ WHOLE_BRAIN_CONTEXT_SOURCE_MODE_DASHBOARD = "dashboard_session"
 WHOLE_BRAIN_CONTEXT_SOURCE_MODE_SHOWCASE = "showcase_session"
 WHOLE_BRAIN_CONTEXT_SOURCE_MODE_EXPLICIT = "explicit_artifact_inputs"
 
+WHOLE_BRAIN_CONTEXT_FIXTURE_MODE_REVIEW = "milestone17_whole_brain_review"
+SUPPORTED_WHOLE_BRAIN_CONTEXT_FIXTURE_MODES = (
+    WHOLE_BRAIN_CONTEXT_FIXTURE_MODE_REVIEW,
+)
+DEFAULT_WHOLE_BRAIN_CONTEXT_FIXTURE_MODE = WHOLE_BRAIN_CONTEXT_FIXTURE_MODE_REVIEW
+DEFAULT_CONTEXT_QUERY_PRESET_LIBRARY_ID = "milestone17_review_query_preset_library.v1"
+
+OVERVIEW_CONTEXT_PRESET_ID = "overview_context"
+UPSTREAM_HALO_PRESET_ID = "upstream_halo"
+DOWNSTREAM_HALO_PRESET_ID = "downstream_halo"
+PATHWAY_FOCUS_PRESET_ID = "pathway_focus"
+DASHBOARD_HANDOFF_PRESET_ID = "dashboard_handoff"
+SHOWCASE_HANDOFF_PRESET_ID = "showcase_handoff"
+
+SUPPORTED_CONTEXT_QUERY_PRESET_IDS = (
+    OVERVIEW_CONTEXT_PRESET_ID,
+    UPSTREAM_HALO_PRESET_ID,
+    DOWNSTREAM_HALO_PRESET_ID,
+    PATHWAY_FOCUS_PRESET_ID,
+    DASHBOARD_HANDOFF_PRESET_ID,
+    SHOWCASE_HANDOFF_PRESET_ID,
+)
+
 _ACTIVE_QUERY_PRIORITY = (
     BIDIRECTIONAL_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
     DOWNSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
-    "upstream_connectivity_context",
+    UPSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
     ACTIVE_SUBSET_SHELL_QUERY_PROFILE_ID,
     PATHWAY_HIGHLIGHT_REVIEW_QUERY_PROFILE_ID,
     DOWNSTREAM_MODULE_REVIEW_QUERY_PROFILE_ID,
@@ -166,6 +198,7 @@ def resolve_whole_brain_context_session_plan(
     experiment_id: str | None = None,
     query_profile_id: str | None = None,
     query_profile_ids: Sequence[str] | None = None,
+    fixture_mode: str | None = None,
     default_overlay_id: str | None = None,
     reduction_profile_id: str | None = None,
     enabled_overlay_ids: Sequence[str] | None = None,
@@ -280,10 +313,19 @@ def resolve_whole_brain_context_session_plan(
     labeling_rules = _build_labeling_rules(
         selected_root_ids=resolved_selection_context["selected_root_ids"],
     )
-    representative_context = _build_representative_context(
-        selection_context=resolved_selection_context,
-        query_state=query_state,
+    query_execution = execute_whole_brain_context_query(
+        _build_query_execution_input(
+            config_path=str(config_file.resolve()),
+            selection_context=resolved_selection_context,
+            registry_sources=registry_sources,
+            query_profile_resolution=query_profile_resolution,
+            query_state=query_state,
+            reduction_profile=reduction_profile,
+            metadata_facet_requests=metadata_facet_requests,
+            downstream_module_requests=downstream_module_requests,
+        )
     )
+    representative_context = copy.deepcopy(dict(query_execution["representative_context"]))
     whole_brain_context_session = build_whole_brain_context_session_metadata(
         experiment_id=source_context["experiment_id"],
         artifact_references=merged_artifact_references,
@@ -301,19 +343,41 @@ def resolve_whole_brain_context_session_plan(
         artifact_references_by_role=artifact_references_by_role,
         planned_artifact_paths=planned_artifact_paths,
     )
-    output_locations = _build_output_locations(whole_brain_context_session)
-    context_query_catalog = _build_context_query_catalog(
-        whole_brain_context_session=whole_brain_context_session,
+    fixture_profile = _build_fixture_profile(
         source_mode=source_mode,
+        requested_fixture_mode=fixture_mode,
+        linked_sessions=linked_sessions,
+    )
+    query_preset_library = _build_query_preset_library(
+        config_path=str(config_file.resolve()),
+        contract_metadata=normalized_contract,
+        selection_context=resolved_selection_context,
+        registry_sources=registry_sources,
         query_profile_resolution=query_profile_resolution,
         query_state=query_state,
         reduction_profile=reduction_profile,
         metadata_facet_requests=metadata_facet_requests,
         downstream_module_requests=downstream_module_requests,
+        linked_sessions=linked_sessions,
+        fixture_profile=fixture_profile,
+    )
+    output_locations = _build_output_locations(whole_brain_context_session)
+    context_query_catalog = _build_context_query_catalog(
+        whole_brain_context_session=whole_brain_context_session,
+        source_mode=source_mode,
+        fixture_profile=fixture_profile,
+        query_profile_resolution=query_profile_resolution,
+        query_state=query_state,
+        reduction_profile=reduction_profile,
+        metadata_facet_requests=metadata_facet_requests,
+        downstream_module_requests=downstream_module_requests,
+        query_execution=query_execution,
+        query_preset_library=query_preset_library,
     )
     context_view_payload = _build_context_view_payload(
         whole_brain_context_session=whole_brain_context_session,
         source_mode=source_mode,
+        fixture_profile=fixture_profile,
         manifest_reference=source_context["manifest_reference"],
         selection_context=resolved_selection_context,
         registry_sources=registry_sources,
@@ -324,18 +388,23 @@ def resolve_whole_brain_context_session_plan(
         metadata_facet_requests=metadata_facet_requests,
         downstream_module_requests=downstream_module_requests,
         labeling_rules=labeling_rules,
+        query_execution=query_execution,
+        query_preset_library=query_preset_library,
     )
     context_view_state = _build_context_view_state(
         whole_brain_context_session=whole_brain_context_session,
+        fixture_profile=fixture_profile,
         manifest_reference=source_context["manifest_reference"],
         selection_context=resolved_selection_context,
         linked_sessions=linked_sessions,
         query_profile_resolution=query_profile_resolution,
         query_state=query_state,
+        query_preset_library=query_preset_library,
     )
     return {
         "plan_version": WHOLE_BRAIN_CONTEXT_SESSION_PLAN_VERSION,
         "source_mode": source_mode,
+        "fixture_mode": str(fixture_profile["fixture_mode"]),
         "config_path": str(config_file.resolve()),
         "project_root": str(project_root.resolve()),
         "experiment_id": source_context["experiment_id"],
@@ -343,12 +412,15 @@ def resolve_whole_brain_context_session_plan(
         "selection": copy.deepcopy(resolved_selection_context),
         "registry_sources": copy.deepcopy(registry_sources),
         "linked_sessions": copy.deepcopy(linked_sessions),
+        "fixture_profile": copy.deepcopy(fixture_profile),
         "query_profile_resolution": copy.deepcopy(query_profile_resolution),
         "query_state": copy.deepcopy(query_state),
         "reduction_profile": copy.deepcopy(reduction_profile),
         "metadata_facet_requests": copy.deepcopy(metadata_facet_requests),
         "downstream_module_requests": copy.deepcopy(downstream_module_requests),
         "labeling_rules": copy.deepcopy(labeling_rules),
+        "query_execution": copy.deepcopy(query_execution),
+        "query_preset_library": copy.deepcopy(query_preset_library),
         "upstream_artifact_references": copy.deepcopy(merged_artifact_references),
         "whole_brain_context_session": copy.deepcopy(whole_brain_context_session),
         "context_view_payload": copy.deepcopy(context_view_payload),
@@ -444,6 +516,46 @@ def package_whole_brain_context_session(plan: Mapping[str, Any]) -> dict[str, An
         ),
         "output_locations": copy.deepcopy(dict(normalized_plan["output_locations"])),
     }
+
+
+def discover_whole_brain_context_query_presets(
+    record: Mapping[str, Any],
+    *,
+    availability: str | None = "available",
+) -> list[dict[str, Any]]:
+    catalog = _extract_context_query_catalog_mapping(record)
+    if availability is None:
+        normalized_availability = None
+    else:
+        normalized_availability = _normalize_identifier(
+            availability,
+            field_name="availability",
+        )
+        if normalized_availability not in {"available", "unavailable"}:
+            raise ValueError("availability must be 'available', 'unavailable', or None.")
+    available_presets = {
+        str(item["preset_id"]): copy.deepcopy(dict(item))
+        for item in catalog.get("available_query_presets", [])
+        if isinstance(item, Mapping)
+    }
+    unavailable_presets = {
+        str(item["preset_id"]): copy.deepcopy(dict(item))
+        for item in catalog.get("unavailable_query_presets", [])
+        if isinstance(item, Mapping)
+    }
+    discovery_order = list(
+        catalog.get("preset_discovery_order", SUPPORTED_CONTEXT_QUERY_PRESET_IDS)
+    )
+    discovered: list[dict[str, Any]] = []
+    for preset_id in discovery_order:
+        if normalized_availability in {None, "available"} and preset_id in available_presets:
+            discovered.append(copy.deepcopy(available_presets[preset_id]))
+        if (
+            normalized_availability in {None, "unavailable"}
+            and preset_id in unavailable_presets
+        ):
+            discovered.append(copy.deepcopy(unavailable_presets[preset_id]))
+    return discovered
 
 
 def _resolve_source_mode(
@@ -1703,33 +1815,602 @@ def _build_labeling_rules(*, selected_root_ids: Sequence[int]) -> dict[str, Any]
     }
 
 
-def _build_representative_context(
+def _build_query_execution_input(
     *,
+    config_path: str,
     selection_context: Mapping[str, Any],
+    registry_sources: Mapping[str, Any],
+    query_profile_resolution: Mapping[str, Any],
     query_state: Mapping[str, Any],
+    reduction_profile: Mapping[str, Any],
+    metadata_facet_requests: Sequence[Mapping[str, Any]],
+    downstream_module_requests: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    enabled_overlays = set(query_state["enabled_overlay_ids"])
-    enabled_facets = set(query_state["enabled_metadata_facet_ids"])
-    overlay_ids = [ACTIVE_BOUNDARY_OVERLAY_ID]
-    if METADATA_FACET_BADGES_OVERLAY_ID in enabled_overlays:
-        overlay_ids.append(METADATA_FACET_BADGES_OVERLAY_ID)
-    node_records = [
-        build_whole_brain_context_node_record(
-            root_id=int(anchor["root_id"]),
-            node_role_id=ACTIVE_SELECTED_NODE_ROLE_ID,
-            context_layer_id=ACTIVE_SUBSET_CONTEXT_LAYER_ID,
-            overlay_ids=overlay_ids,
-            metadata_facet_values=_anchor_metadata_facet_values(
-                anchor,
-                enabled_metadata_facet_ids=enabled_facets,
+    return {
+        "plan_version": WHOLE_BRAIN_CONTEXT_SESSION_PLAN_VERSION,
+        "config_path": str(Path(config_path).resolve()),
+        "selection": copy.deepcopy(dict(selection_context)),
+        "registry_sources": copy.deepcopy(dict(registry_sources)),
+        "query_profile_resolution": copy.deepcopy(dict(query_profile_resolution)),
+        "query_state": copy.deepcopy(dict(query_state)),
+        "reduction_profile": copy.deepcopy(dict(reduction_profile)),
+        "metadata_facet_requests": [
+            copy.deepcopy(dict(item)) for item in metadata_facet_requests
+        ],
+        "downstream_module_requests": [
+            copy.deepcopy(dict(item)) for item in downstream_module_requests
+        ],
+    }
+
+
+def _build_fixture_profile(
+    *,
+    source_mode: str,
+    requested_fixture_mode: str | None,
+    linked_sessions: Mapping[str, Any],
+) -> dict[str, Any]:
+    resolved_fixture_mode = _resolve_fixture_mode(requested_fixture_mode)
+    compact_gate = {
+        "surface_kind": "manifest" if source_mode == WHOLE_BRAIN_CONTEXT_SOURCE_MODE_MANIFEST else "subset_selection",
+        "artifact_role_id": SUBSET_MANIFEST_ROLE_ID,
+        "bundle_id": None,
+    }
+    if source_mode in {
+        WHOLE_BRAIN_CONTEXT_SOURCE_MODE_SUBSET,
+        WHOLE_BRAIN_CONTEXT_SOURCE_MODE_EXPLICIT,
+    }:
+        compact_gate = {
+            "surface_kind": "subset_selection",
+            "artifact_role_id": SELECTED_ROOT_IDS_ROLE_ID,
+            "bundle_id": None,
+        }
+    if "dashboard" in linked_sessions:
+        compact_gate = {
+            "surface_kind": "dashboard_session",
+            "artifact_role_id": DASHBOARD_SESSION_METADATA_ROLE_ID,
+            "bundle_id": str(linked_sessions["dashboard"]["bundle_id"]),
+        }
+    if "showcase" in linked_sessions:
+        compact_gate = {
+            "surface_kind": "showcase_session",
+            "artifact_role_id": SHOWCASE_SESSION_METADATA_ROLE_ID,
+            "bundle_id": str(linked_sessions["showcase"]["bundle_id"]),
+        }
+    return {
+        "fixture_mode": resolved_fixture_mode,
+        "keeps_readiness_fixtures_fast": True,
+        "workflow_kind": "local_whole_brain_context_review",
+        "source_mode": source_mode,
+        "compact_gate": compact_gate,
+    }
+
+
+def _resolve_fixture_mode(value: str | None) -> str:
+    if value is None:
+        return DEFAULT_WHOLE_BRAIN_CONTEXT_FIXTURE_MODE
+    normalized = _normalize_identifier(value, field_name="fixture_mode")
+    if normalized not in set(SUPPORTED_WHOLE_BRAIN_CONTEXT_FIXTURE_MODES):
+        raise ValueError(
+            "fixture_mode must be one of "
+            f"{SUPPORTED_WHOLE_BRAIN_CONTEXT_FIXTURE_MODES!r}."
+        )
+    return normalized
+
+
+def _build_query_preset_library(
+    *,
+    config_path: str,
+    contract_metadata: Mapping[str, Any],
+    selection_context: Mapping[str, Any],
+    registry_sources: Mapping[str, Any],
+    query_profile_resolution: Mapping[str, Any],
+    query_state: Mapping[str, Any],
+    reduction_profile: Mapping[str, Any],
+    metadata_facet_requests: Sequence[Mapping[str, Any]],
+    downstream_module_requests: Sequence[Mapping[str, Any]],
+    linked_sessions: Mapping[str, Any],
+    fixture_profile: Mapping[str, Any],
+) -> dict[str, Any]:
+    query_profiles_by_id = {
+        str(item["query_profile_id"]): copy.deepcopy(dict(item))
+        for item in discover_whole_brain_context_query_profiles(contract_metadata)
+    }
+    available_profile_ids = set(query_profile_resolution["available_query_profile_ids"])
+    available_presets: list[dict[str, Any]] = []
+    unavailable_presets: list[dict[str, Any]] = []
+    preset_payloads: dict[str, dict[str, Any]] = {}
+    enabled_metadata_facet_ids = list(query_state["enabled_metadata_facet_ids"])
+    for sequence_index, blueprint in enumerate(_query_preset_blueprints()):
+        preset_id = str(blueprint["preset_id"])
+        required_linked_session_kind = blueprint.get("required_linked_session_kind")
+        if (
+            required_linked_session_kind is not None
+            and required_linked_session_kind not in linked_sessions
+        ):
+            unavailable_presets.append(
+                _build_unavailable_query_preset_record(
+                    blueprint=blueprint,
+                    sequence_index=sequence_index,
+                    reason=(
+                        f"Requires a linked {required_linked_session_kind}_session review surface."
+                    ),
+                )
+            )
+            continue
+        resolved_query_profile_id = next(
+            (
+                profile_id
+                for profile_id in blueprint["preferred_query_profile_ids"]
+                if profile_id in available_profile_ids
+            ),
+            None,
+        )
+        if resolved_query_profile_id is None:
+            unavailable_presets.append(
+                _build_unavailable_query_preset_record(
+                    blueprint=blueprint,
+                    sequence_index=sequence_index,
+                    reason=(
+                        "Required query profiles are unavailable for the resolved artifact set: "
+                        f"{list(blueprint['preferred_query_profile_ids'])!r}."
+                    ),
+                )
+            )
+            continue
+        query_profile = query_profiles_by_id[resolved_query_profile_id]
+        enabled_overlay_ids = [
+            overlay_id
+            for overlay_id in blueprint["preferred_overlay_ids"]
+            if overlay_id in set(query_profile["supported_overlay_ids"])
+        ]
+        if not enabled_overlay_ids:
+            enabled_overlay_ids = list(query_profile["supported_overlay_ids"])
+        default_overlay_id = (
+            str(blueprint["default_overlay_id"])
+            if str(blueprint["default_overlay_id"]) in enabled_overlay_ids
+            else str(query_profile["default_overlay_id"])
+        )
+        if default_overlay_id not in enabled_overlay_ids:
+            default_overlay_id = str(enabled_overlay_ids[0])
+        preset_query_state = build_whole_brain_context_query_state(
+            query_profile_id=resolved_query_profile_id,
+            default_overlay_id=default_overlay_id,
+            default_reduction_profile_id=str(
+                blueprint["default_reduction_profile_id"]
+            ),
+            enabled_overlay_ids=enabled_overlay_ids,
+            enabled_metadata_facet_ids=enabled_metadata_facet_ids,
+            contract_metadata=contract_metadata,
+        )
+        preset_reduction_profile = _catalog_item_by_id(
+            contract_metadata["reduction_profile_catalog"],
+            key_name="reduction_profile_id",
+            identifier=preset_query_state["default_reduction_profile_id"],
+        )
+        preset_query_profile_resolution = {
+            "active_query_profile_id": resolved_query_profile_id,
+            "selected_query_profile_ids": [resolved_query_profile_id],
+            "available_query_profile_ids": list(
+                query_profile_resolution["available_query_profile_ids"]
+            ),
+        }
+        preset_execution = execute_whole_brain_context_query(
+            _build_query_execution_input(
+                config_path=config_path,
+                selection_context=selection_context,
+                registry_sources=registry_sources,
+                query_profile_resolution=preset_query_profile_resolution,
+                query_state=preset_query_state,
+                reduction_profile=preset_reduction_profile,
+                metadata_facet_requests=metadata_facet_requests,
+                downstream_module_requests=downstream_module_requests,
+            ),
+            reduction_controls=copy.deepcopy(
+                dict(blueprint.get("reduction_controls_patch", {}))
             ),
         )
-        for anchor in selection_context["active_anchor_records"]
-    ]
+        if (
+            blueprint.get("requires_pathway_highlight", False)
+            and not preset_execution["pathway_highlights"]
+        ):
+            unavailable_presets.append(
+                _build_unavailable_query_preset_record(
+                    blueprint=blueprint,
+                    sequence_index=sequence_index,
+                    reason="No deterministic pathway highlight survived the packaged query budget.",
+                )
+            )
+            continue
+        preset_payloads[preset_id] = _build_query_preset_payload(
+            blueprint=blueprint,
+            preset_query_state=preset_query_state,
+            preset_reduction_profile=preset_reduction_profile,
+            preset_execution=preset_execution,
+        )
+        available_presets.append(
+            _build_query_preset_record(
+                blueprint=blueprint,
+                sequence_index=sequence_index,
+                query_profile=query_profile,
+                preset_query_state=preset_query_state,
+                preset_execution=preset_execution,
+                linked_sessions=linked_sessions,
+            )
+        )
+    active_preset_id = _resolve_active_query_preset_id(
+        active_query_profile_id=str(
+            query_profile_resolution["active_query_profile_id"]
+        ),
+        available_presets=available_presets,
+    )
     return {
-        "node_records": node_records,
-        "edge_records": [],
-        "downstream_module_records": [],
+        "preset_library_id": DEFAULT_CONTEXT_QUERY_PRESET_LIBRARY_ID,
+        "fixture_profile": copy.deepcopy(dict(fixture_profile)),
+        "active_preset_id": active_preset_id,
+        "available_preset_ids": [
+            str(item["preset_id"]) for item in available_presets
+        ],
+        "preset_discovery_order": list(SUPPORTED_CONTEXT_QUERY_PRESET_IDS),
+        "available_query_presets": [copy.deepcopy(dict(item)) for item in available_presets],
+        "unavailable_query_presets": [
+            copy.deepcopy(dict(item)) for item in unavailable_presets
+        ],
+        "handoff_preset_ids": {
+            "dashboard": (
+                DASHBOARD_HANDOFF_PRESET_ID
+                if any(
+                    str(item["preset_id"]) == DASHBOARD_HANDOFF_PRESET_ID
+                    for item in available_presets
+                )
+                else None
+            ),
+            "showcase": (
+                SHOWCASE_HANDOFF_PRESET_ID
+                if any(
+                    str(item["preset_id"]) == SHOWCASE_HANDOFF_PRESET_ID
+                    for item in available_presets
+                )
+                else None
+            ),
+        },
+        "preset_payloads_by_id": copy.deepcopy(preset_payloads),
+    }
+
+
+def _query_preset_blueprints() -> list[dict[str, Any]]:
+    return [
+        {
+            "preset_id": OVERVIEW_CONTEXT_PRESET_ID,
+            "display_name": "Whole-Brain Overview",
+            "description": "Default richer Milestone 17 review landing for the active subset plus a broader deterministic neighborhood.",
+            "preferred_query_profile_ids": [
+                BIDIRECTIONAL_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+                DOWNSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+                UPSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+                ACTIVE_SUBSET_SHELL_QUERY_PROFILE_ID,
+            ],
+            "preferred_overlay_ids": [
+                ACTIVE_BOUNDARY_OVERLAY_ID,
+                UPSTREAM_GRAPH_OVERLAY_ID,
+                DOWNSTREAM_GRAPH_OVERLAY_ID,
+                PATHWAY_HIGHLIGHT_OVERLAY_ID,
+                DOWNSTREAM_MODULE_OVERLAY_ID,
+                METADATA_FACET_BADGES_OVERLAY_ID,
+            ],
+            "default_overlay_id": ACTIVE_BOUNDARY_OVERLAY_ID,
+            "default_reduction_profile_id": BALANCED_NEIGHBORHOOD_REDUCTION_PROFILE_ID,
+            "reduction_controls_patch": {},
+            "primary_graph_view_id": "overview_graph",
+            "required_linked_session_kind": None,
+            "requires_pathway_highlight": False,
+            "discovery_note": "Use this preset to compare the compact upstream gate against the richer packaged context graph.",
+        },
+        {
+            "preset_id": UPSTREAM_HALO_PRESET_ID,
+            "display_name": "Upstream Halo",
+            "description": "Directional incoming-context review surface around the active subset.",
+            "preferred_query_profile_ids": [
+                UPSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+            ],
+            "preferred_overlay_ids": [
+                ACTIVE_BOUNDARY_OVERLAY_ID,
+                UPSTREAM_GRAPH_OVERLAY_ID,
+                PATHWAY_HIGHLIGHT_OVERLAY_ID,
+                METADATA_FACET_BADGES_OVERLAY_ID,
+            ],
+            "default_overlay_id": UPSTREAM_GRAPH_OVERLAY_ID,
+            "default_reduction_profile_id": BALANCED_NEIGHBORHOOD_REDUCTION_PROFILE_ID,
+            "reduction_controls_patch": {},
+            "primary_graph_view_id": "overview_graph",
+            "required_linked_session_kind": None,
+            "requires_pathway_highlight": False,
+            "discovery_note": "Use this preset to review context-only nodes that feed into the active subset.",
+        },
+        {
+            "preset_id": DOWNSTREAM_HALO_PRESET_ID,
+            "display_name": "Downstream Halo",
+            "description": "Directional outgoing-context review surface around the active subset.",
+            "preferred_query_profile_ids": [
+                DOWNSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+            ],
+            "preferred_overlay_ids": [
+                ACTIVE_BOUNDARY_OVERLAY_ID,
+                DOWNSTREAM_GRAPH_OVERLAY_ID,
+                DOWNSTREAM_MODULE_OVERLAY_ID,
+                PATHWAY_HIGHLIGHT_OVERLAY_ID,
+                METADATA_FACET_BADGES_OVERLAY_ID,
+            ],
+            "default_overlay_id": DOWNSTREAM_GRAPH_OVERLAY_ID,
+            "default_reduction_profile_id": DOWNSTREAM_MODULE_COLLAPSED_REDUCTION_PROFILE_ID,
+            "reduction_controls_patch": {},
+            "primary_graph_view_id": "overview_graph",
+            "required_linked_session_kind": None,
+            "requires_pathway_highlight": False,
+            "discovery_note": "Use this preset to review outgoing context breadth without relabeling it as active simulator state.",
+        },
+        {
+            "preset_id": PATHWAY_FOCUS_PRESET_ID,
+            "display_name": "Pathway Focus",
+            "description": "Focused pathway review surface for one deterministic highlighted context path.",
+            "preferred_query_profile_ids": [
+                PATHWAY_HIGHLIGHT_REVIEW_QUERY_PROFILE_ID,
+            ],
+            "preferred_overlay_ids": [
+                ACTIVE_BOUNDARY_OVERLAY_ID,
+                PATHWAY_HIGHLIGHT_OVERLAY_ID,
+                METADATA_FACET_BADGES_OVERLAY_ID,
+            ],
+            "default_overlay_id": PATHWAY_HIGHLIGHT_OVERLAY_ID,
+            "default_reduction_profile_id": PATHWAY_FOCUS_REDUCTION_PROFILE_ID,
+            "reduction_controls_patch": {},
+            "primary_graph_view_id": "focused_subgraph",
+            "required_linked_session_kind": None,
+            "requires_pathway_highlight": True,
+            "discovery_note": "Use this preset for the first local pathway-focused Milestone 17 review case.",
+        },
+        {
+            "preset_id": DASHBOARD_HANDOFF_PRESET_ID,
+            "display_name": "Dashboard Handoff",
+            "description": "Bridge the compact dashboard gate into the richer whole-brain review package.",
+            "preferred_query_profile_ids": [
+                BIDIRECTIONAL_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+                DOWNSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+                UPSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+                ACTIVE_SUBSET_SHELL_QUERY_PROFILE_ID,
+            ],
+            "preferred_overlay_ids": [
+                ACTIVE_BOUNDARY_OVERLAY_ID,
+                UPSTREAM_GRAPH_OVERLAY_ID,
+                DOWNSTREAM_GRAPH_OVERLAY_ID,
+                METADATA_FACET_BADGES_OVERLAY_ID,
+            ],
+            "default_overlay_id": ACTIVE_BOUNDARY_OVERLAY_ID,
+            "default_reduction_profile_id": BALANCED_NEIGHBORHOOD_REDUCTION_PROFILE_ID,
+            "reduction_controls_patch": {},
+            "primary_graph_view_id": "overview_graph",
+            "required_linked_session_kind": "dashboard",
+            "requires_pathway_highlight": False,
+            "discovery_note": "Use this preset when reviewing the packaged dashboard session as the fast readiness gate before opening broader context.",
+        },
+        {
+            "preset_id": SHOWCASE_HANDOFF_PRESET_ID,
+            "display_name": "Showcase Handoff",
+            "description": "Bridge the compact showcase rehearsal surface into a richer whole-brain review state.",
+            "preferred_query_profile_ids": [
+                PATHWAY_HIGHLIGHT_REVIEW_QUERY_PROFILE_ID,
+                DOWNSTREAM_MODULE_REVIEW_QUERY_PROFILE_ID,
+                BIDIRECTIONAL_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+                DOWNSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+            ],
+            "preferred_overlay_ids": [
+                ACTIVE_BOUNDARY_OVERLAY_ID,
+                PATHWAY_HIGHLIGHT_OVERLAY_ID,
+                DOWNSTREAM_GRAPH_OVERLAY_ID,
+                DOWNSTREAM_MODULE_OVERLAY_ID,
+                METADATA_FACET_BADGES_OVERLAY_ID,
+            ],
+            "default_overlay_id": PATHWAY_HIGHLIGHT_OVERLAY_ID,
+            "default_reduction_profile_id": PATHWAY_FOCUS_REDUCTION_PROFILE_ID,
+            "reduction_controls_patch": {},
+            "primary_graph_view_id": "focused_subgraph",
+            "required_linked_session_kind": "showcase",
+            "requires_pathway_highlight": False,
+            "discovery_note": "Use this preset for review handoff from the compact showcase surface into broader context and pathway emphasis.",
+        },
+    ]
+
+
+def _build_query_preset_payload(
+    *,
+    blueprint: Mapping[str, Any],
+    preset_query_state: Mapping[str, Any],
+    preset_reduction_profile: Mapping[str, Any],
+    preset_execution: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "preset_id": str(blueprint["preset_id"]),
+        "display_name": str(blueprint["display_name"]),
+        "query_profile_id": str(preset_execution["query_profile_id"]),
+        "query_family": str(preset_execution["query_family"]),
+        "query_state": copy.deepcopy(dict(preset_query_state)),
+        "reduction_profile": copy.deepcopy(dict(preset_reduction_profile)),
+        "reduction_controls": copy.deepcopy(dict(preset_execution["reduction_controls"])),
+        "execution_summary": copy.deepcopy(dict(preset_execution["execution_summary"])),
+        "overview_graph": copy.deepcopy(dict(preset_execution["overview_graph"])),
+        "focused_subgraph": copy.deepcopy(dict(preset_execution["focused_subgraph"])),
+        "pathway_highlights": [
+            copy.deepcopy(dict(item)) for item in preset_execution["pathway_highlights"]
+        ],
+    }
+
+
+def _build_query_preset_record(
+    *,
+    blueprint: Mapping[str, Any],
+    sequence_index: int,
+    query_profile: Mapping[str, Any],
+    preset_query_state: Mapping[str, Any],
+    preset_execution: Mapping[str, Any],
+    linked_sessions: Mapping[str, Any],
+) -> dict[str, Any]:
+    preset_id = str(blueprint["preset_id"])
+    primary_graph_view_id = _query_preset_primary_graph_view_id(
+        blueprint=blueprint,
+        preset_execution=preset_execution,
+    )
+    pathway_reference = {
+        "artifact_role_id": CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+        "payload_path": f"query_preset_payloads.{preset_id}.pathway_highlights",
+        "highlight_count": len(preset_execution["pathway_highlights"]),
+    }
+    if preset_execution["pathway_highlights"]:
+        pathway_reference["primary_pathway_id"] = str(
+            preset_execution["pathway_highlights"][0]["pathway_id"]
+        )
+    return {
+        "preset_id": preset_id,
+        "display_name": str(blueprint["display_name"]),
+        "description": str(blueprint["description"]),
+        "sequence_index": sequence_index,
+        "availability": "available",
+        "query_profile_id": str(query_profile["query_profile_id"]),
+        "query_family": str(query_profile["query_family"]),
+        "default_overlay_id": str(preset_query_state["default_overlay_id"]),
+        "enabled_overlay_ids": list(preset_query_state["enabled_overlay_ids"]),
+        "default_reduction_profile_id": str(
+            preset_query_state["default_reduction_profile_id"]
+        ),
+        "execution_summary": copy.deepcopy(
+            dict(preset_execution["execution_summary"])
+        ),
+        "primary_graph_view_id": primary_graph_view_id,
+        "graph_payload_references": {
+            "primary_graph": _build_graph_payload_reference(
+                preset_id=preset_id,
+                graph_view_id=primary_graph_view_id,
+            ),
+            "overview_graph": _build_graph_payload_reference(
+                preset_id=preset_id,
+                graph_view_id="overview_graph",
+            ),
+            "focused_subgraph": _build_graph_payload_reference(
+                preset_id=preset_id,
+                graph_view_id="focused_subgraph",
+            ),
+            "pathway_highlights": pathway_reference,
+        },
+        "linked_session_target": _build_linked_session_target(
+            blueprint=blueprint,
+            linked_sessions=linked_sessions,
+        ),
+        "scientific_curation_required": bool(
+            query_profile["scientific_curation_required"]
+        ),
+        "discovery_note": str(blueprint["discovery_note"]),
+    }
+
+
+def _build_unavailable_query_preset_record(
+    *,
+    blueprint: Mapping[str, Any],
+    sequence_index: int,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "preset_id": str(blueprint["preset_id"]),
+        "display_name": str(blueprint["display_name"]),
+        "description": str(blueprint["description"]),
+        "sequence_index": sequence_index,
+        "availability": "unavailable",
+        "preferred_query_profile_ids": list(blueprint["preferred_query_profile_ids"]),
+        "required_linked_session_kind": blueprint.get("required_linked_session_kind"),
+        "unavailable_reason": str(reason),
+    }
+
+
+def _resolve_active_query_preset_id(
+    *,
+    active_query_profile_id: str,
+    available_presets: Sequence[Mapping[str, Any]],
+) -> str | None:
+    available_by_id = {
+        str(item["preset_id"]): copy.deepcopy(dict(item)) for item in available_presets
+    }
+    preferred_by_profile = {
+        ACTIVE_SUBSET_SHELL_QUERY_PROFILE_ID: [OVERVIEW_CONTEXT_PRESET_ID],
+        UPSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID: [UPSTREAM_HALO_PRESET_ID],
+        DOWNSTREAM_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID: [DOWNSTREAM_HALO_PRESET_ID],
+        BIDIRECTIONAL_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID: [
+            OVERVIEW_CONTEXT_PRESET_ID,
+            DASHBOARD_HANDOFF_PRESET_ID,
+        ],
+        PATHWAY_HIGHLIGHT_REVIEW_QUERY_PROFILE_ID: [
+            PATHWAY_FOCUS_PRESET_ID,
+            SHOWCASE_HANDOFF_PRESET_ID,
+        ],
+        DOWNSTREAM_MODULE_REVIEW_QUERY_PROFILE_ID: [
+            SHOWCASE_HANDOFF_PRESET_ID,
+            DOWNSTREAM_HALO_PRESET_ID,
+        ],
+    }
+    for preset_id in preferred_by_profile.get(active_query_profile_id, []):
+        if (
+            preset_id in available_by_id
+            and str(available_by_id[preset_id]["query_profile_id"])
+            == active_query_profile_id
+        ):
+            return preset_id
+    for item in available_presets:
+        if str(item["query_profile_id"]) == active_query_profile_id:
+            return str(item["preset_id"])
+    if available_presets:
+        return str(available_presets[0]["preset_id"])
+    return None
+
+
+def _build_graph_payload_reference(*, preset_id: str, graph_view_id: str) -> dict[str, Any]:
+    return {
+        "artifact_role_id": CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+        "payload_path": f"query_preset_payloads.{preset_id}.{graph_view_id}",
+        "view_id": graph_view_id,
+    }
+
+
+def _query_preset_primary_graph_view_id(
+    *,
+    blueprint: Mapping[str, Any],
+    preset_execution: Mapping[str, Any],
+) -> str:
+    preferred_graph_view_id = str(blueprint["primary_graph_view_id"])
+    if (
+        preferred_graph_view_id == "focused_subgraph"
+        and not preset_execution["pathway_highlights"]
+    ):
+        return "overview_graph"
+    return preferred_graph_view_id
+
+
+def _build_linked_session_target(
+    *,
+    blueprint: Mapping[str, Any],
+    linked_sessions: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    required_linked_session_kind = blueprint.get("required_linked_session_kind")
+    if required_linked_session_kind is None:
+        return None
+    linked_session = linked_sessions.get(str(required_linked_session_kind))
+    if not isinstance(linked_session, Mapping):
+        return None
+    artifact_role_id = (
+        SHOWCASE_SESSION_METADATA_ROLE_ID
+        if str(required_linked_session_kind) == "showcase"
+        else DASHBOARD_SESSION_METADATA_ROLE_ID
+    )
+    return {
+        "session_kind": str(required_linked_session_kind),
+        "artifact_role_id": artifact_role_id,
+        "bundle_id": str(linked_session["bundle_id"]),
+        "metadata_path": str(linked_session["metadata_path"]),
     }
 
 
@@ -1737,11 +2418,14 @@ def _build_context_query_catalog(
     *,
     whole_brain_context_session: Mapping[str, Any],
     source_mode: str,
+    fixture_profile: Mapping[str, Any],
     query_profile_resolution: Mapping[str, Any],
     query_state: Mapping[str, Any],
     reduction_profile: Mapping[str, Any],
     metadata_facet_requests: Sequence[Mapping[str, Any]],
     downstream_module_requests: Sequence[Mapping[str, Any]],
+    query_execution: Mapping[str, Any],
+    query_preset_library: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
         "format_version": JSON_CONTEXT_QUERY_CATALOG_FORMAT,
@@ -1752,6 +2436,14 @@ def _build_context_query_catalog(
             "context_spec_hash": str(whole_brain_context_session["context_spec_hash"]),
         },
         "source_mode": source_mode,
+        "fixture_profile": copy.deepcopy(dict(fixture_profile)),
+        "preset_library_id": str(query_preset_library["preset_library_id"]),
+        "active_preset_id": query_preset_library["active_preset_id"],
+        "available_preset_ids": list(query_preset_library["available_preset_ids"]),
+        "preset_discovery_order": list(query_preset_library["preset_discovery_order"]),
+        "handoff_preset_ids": copy.deepcopy(
+            dict(query_preset_library["handoff_preset_ids"])
+        ),
         "active_query_profile_id": str(query_profile_resolution["active_query_profile_id"]),
         "selected_query_profile_ids": list(query_profile_resolution["selected_query_profile_ids"]),
         "available_query_profile_ids": list(query_profile_resolution["available_query_profile_ids"]),
@@ -1761,6 +2453,12 @@ def _build_context_query_catalog(
         "downstream_module_requests": [
             copy.deepcopy(dict(item)) for item in downstream_module_requests
         ],
+        "reduction_controls": copy.deepcopy(
+            dict(query_execution["reduction_controls"])
+        ),
+        "execution_summary": copy.deepcopy(
+            dict(query_execution["execution_summary"])
+        ),
         "available_query_profiles": [
             copy.deepcopy(dict(item))
             for item in query_profile_resolution["available_query_profiles"]
@@ -1769,6 +2467,14 @@ def _build_context_query_catalog(
             copy.deepcopy(dict(item))
             for item in query_profile_resolution["unavailable_query_profiles"]
         ],
+        "available_query_presets": [
+            copy.deepcopy(dict(item))
+            for item in query_preset_library["available_query_presets"]
+        ],
+        "unavailable_query_presets": [
+            copy.deepcopy(dict(item))
+            for item in query_preset_library["unavailable_query_presets"]
+        ],
     }
 
 
@@ -1776,6 +2482,7 @@ def _build_context_view_payload(
     *,
     whole_brain_context_session: Mapping[str, Any],
     source_mode: str,
+    fixture_profile: Mapping[str, Any],
     manifest_reference: Mapping[str, Any] | None,
     selection_context: Mapping[str, Any],
     registry_sources: Mapping[str, Any],
@@ -1786,6 +2493,8 @@ def _build_context_view_payload(
     metadata_facet_requests: Sequence[Mapping[str, Any]],
     downstream_module_requests: Sequence[Mapping[str, Any]],
     labeling_rules: Mapping[str, Any],
+    query_execution: Mapping[str, Any],
+    query_preset_library: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
         "format_version": JSON_CONTEXT_VIEW_PAYLOAD_FORMAT,
@@ -1799,6 +2508,7 @@ def _build_context_view_payload(
             ),
         },
         "source_mode": source_mode,
+        "fixture_profile": copy.deepcopy(dict(fixture_profile)),
         "experiment_id": str(whole_brain_context_session["experiment_id"]),
         "manifest_reference": (
             None if manifest_reference is None else copy.deepcopy(dict(manifest_reference))
@@ -1814,6 +2524,11 @@ def _build_context_view_payload(
             copy.deepcopy(dict(item)) for item in downstream_module_requests
         ],
         "labeling_rules": copy.deepcopy(dict(labeling_rules)),
+        "query_execution": copy.deepcopy(dict(query_execution)),
+        "active_preset_id": query_preset_library["active_preset_id"],
+        "query_preset_payloads": copy.deepcopy(
+            dict(query_preset_library["preset_payloads_by_id"])
+        ),
         "representative_context": copy.deepcopy(
             dict(whole_brain_context_session["representative_context"])
         ),
@@ -1827,11 +2542,13 @@ def _build_context_view_payload(
 def _build_context_view_state(
     *,
     whole_brain_context_session: Mapping[str, Any],
+    fixture_profile: Mapping[str, Any],
     manifest_reference: Mapping[str, Any] | None,
     selection_context: Mapping[str, Any],
     linked_sessions: Mapping[str, Any],
     query_profile_resolution: Mapping[str, Any],
     query_state: Mapping[str, Any],
+    query_preset_library: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
         "format_version": JSON_CONTEXT_VIEW_STATE_FORMAT,
@@ -1846,6 +2563,10 @@ def _build_context_view_state(
         ),
         "active_query_profile_id": str(query_profile_resolution["active_query_profile_id"]),
         "selected_query_profile_ids": list(query_profile_resolution["selected_query_profile_ids"]),
+        "fixture_profile": copy.deepcopy(dict(fixture_profile)),
+        "active_preset_id": query_preset_library["active_preset_id"],
+        "available_preset_ids": list(query_preset_library["available_preset_ids"]),
+        "preset_discovery_order": list(query_preset_library["preset_discovery_order"]),
         "default_overlay_id": str(query_state["default_overlay_id"]),
         "enabled_overlay_ids": list(query_state["enabled_overlay_ids"]),
         "enabled_metadata_facet_ids": list(query_state["enabled_metadata_facet_ids"]),
@@ -1854,6 +2575,16 @@ def _build_context_view_state(
         "linked_dashboard": copy.deepcopy(dict(linked_sessions.get("dashboard") or {})),
         "linked_showcase": copy.deepcopy(dict(linked_sessions.get("showcase") or {})),
     }
+
+
+def _extract_context_query_catalog_mapping(record: Mapping[str, Any]) -> dict[str, Any]:
+    mapping = _require_mapping(record, field_name="record")
+    if "context_query_catalog" in mapping:
+        return _require_mapping(
+            mapping["context_query_catalog"],
+            field_name="record.context_query_catalog",
+        )
+    return mapping
 
 
 def _build_linked_sessions(
