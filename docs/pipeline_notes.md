@@ -667,6 +667,115 @@ Contract notes:
 later tickets should cite it instead of re-litigating the pane taxonomy,
 interaction state meaning, overlay boundaries, or offline delivery model.
 
+### Experiment suite contract
+
+Milestone 15 now reserves one explicit suite-orchestration vocabulary under the
+versioned contract `experiment_suite.v1`.
+
+The contract is implemented in `flywire_wave.experiment_suite_contract` and
+freezes:
+
+- canonical dimension IDs:
+  `scene_type`,
+  `motion_direction`,
+  `motion_speed`,
+  `contrast_level`,
+  `noise_level`,
+  `active_subset`,
+  `wave_kernel`,
+  `coupling_mode`,
+  `mesh_resolution`,
+  `solver_settings`,
+  and `fidelity_class`
+- required ablation-family IDs:
+  `no_waves`,
+  `waves_only_selected_cell_classes`,
+  `no_lateral_coupling`,
+  `shuffle_synapse_locations`,
+  `shuffle_morphology`,
+  `coarsen_geometry`,
+  `altered_sign_assumptions`,
+  and `altered_delay_assumptions`
+- suite-cell lineage kinds:
+  `base_condition`,
+  `seed_replicate`,
+  `ablation_variant`,
+  and `seeded_ablation_variant`
+- work-item statuses:
+  `planned`,
+  `ready`,
+  `running`,
+  `succeeded`,
+  `partial`,
+  `failed`,
+  `blocked`,
+  and `skipped`
+- metadata-backed artifact-role hooks for:
+  - upstream `suite_manifest_input`, `experiment_manifest_input`, and
+    `simulation_plan`
+  - downstream `simulator_result_bundle`,
+    `experiment_analysis_bundle`,
+    `validation_bundle`,
+    and `dashboard_session`
+  - suite-owned `summary_table`, `comparison_plot`, and `review_artifact`
+
+Contract notes:
+
+- the suite layer composes with `simulation_plan.v1`,
+  `simulator_result_bundle.v1`,
+  `experiment_analysis_bundle.v1`,
+  `validation_ladder.v1`,
+  and `dashboard_session.v1`; it does not mutate those earlier contracts
+- suite metadata is the discovery anchor for suite identity, lineage, work
+  items, and artifact references
+- `suite_spec_hash` is derived from normalized upstream references, suite-cell
+  lineage, and work-item identity rather than downstream output paths
+- simulator seed lineage and ablation perturbation lineage stay separate so
+  shuffled ablations remain auditable
+- storage is intentionally conservative at this stage:
+  upstream manifests and earlier milestone bundles remain on their own
+  contract-owned paths, while later Milestone 15 packaging may place suite
+  metadata plus suite-owned tables, plots, and review artifacts under a
+  suite-owned root without changing the role IDs frozen here
+- the ownership boundary is explicit:
+  Jack owns the orchestration surface and reproducibility mechanics; Grant owns
+  which scientifically meaningful ablation sets are declared through that
+  surface
+
+`docs/experiment_orchestration_design.md` is the authoritative Milestone 15
+decision note; later tickets should cite it instead of re-litigating suite
+identity, lineage semantics, artifact-role meaning, or the Jack-versus-Grant
+ownership boundary.
+
+Milestone 15 now also defines one explicit local orchestration and review
+workflow:
+
+- `scripts/31_run_experiment_suite.py` is the canonical CLI for resolving,
+  scheduling, and executing one manifest-driven suite through the enabled
+  stages
+- `make suite-run` is the repo wrapper for that command and keeps the standard
+  config, schema, and design-lock flags aligned with the rest of the pipeline
+- `scripts/32_suite_aggregation.py` consumes `experiment_suite_package.json` or
+  `result_index.json` and writes deterministic rollups under
+  `package/aggregation/`
+- `make suite-aggregate` is the repo wrapper for that suite aggregation CLI
+- `scripts/33_suite_report.py` regenerates aggregation deterministically and
+  writes reviewer-facing tables, SVG plots, and static HTML under
+  `package/report/suite_review/`
+- `make suite-report` is the repo wrapper for that report CLI
+- `scripts/34_milestone15_readiness.py` layers focused regression checks, a
+  manifest-driven suite audit, packaged aggregation/report reruns, and
+  documentation verification on top of the shipped fixtures and writes
+  `milestone_15_readiness.md` plus `milestone_15_readiness.json` under
+  `config.paths.processed_simulator_results_dir/readiness/milestone_15/`
+- `make milestone15-readiness` is the one-command entrypoint for the shipped
+  Milestone 15 orchestration verification pass; it uses
+  `config/milestone_15_verification.yaml`
+- the readiness workflow intentionally records two currently blocking follow-on
+  tickets in `agent_tickets/milestone_15_follow_on_tickets.md` so required
+  `no_waves` runtime coverage and the full-stage analysis handoff remain
+  explicit rather than implicit
+
 ### Offline retinal inspection contract
 
 Milestone 8B now also defines one deterministic offline inspection workflow for

@@ -181,6 +181,37 @@ python scripts/29_dashboard_shell.py export --dashboard-session-metadata <dashbo
 python scripts/29_dashboard_shell.py export --dashboard-session-metadata <dashboard_session_metadata_path> --export-target-id replay_frame_sequence --pane-id scene
 ```
 
+## Milestone 15 local verification
+
+The shipped Milestone 15 orchestration integration pass is:
+
+```bash
+make milestone15-readiness
+```
+
+That runs `scripts/34_milestone15_readiness.py` with
+`config/milestone_15_verification.yaml`, exercises a representative
+manifest-driven suite path through the shipped `suite-run` command, reruns the
+packaged suite aggregation and reporting CLIs on deterministic fixture
+artifacts, and writes `milestone_15_readiness.md` plus
+`milestone_15_readiness.json` under
+`data/processed/milestone_15_verification/simulator_results/readiness/milestone_15/`.
+
+The current shipped readiness report is expected to stay at `hold` until the
+explicit follow-on tickets recorded in
+`agent_tickets/milestone_15_follow_on_tickets.md` are closed. That is
+intentional: the report proves the working orchestration surface and records
+the remaining blockers instead of hiding them.
+
+To rerun the documented local Milestone 15 command sequence directly after the
+readiness pass, use:
+
+```bash
+make suite-run CONFIG=data/processed/milestone_15_verification/simulator_results/readiness/milestone_15/generated_fixture/manifest_workflow/simulation_config.yaml SUITE_RUN_ARGS='--suite-manifest data/processed/milestone_15_verification/simulator_results/readiness/milestone_15/generated_fixture/manifest_workflow/shuffle_simulation_suite.yaml'
+make suite-aggregate SUITE_AGGREGATE_ARGS='--suite-package-metadata data/processed/milestone_15_verification/simulator_results/readiness/milestone_15/generated_fixture/review_workflow/o/package/experiment_suite_package.json --table-dimension-id motion_direction'
+make suite-report SUITE_REPORT_ARGS='--suite-package-metadata data/processed/milestone_15_verification/simulator_results/readiness/milestone_15/generated_fixture/review_workflow/o/package/experiment_suite_package.json --table-dimension-id motion_direction'
+```
+
 ## Pipeline at a glance
 
 The main pipeline order is:
@@ -218,6 +249,10 @@ Optional offline inspection steps:
 28. `scripts/28_milestone13_readiness.py`
 29. `scripts/29_dashboard_shell.py`
 30. `scripts/30_milestone14_readiness.py`
+31. `scripts/31_run_experiment_suite.py`
+32. `scripts/32_suite_aggregation.py`
+33. `scripts/33_suite_report.py`
+34. `scripts/34_milestone15_readiness.py`
 
 ## Source-of-truth inputs
 

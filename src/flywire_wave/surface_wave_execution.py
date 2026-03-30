@@ -15,6 +15,10 @@ from .coupling_contract import (
     SEPARABLE_RANK_ONE_CLOUD_KERNEL,
     SURFACE_PATCH_CLOUD_MODE,
 )
+from .experiment_ablation_transforms import (
+    apply_experiment_ablation_coupling_perturbation,
+    resolve_experiment_ablation_patch_permutations,
+)
 from .hybrid_morphology_contract import (
     build_hybrid_morphology_plan_metadata,
     parse_hybrid_morphology_plan_metadata,
@@ -820,6 +824,14 @@ def resolve_surface_wave_execution_plan(
         ),
         determinism=normalized_determinism,
         root_ids=normalized_root_ids,
+        ablation_transform=(
+            None
+            if normalized_execution_plan.get("ablation_transform") is None
+            else _require_mapping(
+                normalized_execution_plan.get("ablation_transform"),
+                field_name="surface_wave_execution_plan.ablation_transform",
+            )
+        ),
     )
     return ResolvedSurfaceWaveExecutionPlan(
         root_ids=normalized_root_ids,
@@ -1038,6 +1050,7 @@ def _build_coupling_plan(
     integration_timestep_ms: float,
     determinism: SimulationDeterminismContext,
     root_ids: Sequence[int],
+    ablation_transform: Mapping[str, Any] | None = None,
 ) -> SurfaceWaveCouplingPlan:
     operator_bundle_by_root = {
         int(bundle.root_id): bundle
@@ -1053,6 +1066,7 @@ def _build_coupling_plan(
         determinism=determinism,
         operator_bundle_by_root=operator_bundle_by_root,
         root_ids=selected_root_ids,
+        ablation_transform=ablation_transform,
     )
 
     components: list[SurfaceWaveCouplingComponent] = []
@@ -1080,7 +1094,14 @@ def _build_coupling_plan(
             kind="mergesort",
         ).reset_index(drop=True)
         for row in ordered_components.itertuples(index=False):
-            signed_weight_total = float(row.signed_weight_total)
+            sign_label, signed_weight_total, delay_ms = (
+                apply_experiment_ablation_coupling_perturbation(
+                    ablation_transform,
+                    sign_label=str(row.sign_label),
+                    signed_weight_total=float(row.signed_weight_total),
+                    delay_ms=float(row.delay_ms),
+                )
+            )
             if not np.isfinite(signed_weight_total):
                 raise ValueError(
                     f"Coupling component {row.component_id!r} from {bundle_path} has a non-finite signed weight."
@@ -1118,13 +1139,13 @@ def _build_coupling_plan(
                     component_id=str(row.component_id),
                     pre_root_id=int(pre_root_id),
                     post_root_id=int(post_root_id),
-                    delay_ms=float(row.delay_ms),
+                    delay_ms=float(delay_ms),
                     delay_steps=_resolve_delay_steps(
-                        delay_ms=float(row.delay_ms),
+                        delay_ms=float(delay_ms),
                         dt_ms=float(integration_timestep_ms),
                         component_id=str(row.component_id),
                     ),
-                    sign_label=str(row.sign_label),
+                    sign_label=sign_label,
                     signed_weight_total=signed_weight_total,
                     kernel_family=str(row.kernel_family),
                     aggregation_rule=str(row.aggregation_rule),
@@ -1229,7 +1250,30 @@ def _build_target_patch_permutations(
     determinism: SimulationDeterminismContext,
     operator_bundle_by_root: Mapping[int, SurfaceWaveOperatorBundle],
     root_ids: Sequence[int],
+    ablation_transform: Mapping[str, Any] | None = None,
 ) -> dict[int, np.ndarray]:
+    precomputed = resolve_experiment_ablation_patch_permutations(ablation_transform)
+    if precomputed is not None:
+        permutations: dict[int, np.ndarray] = {}
+        for root_id in root_ids:
+            if int(root_id) not in precomputed:
+                raise ValueError(
+                    "surface-wave ablation patch permutations do not cover root_id "
+                    f"{root_id}."
+                )
+            expected_patch_count = _require_patch_count(
+                operator_bundle_by_root[int(root_id)],
+                root_id=int(root_id),
+            )
+            permutation = np.asarray(precomputed[int(root_id)], dtype=np.int64)
+            if permutation.shape != (expected_patch_count,):
+                raise ValueError(
+                    "surface-wave ablation patch permutation for root "
+                    f"{root_id} has shape {tuple(permutation.shape)!r}, expected "
+                    f"({expected_patch_count},)."
+                )
+            permutations[int(root_id)] = permutation
+        return permutations
     if topology_condition == INTACT_TOPOLOGY_CONDITION:
         return {
             int(root_id): np.arange(

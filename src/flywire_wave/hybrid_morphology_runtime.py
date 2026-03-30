@@ -22,6 +22,9 @@ from .coupling_contract import (
     SKELETON_SEGMENT_CLOUD_MODE,
     SURFACE_PATCH_CLOUD_MODE,
 )
+from .experiment_ablation_transforms import (
+    apply_experiment_ablation_coupling_perturbation,
+)
 from .hybrid_morphology_contract import (
     POINT_NEURON_CLASS,
     SKELETON_NEURON_CLASS,
@@ -2089,6 +2092,14 @@ def _resolve_hybrid_coupling_plan(
     point_runtime_by_root: Mapping[int, _SingleRootPointNeuronRuntime],
     timebase: SimulationTimebase,
 ) -> dict[str, Any]:
+    ablation_transform = (
+        None
+        if execution_plan.get("ablation_transform") is None
+        else _require_mapping(
+            execution_plan.get("ablation_transform"),
+            field_name="surface_wave_execution_plan.ablation_transform",
+        )
+    )
     edge_paths = _collect_hybrid_selected_edge_paths(
         execution_plan=execution_plan,
         root_ids=root_ids,
@@ -2158,6 +2169,14 @@ def _resolve_hybrid_coupling_plan(
         family_source_fallback_used = False
         family_target_fallback_used = False
         for row in ordered_components.itertuples(index=False):
+            sign_label, signed_weight_total, delay_ms = (
+                apply_experiment_ablation_coupling_perturbation(
+                    ablation_transform,
+                    sign_label=str(row.sign_label),
+                    signed_weight_total=float(row.signed_weight_total),
+                    delay_ms=float(row.delay_ms),
+                )
+            )
             source_fallback_metadata = _component_fallback_metadata(
                 bundle=bundle,
                 component_index=int(row.component_index),
@@ -2208,7 +2227,7 @@ def _resolve_hybrid_coupling_plan(
                         f"{bundle_path} is ambiguous."
                     )
             delay_steps = _resolve_shared_delay_steps(
-                delay_ms=float(row.delay_ms),
+                delay_ms=float(delay_ms),
                 dt_ms=float(timebase.dt_ms),
                 component_id=str(row.component_id),
             )
@@ -2226,10 +2245,10 @@ def _resolve_hybrid_coupling_plan(
                 topology_family=str(bundle.topology_family),
                 kernel_family=str(row.kernel_family),
                 aggregation_rule=str(row.aggregation_rule),
-                delay_ms=float(row.delay_ms),
+                delay_ms=float(delay_ms),
                 delay_steps=delay_steps,
-                sign_label=str(row.sign_label),
-                signed_weight_total=float(row.signed_weight_total),
+                sign_label=sign_label,
+                signed_weight_total=float(signed_weight_total),
                 synapse_count=int(row.synapse_count),
                 source_anchor_mode=str(row.pre_anchor_mode),
                 target_anchor_mode=str(row.post_anchor_mode),

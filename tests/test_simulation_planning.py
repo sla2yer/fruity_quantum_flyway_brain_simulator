@@ -936,6 +936,7 @@ def _write_simulation_fixture(
     root_specs: list[dict[str, object]] | None = None,
     readout_catalog: list[dict[str, object]] | None = None,
     analysis_config: dict[str, object] | None = None,
+    experiment_suite_config: dict[str, object] | None = None,
 ) -> Path:
     output_dir = tmp_dir / "out"
     normalized_root_specs = _normalize_root_specs(root_specs)
@@ -1044,6 +1045,10 @@ def _write_simulation_fixture(
     }
     if analysis_config is not None:
         config_payload["analysis"] = json.loads(json.dumps(analysis_config))
+    if experiment_suite_config is not None:
+        config_payload["experiment_suite"] = json.loads(
+            json.dumps(experiment_suite_config)
+        )
     if timebase_dt_ms is not None:
         config_payload["simulation"]["timebase"] = {
             "dt_ms": float(timebase_dt_ms),

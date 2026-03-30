@@ -29,6 +29,13 @@ from .coupling_contract import (
     discover_edge_coupling_bundle_paths,
     parse_coupling_bundle_metadata,
 )
+from .experiment_ablation_transforms import (
+    EXPERIMENT_SUITE_ABLATION_CONFIG_KEY,
+    apply_experiment_ablation_to_arm_payload,
+    apply_experiment_ablation_to_arm_plan,
+    materialize_experiment_ablation_realization_for_seed,
+    normalize_experiment_ablation_realization,
+)
 from .geometry_contract import (
     COARSE_OPERATOR_KEY,
     DESCRIPTOR_SIDECAR_KEY,
@@ -507,6 +514,16 @@ def resolve_manifest_simulation_plan(
         default_timebase=_default_timebase_from_manifest_summary(manifest_summary),
         project_root=project_root,
     )
+    configured_ablation_realization = (
+        None
+        if cfg.get(EXPERIMENT_SUITE_ABLATION_CONFIG_KEY) is None
+        else normalize_experiment_ablation_realization(
+            _require_mapping(
+                cfg.get(EXPERIMENT_SUITE_ABLATION_CONFIG_KEY),
+                field_name=EXPERIMENT_SUITE_ABLATION_CONFIG_KEY,
+            )
+        )
+    )
     selection_reference = _resolve_selection_reference(
         manifest=manifest_payload,
         cfg=cfg,
@@ -542,17 +559,31 @@ def resolve_manifest_simulation_plan(
 
     arm_plans: list[dict[str, Any]] = []
     for arm_index, arm in enumerate(manifest_payload["comparison_arms"]):
-        arm_reference = build_simulator_arm_reference(
-            arm_id=arm["arm_id"],
-            model_mode=arm["model_mode"],
-            baseline_family=arm["baseline_family"],
-            comparison_tags=arm.get("tags"),
-        )
+        resolved_arm_payload = copy.deepcopy(dict(arm))
         seed_handling = _resolve_arm_seed_handling(
-            arm=arm,
+            arm=resolved_arm_payload,
             arm_index=arm_index,
             manifest_random_seed=manifest_payload["random_seed"],
             seed_sweep=seed_sweep,
+        )
+        materialized_ablation_realization = (
+            None
+            if configured_ablation_realization is None
+            else materialize_experiment_ablation_realization_for_seed(
+                configured_ablation_realization,
+                simulation_seed=int(seed_handling["default_seed"]),
+            )
+        )
+        if materialized_ablation_realization is not None:
+            resolved_arm_payload = apply_experiment_ablation_to_arm_payload(
+                arm_payload=resolved_arm_payload,
+                realization=materialized_ablation_realization,
+            )
+        arm_reference = build_simulator_arm_reference(
+            arm_id=resolved_arm_payload["arm_id"],
+            model_mode=resolved_arm_payload["model_mode"],
+            baseline_family=resolved_arm_payload["baseline_family"],
+            comparison_tags=resolved_arm_payload.get("tags"),
         )
         determinism = build_simulator_determinism(
             seed=seed_handling["default_seed"],
@@ -560,20 +591,78 @@ def resolve_manifest_simulation_plan(
             seed_scope=runtime_config["determinism"]["seed_scope"],
         )
         topology_condition = _normalize_identifier(
-            arm["topology_condition"],
+            resolved_arm_payload["topology_condition"],
             field_name=f"comparison_arms[{arm_index}].topology_condition",
         )
         morphology_condition = _normalize_identifier(
-            arm["morphology_condition"],
+            resolved_arm_payload["morphology_condition"],
             field_name=f"comparison_arms[{arm_index}].morphology_condition",
         )
         model_configuration = _build_model_configuration(
             arm_reference=arm_reference,
-            arm_payload=arm,
+            arm_payload=resolved_arm_payload,
             runtime_config=runtime_config,
             circuit_assets=circuit_assets,
             topology_condition=topology_condition,
         )
+        arm_plan = {
+            "plan_version": SIMULATION_PLAN_VERSION,
+            "arm_index": arm_index,
+            "manifest_reference": copy.deepcopy(manifest_reference),
+            "arm_reference": copy.deepcopy(arm_reference),
+            "topology_condition": topology_condition,
+            "morphology_condition": morphology_condition,
+            "notes": _normalize_nonempty_string(
+                resolved_arm_payload["notes"],
+                field_name=f"comparison_arms[{arm_index}].notes",
+            ),
+            "tags": _normalize_identifier_list(
+                resolved_arm_payload.get("tags"),
+                field_name=f"comparison_arms[{arm_index}].tags",
+            ),
+            "selection": copy.deepcopy(selection_reference),
+            "input_reference": copy.deepcopy(input_reference),
+            "stimulus_reference": copy.deepcopy(
+                manifest_summary["stimulus_bundle_reference"]
+            ),
+            "resolved_stimulus": copy.deepcopy(manifest_summary["resolved_stimulus"]),
+            "retinal_input_reference": copy.deepcopy(
+                input_reference.get("retinal_bundle_reference")
+            ),
+            "circuit_assets": copy.deepcopy(circuit_assets),
+            "runtime": {
+                "config_version": runtime_config["version"],
+                "time_unit": runtime_config["time_unit"],
+                "timebase": copy.deepcopy(runtime_config["timebase"]),
+                "readout_catalog": copy.deepcopy(runtime_config["readout_catalog"]),
+                "shared_readout_catalog": copy.deepcopy(
+                    runtime_config["shared_readout_catalog"]
+                ),
+                "determinism_defaults": copy.deepcopy(runtime_config["determinism"]),
+                "processed_simulator_results_dir": str(
+                    Path(cfg["paths"]["processed_simulator_results_dir"]).resolve()
+                ),
+            },
+            "seed_handling": seed_handling,
+            "determinism": determinism,
+            "model_configuration": model_configuration,
+            "comparison_output_targets": copy.deepcopy(output_targets),
+            "must_show_outputs": list(manifest_payload["must_show_outputs"]),
+            "primary_metric": _normalize_identifier(
+                manifest_payload["primary_metric"],
+                field_name="manifest.primary_metric",
+            ),
+            "companion_metrics": _normalize_identifier_list(
+                manifest_payload.get("companion_metrics"),
+                field_name="manifest.companion_metrics",
+            ),
+        }
+        if materialized_ablation_realization is not None:
+            arm_plan = apply_experiment_ablation_to_arm_plan(
+                arm_plan=arm_plan,
+                realization=materialized_ablation_realization,
+            )
+            model_configuration = copy.deepcopy(dict(arm_plan["model_configuration"]))
         selected_assets = _build_selected_assets(
             selection_reference=selection_reference,
             input_reference=input_reference,
@@ -594,65 +683,12 @@ def resolve_manifest_simulation_plan(
         result_bundle_reference = build_simulator_result_bundle_reference(
             result_bundle_metadata
         )
-        arm_plans.append(
-            {
-                "plan_version": SIMULATION_PLAN_VERSION,
-                "arm_index": arm_index,
-                "manifest_reference": copy.deepcopy(manifest_reference),
-                "arm_reference": copy.deepcopy(arm_reference),
-                "topology_condition": topology_condition,
-                "morphology_condition": morphology_condition,
-                "notes": _normalize_nonempty_string(
-                    arm["notes"],
-                    field_name=f"comparison_arms[{arm_index}].notes",
-                ),
-                "tags": _normalize_identifier_list(
-                    arm.get("tags"),
-                    field_name=f"comparison_arms[{arm_index}].tags",
-                ),
-                "selection": copy.deepcopy(selection_reference),
-                "input_reference": copy.deepcopy(input_reference),
-                "stimulus_reference": copy.deepcopy(
-                    manifest_summary["stimulus_bundle_reference"]
-                ),
-                "resolved_stimulus": copy.deepcopy(manifest_summary["resolved_stimulus"]),
-                "retinal_input_reference": copy.deepcopy(
-                    input_reference.get("retinal_bundle_reference")
-                ),
-                "circuit_assets": copy.deepcopy(circuit_assets),
-                "runtime": {
-                    "config_version": runtime_config["version"],
-                    "time_unit": runtime_config["time_unit"],
-                    "timebase": copy.deepcopy(runtime_config["timebase"]),
-                    "readout_catalog": copy.deepcopy(runtime_config["readout_catalog"]),
-                    "shared_readout_catalog": copy.deepcopy(
-                        runtime_config["shared_readout_catalog"]
-                    ),
-                    "determinism_defaults": copy.deepcopy(runtime_config["determinism"]),
-                    "processed_simulator_results_dir": str(
-                        Path(cfg["paths"]["processed_simulator_results_dir"]).resolve()
-                    ),
-                },
-                "seed_handling": seed_handling,
-                "determinism": determinism,
-                "model_configuration": model_configuration,
-                "selected_assets": copy.deepcopy(result_bundle_metadata["selected_assets"]),
-                "result_bundle": {
-                    "reference": result_bundle_reference,
-                    "metadata": result_bundle_metadata,
-                },
-                "comparison_output_targets": copy.deepcopy(output_targets),
-                "must_show_outputs": list(manifest_payload["must_show_outputs"]),
-                "primary_metric": _normalize_identifier(
-                    manifest_payload["primary_metric"],
-                    field_name="manifest.primary_metric",
-                ),
-                "companion_metrics": _normalize_identifier_list(
-                    manifest_payload.get("companion_metrics"),
-                    field_name="manifest.companion_metrics",
-                ),
-            }
-        )
+        arm_plan["selected_assets"] = copy.deepcopy(result_bundle_metadata["selected_assets"])
+        arm_plan["result_bundle"] = {
+            "reference": result_bundle_reference,
+            "metadata": result_bundle_metadata,
+        }
+        arm_plans.append(arm_plan)
 
     readout_analysis_plan = _build_readout_analysis_plan(
         manifest_payload=manifest_payload,
@@ -3348,6 +3384,15 @@ def _build_model_configuration_asset_reference(
                 surface_wave_execution_plan["mixed_fidelity"]
             ),
         }
+        if isinstance(model_configuration.get("ablation_transform"), Mapping):
+            artifact_payload["ablation_transform"] = copy.deepcopy(
+                dict(
+                    _require_mapping(
+                        model_configuration.get("ablation_transform"),
+                        field_name="model_configuration.ablation_transform",
+                    )
+                )
+            )
     return build_selected_asset_reference(
         asset_role=MODEL_CONFIGURATION_ASSET_ROLE,
         artifact_type=artifact_type,

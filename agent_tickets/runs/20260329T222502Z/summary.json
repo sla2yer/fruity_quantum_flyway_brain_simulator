@@ -1,0 +1,178 @@
+[
+  {
+    "ticket_id": "FW-M15-001",
+    "title": "Freeze a versioned experiment-suite contract, ablation taxonomy, and orchestration design note",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M15-001_hxp9kf3z/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-001_Freeze_a_versioned_experiment-suite_contract_ablation_taxonomy_and_orchestration_design_note",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-001_Freeze_a_versioned_experiment-suite_contract_ablation_taxonomy_and_orchestration_design_note/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-001_Freeze_a_versioned_experiment-suite_contract_ablation_taxonomy_and_orchestration_design_note/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-001_Freeze_a_versioned_experiment-suite_contract_ablation_taxonomy_and_orchestration_design_note/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-001_Freeze_a_versioned_experiment-suite_contract_ablation_taxonomy_and_orchestration_design_note/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M15-002",
+    "title": "Extend manifest and config normalization for suite manifests, sweep axes, and ablation declarations",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M15-002_rujr6yv2/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-002_Extend_manifest_and_config_normalization_for_suite_manifests_sweep_axes_and_ablation_declarations",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-002_Extend_manifest_and_config_normalization_for_suite_manifests_sweep_axes_and_ablation_declarations/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-002_Extend_manifest_and_config_normalization_for_suite_manifests_sweep_axes_and_ablation_declarations/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-002_Extend_manifest_and_config_normalization_for_suite_manifests_sweep_axes_and_ablation_declarations/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-002_Extend_manifest_and_config_normalization_for_suite_manifests_sweep_axes_and_ablation_declarations/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M15-003",
+    "title": "Build deterministic suite expansion, work scheduling, and resume-safe batch execution",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M15-003_2df1ypdz/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-003_Build_deterministic_suite_expansion_work_scheduling_and_resume-safe_batch_execution",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-003_Build_deterministic_suite_expansion_work_scheduling_and_resume-safe_batch_execution/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-003_Build_deterministic_suite_expansion_work_scheduling_and_resume-safe_batch_execution/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-003_Build_deterministic_suite_expansion_work_scheduling_and_resume-safe_batch_execution/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-003_Build_deterministic_suite_expansion_work_scheduling_and_resume-safe_batch_execution/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M15-004",
+    "title": "Implement canonical ablation transform families for the required Milestone 15 manipulations",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M15-004__v2bat93/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-004_Implement_canonical_ablation_transform_families_for_the_required_Milestone_15_manipulations",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-004_Implement_canonical_ablation_transform_families_for_the_required_Milestone_15_manipulations/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-004_Implement_canonical_ablation_transform_families_for_the_required_Milestone_15_manipulations/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-004_Implement_canonical_ablation_transform_families_for_the_required_Milestone_15_manipulations/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-004_Implement_canonical_ablation_transform_families_for_the_required_Milestone_15_manipulations/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M15-005",
+    "title": "Package suite outputs with deterministic storage conventions, result indexing, and artifact lineage",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M15-005_dcau_yi8/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-005_Package_suite_outputs_with_deterministic_storage_conventions_result_indexing_and_artifact_lineage",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-005_Package_suite_outputs_with_deterministic_storage_conventions_result_indexing_and_artifact_lineage/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-005_Package_suite_outputs_with_deterministic_storage_conventions_result_indexing_and_artifact_lineage/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-005_Package_suite_outputs_with_deterministic_storage_conventions_result_indexing_and_artifact_lineage/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-005_Package_suite_outputs_with_deterministic_storage_conventions_result_indexing_and_artifact_lineage/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M15-006",
+    "title": "Build suite-level aggregation, comparison tables, and ablation-aware metric rollups",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M15-006_e6ld5675/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-006_Build_suite-level_aggregation_comparison_tables_and_ablation-aware_metric_rollups",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-006_Build_suite-level_aggregation_comparison_tables_and_ablation-aware_metric_rollups/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-006_Build_suite-level_aggregation_comparison_tables_and_ablation-aware_metric_rollups/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-006_Build_suite-level_aggregation_comparison_tables_and_ablation-aware_metric_rollups/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-006_Build_suite-level_aggregation_comparison_tables_and_ablation-aware_metric_rollups/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M15-007",
+    "title": "Generate deterministic suite reports, summary tables, and auto-generated comparison plots",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M15-007_78bxh0o1/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-007_Generate_deterministic_suite_reports_summary_tables_and_auto-generated_comparison_plots",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-007_Generate_deterministic_suite_reports_summary_tables_and_auto-generated_comparison_plots/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-007_Generate_deterministic_suite_reports_summary_tables_and_auto-generated_comparison_plots/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-007_Generate_deterministic_suite_reports_summary_tables_and_auto-generated_comparison_plots/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-007_Generate_deterministic_suite_reports_summary_tables_and_auto-generated_comparison_plots/last_message.md"
+  },
+  {
+    "ticket_id": "FW-M15-008",
+    "title": "Run a Milestone 15 integration verification pass and publish an orchestration readiness report",
+    "status": "open",
+    "command": [
+      "/usr/local/bin/codex",
+      "exec",
+      "--json",
+      "--cd",
+      "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+      "--sandbox",
+      "workspace-write",
+      "--output-last-message",
+      "/tmp/flywire_wave_FW-M15-008_nzy_zird/last_message.md"
+    ],
+    "returncode": 0,
+    "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-008_Run_a_Milestone_15_integration_verification_pass_and_publish_an_orchestration_readiness_report",
+    "prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-008_Run_a_Milestone_15_integration_verification_pass_and_publish_an_orchestration_readiness_report/prompt.md",
+    "stdout_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-008_Run_a_Milestone_15_integration_verification_pass_and_publish_an_orchestration_readiness_report/stdout.jsonl",
+    "stderr_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-008_Run_a_Milestone_15_integration_verification_pass_and_publish_an_orchestration_readiness_report/stderr.log",
+    "last_message_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/runs/20260329T222502Z/FW-M15-008_Run_a_Milestone_15_integration_verification_pass_and_publish_an_orchestration_readiness_report/last_message.md"
+  }
+]

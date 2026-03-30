@@ -15,18 +15,23 @@ M11_CONFIG ?= config/milestone_11_verification.yaml
 M12_CONFIG ?= config/milestone_12_verification.yaml
 M13_CONFIG ?= config/milestone_13_verification.yaml
 M14_CONFIG ?= config/milestone_14_verification.yaml
+M15_CONFIG ?= config/milestone_15_verification.yaml
 M11_READINESS_ARGS ?=
 M12_READINESS_ARGS ?=
 M13_READINESS_ARGS ?=
 M14_READINESS_ARGS ?=
+M15_READINESS_ARGS ?=
 DASHBOARD_ARGS ?=
 DASHBOARD_SESSION_METADATA ?=
 DASHBOARD_EXPORT_ARGS ?=
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate compare-analysis dashboard dashboard-open dashboard-export wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate suite-run suite-aggregate suite-report compare-analysis dashboard dashboard-open dashboard-export wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness milestone15-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
+SUITE_RUN_ARGS ?=
+SUITE_AGGREGATE_ARGS ?=
+SUITE_REPORT_ARGS ?=
 COMPARE_ANALYSIS_ARGS ?=
 WAVE_INSPECT_ARGS ?=
 MIXED_FIDELITY_INSPECT_ARGS ?=
@@ -51,6 +56,9 @@ help:
 		'coupling-inspect   Build static offline coupling inspection report(s)' \
 		'operator-qa        Build static offline operator QA report(s)' \
 		'simulate           Execute manifest-driven simulator runs and write result bundles' \
+		'suite-run          Execute or preview a deterministic Milestone 15 experiment suite' \
+		'suite-aggregate    Compute deterministic Milestone 15 suite rollups and CSV exports from a packaged suite inventory' \
+		'suite-report       Generate deterministic Milestone 15 review tables, plots, and static HTML from a packaged suite inventory' \
 		'compare-analysis  Compute experiment-level comparison analysis and package Milestone 12 exports' \
 		'dashboard          Build the deterministic Milestone 14 dashboard shell from packaged local artifacts' \
 		'dashboard-open     Build and open the deterministic Milestone 14 dashboard shell from local disk' \
@@ -73,6 +81,7 @@ help:
 		'milestone12-readiness Run the Milestone 12 task-layer integration verification pass and publish a readiness report' \
 		'milestone13-readiness Run the Milestone 13 validation-ladder integration verification pass and publish a readiness report' \
 		'milestone14-readiness Run the Milestone 14 dashboard integration verification pass and publish a readiness report' \
+		'milestone15-readiness Run the Milestone 15 experiment-orchestration integration verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -107,6 +116,15 @@ operator-qa:
 
 simulate:
 	$(PYTHON) scripts/run_simulation.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(SIMULATE_ARGS)
+
+suite-run:
+	$(PYTHON) scripts/31_run_experiment_suite.py --config $(CONFIG) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(SUITE_RUN_ARGS)
+
+suite-aggregate:
+	$(PYTHON) scripts/32_suite_aggregation.py $(SUITE_AGGREGATE_ARGS)
+
+suite-report:
+	$(PYTHON) scripts/33_suite_report.py $(SUITE_REPORT_ARGS)
 
 compare-analysis:
 	$(PYTHON) scripts/20_experiment_comparison_analysis.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(COMPARE_ANALYSIS_ARGS)
@@ -174,6 +192,9 @@ milestone13-readiness:
 
 milestone14-readiness:
 	$(PYTHON) scripts/30_milestone14_readiness.py --config $(M14_CONFIG) $(M14_READINESS_ARGS)
+
+milestone15-readiness:
+	$(PYTHON) scripts/34_milestone15_readiness.py --config $(M15_CONFIG) $(M15_READINESS_ARGS)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

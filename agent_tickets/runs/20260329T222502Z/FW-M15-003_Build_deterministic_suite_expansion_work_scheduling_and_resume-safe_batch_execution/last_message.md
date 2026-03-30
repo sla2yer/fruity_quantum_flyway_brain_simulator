@@ -1,0 +1,11 @@
+Implemented FW-M15-003 on top of the existing in-tree M15 contract/planning work.
+
+The main change is a new deterministic local orchestrator in [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py). It builds an explicit dependency-aware schedule from the normalized suite plan, materializes per-work-item manifest/config snapshots, persists resume-safe execution state in `experiment_suite_execution_state.json`, records stage-level provenance and realized artifacts, supports dry-run, and reuses the existing simulation, analysis, validation, and dashboard library workflows by default. I also added the thin CLI at [31_run_experiment_suite.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/31_run_experiment_suite.py), exposed it through [Makefile](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile), and exported the module from [__init__.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/__init__.py).
+
+Regression coverage is in [test_experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py). That fixture resolves a real suite plan, checks deterministic schedule order, exercises dry-run, forces a partial failed run with blocked downstream work, then reruns and verifies resume/skip/retry behavior from persisted state. The companion note is [FW-M15-003_rationale.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/experiment_orchestration_notes/FW-M15-003_rationale.md).
+
+Verified:
+- `python3 -m unittest tests.test_experiment_suite_execution`
+- `python3 -m unittest tests.test_experiment_suite_contract tests.test_experiment_suite_planning tests.test_experiment_suite_execution`
+- `make suite-run SUITE_RUN_ARGS=--help`
+- `make test` -> 225 tests passed in about 183s

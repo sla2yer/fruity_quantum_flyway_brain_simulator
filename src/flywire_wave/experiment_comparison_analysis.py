@@ -78,6 +78,7 @@ EXPERIMENT_COMPARISON_SUMMARY_VERSION = "experiment_comparison_summary.v1"
 _CONDITION_VALUE_TOLERANCE = 1.0e-6
 _EFFECT_ABS_TOLERANCE = 1.0e-12
 _IGNORED_SELECTED_ASSET_ROLES = frozenset({"input_bundle"})
+_PATH_RELAXED_SELECTED_ASSET_ROLES = frozenset({"model_configuration"})
 
 
 def discover_experiment_bundle_set(
@@ -1343,10 +1344,13 @@ def _validate_bundle_selected_assets(
 
 
 def _selected_asset_identity(asset: Mapping[str, Any]) -> tuple[str, str, str, str | None, str | None]:
+    resolved_path = str(Path(asset["path"]).resolve())
+    if str(asset["asset_role"]) in _PATH_RELAXED_SELECTED_ASSET_ROLES:
+        resolved_path = ""
     return (
         str(asset["asset_role"]),
         str(asset["artifact_type"]),
-        str(Path(asset["path"]).resolve()),
+        resolved_path,
         asset["artifact_id"],
         asset["bundle_id"],
     )

@@ -291,6 +291,29 @@ class ExperimentComparisonWorkflowTest(unittest.TestCase):
             self.assertIn("incompatible units", message)
             self.assertIn("shared_output_mean", message)
 
+    def test_workflow_accepts_equivalent_config_materialized_at_a_different_path(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _materialize_experiment_comparison_fixture(tmp_dir)
+            relocated_config_path = tmp_dir / "relocated_simulation_config.yaml"
+            relocated_config_path.write_text(
+                fixture["config_path"].read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            result = execute_experiment_comparison_workflow(
+                manifest_path=fixture["manifest_path"],
+                config_path=relocated_config_path,
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+
+            self.assertEqual(
+                result["summary_version"],
+                EXPERIMENT_COMPARISON_SUMMARY_VERSION,
+            )
+            self.assertGreater(len(result["bundle_set"]["bundle_inventory"]), 0)
+
 
 def _materialize_experiment_comparison_fixture(tmp_dir: Path) -> dict[str, Any]:
     schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"

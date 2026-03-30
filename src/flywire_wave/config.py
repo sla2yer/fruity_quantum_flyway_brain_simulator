@@ -29,6 +29,7 @@ DEFAULT_PATHS = {
     "processed_stimulus_dir": Path("data/processed/stimuli"),
     "processed_retinal_dir": Path("data/processed/retinal"),
     "processed_simulator_results_dir": Path("data/processed/simulator_results"),
+    "processed_experiment_suites_dir": Path("data/processed/experiment_suites"),
     "surface_wave_inspection_dir": Path("data/processed/surface_wave_inspection"),
     "mixed_fidelity_inspection_dir": Path("data/processed/mixed_fidelity_inspection"),
     "manifest_json": Path("data/processed/asset_manifest.json"),
