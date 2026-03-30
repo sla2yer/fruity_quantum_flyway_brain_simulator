@@ -1555,6 +1555,10 @@ def build_showcase_session_metadata(
         allow_empty=False,
     )
     default_export = _normalize_export_target_role_id(default_export_target_role_id)
+    if default_export not in enabled_exports:
+        raise ValueError(
+            "default_export_target_role_id must be included in enabled_export_target_role_ids."
+        )
     spec_hash = build_showcase_session_spec_hash(
         experiment_id=experiment_id,
         showcase_id=showcase_id,
@@ -1625,6 +1629,12 @@ def parse_showcase_session_metadata(
     normalized_saved_presets = _normalize_saved_presets(payload["saved_presets"])
     normalized_showcase_steps = _normalize_showcase_steps(payload["showcase_steps"])
     _require_exact_ids([item["step_id"] for item in normalized_showcase_steps], expected_ids=SUPPORTED_SHOWCASE_STEP_IDS, field_name="showcase_steps")
+    enabled_exports = _normalize_known_value_list(payload["enabled_export_target_role_ids"], field_name="enabled_export_target_role_ids", supported_values=SUPPORTED_EXPORT_TARGET_ROLE_IDS, allow_empty=False)
+    default_export = _normalize_export_target_role_id(payload["default_export_target_role_id"])
+    if default_export not in enabled_exports:
+        raise ValueError(
+            "default_export_target_role_id must be included in enabled_export_target_role_ids."
+        )
     return {
         "contract_version": _normalize_nonempty_string(payload["contract_version"], field_name="contract_version"),
         "design_note": _normalize_nonempty_string(payload["design_note"], field_name="design_note"),
@@ -1636,8 +1646,8 @@ def parse_showcase_session_metadata(
         "showcase_spec_hash": _normalize_parameter_hash(payload["showcase_spec_hash"]),
         "showcase_spec_hash_algorithm": _normalize_nonempty_string(payload["showcase_spec_hash_algorithm"], field_name="showcase_spec_hash_algorithm"),
         "presentation_status": _normalize_presentation_status(payload["presentation_status"]),
-        "enabled_export_target_role_ids": _normalize_known_value_list(payload["enabled_export_target_role_ids"], field_name="enabled_export_target_role_ids", supported_values=SUPPORTED_EXPORT_TARGET_ROLE_IDS, allow_empty=False),
-        "default_export_target_role_id": _normalize_export_target_role_id(payload["default_export_target_role_id"]),
+        "enabled_export_target_role_ids": enabled_exports,
+        "default_export_target_role_id": default_export,
         "artifact_references": normalized_artifact_references,
         "saved_presets": normalized_saved_presets,
         "showcase_steps": normalized_showcase_steps,

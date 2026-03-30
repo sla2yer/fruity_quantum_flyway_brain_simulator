@@ -45,6 +45,8 @@ __all__ = [
     "scene_playback",
     "selection",
     "shared_readout_analysis",
+    "showcase_session_contract",
+    "showcase_session_planning",
     "simulation_planning",
     "simulator_execution",
     "simulator_result_contract",

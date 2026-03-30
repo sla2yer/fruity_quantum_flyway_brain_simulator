@@ -56,9 +56,12 @@ from .experiment_suite_reporting import (
 )
 from .io_utils import write_json
 from .showcase_session_contract import (
+    ACTIVE_VISUAL_SUBSET_STEP_ID,
+    ACTIVITY_PROPAGATION_STEP_ID,
     ANALYSIS_BUNDLE_METADATA_ROLE_ID,
     ANALYSIS_OFFLINE_REPORT_ROLE_ID,
     ANALYSIS_UI_PAYLOAD_ROLE_ID,
+    ANALYSIS_SUMMARY_PRESET_ID,
     APPROVED_HIGHLIGHT_PRESET_ID,
     APPROVED_WAVE_HIGHLIGHT_EVIDENCE_ROLE_ID,
     APPROVED_WAVE_HIGHLIGHT_STEP_ID,
@@ -99,7 +102,9 @@ from .showcase_session_contract import (
     PRESENTATION_STATUS_PLANNED,
     PRESENTATION_STATUS_READY,
     PRESENTATION_STATUS_SCIENTIFIC_REVIEW_REQUIRED,
+    PROPAGATION_REPLAY_PRESET_ID,
     REVIEW_MANIFEST_EXPORT_TARGET_ROLE_ID,
+    RETINAL_INPUT_FOCUS_PRESET_ID,
     SCENE_CONTEXT_EVIDENCE_ROLE_ID,
     SCENE_CONTEXT_PRESET_ID,
     SCENE_SELECTION_STEP_ID,
@@ -127,7 +132,6 @@ from .showcase_session_contract import (
     SUITE_SUMMARY_TABLE_ROLE_ID,
     SUMMARY_ANALYSIS_EVIDENCE_ROLE_ID,
     SUMMARY_ANALYSIS_STEP_ID,
-    SUMMARY_ANALYSIS_PRESET_ID,
     VALIDATION_BUNDLE_METADATA_ROLE_ID,
     VALIDATION_FINDINGS_ROLE_ID,
     VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
@@ -138,11 +142,12 @@ from .showcase_session_contract import (
     build_showcase_narrative_annotation,
     build_showcase_saved_preset,
     build_showcase_session_artifact_reference,
-    build_showcase_session_bundle_paths,
     build_showcase_session_contract_metadata,
     build_showcase_session_metadata,
     build_showcase_step,
     discover_showcase_export_target_roles,
+    discover_showcase_session_bundle_paths,
+    parse_showcase_session_contract_metadata,
     write_showcase_session_metadata,
 )
 from .simulator_result_contract import DEFAULT_PROCESSED_SIMULATOR_RESULTS_DIR
@@ -175,8 +180,8 @@ DEFAULT_SHOWCASE_DISPLAY_NAME = "Milestone 16 Showcase"
 DEFAULT_ACTIVE_PANE_BY_STEP = {
     SCENE_SELECTION_STEP_ID: SCENE_PANE_ID,
     FLY_VIEW_INPUT_STEP_ID: SCENE_PANE_ID,
-    "active_visual_subset": CIRCUIT_PANE_ID,
-    "activity_propagation": TIME_SERIES_PANE_ID,
+    ACTIVE_VISUAL_SUBSET_STEP_ID: CIRCUIT_PANE_ID,
+    ACTIVITY_PROPAGATION_STEP_ID: TIME_SERIES_PANE_ID,
     BASELINE_WAVE_COMPARISON_STEP_ID: ANALYSIS_PANE_ID,
     APPROVED_WAVE_HIGHLIGHT_STEP_ID: ANALYSIS_PANE_ID,
     SUMMARY_ANALYSIS_STEP_ID: ANALYSIS_PANE_ID,
@@ -258,10 +263,10 @@ def resolve_showcase_session_plan(
     if config_file is None or project_root is None:
         raise ValueError("Loaded config is missing config metadata.")
 
-    normalized_contract = (
-        build_showcase_session_contract_metadata()
-        if contract_metadata is None
-        else _require_mapping(contract_metadata, field_name="contract_metadata")
+    normalized_contract = parse_showcase_session_contract_metadata(
+        contract_metadata
+        if contract_metadata is not None
+        else build_showcase_session_contract_metadata()
     )
     processed_dir = Path(
         cfg["paths"].get(
@@ -290,6 +295,7 @@ def resolve_showcase_session_plan(
         suite_review_summary=suite_review_summary,
         suite_review_summary_path=suite_review_summary_path,
         table_dimension_ids=table_dimension_ids,
+        raw_explicit_artifacts=raw_explicit_artifacts,
     )
     resolved_experiment_id = _resolve_experiment_id(
         manifest_path=manifest_path,
@@ -493,6 +499,13 @@ def package_showcase_session(plan: Mapping[str, Any]) -> dict[str, Any]:
         showcase_export_manifest,
         bundle_paths[SHOWCASE_EXPORT_MANIFEST_ARTIFACT_ID],
     )
+    upstream_dashboard_metadata_path = None
+    for artifact_reference in showcase_session["artifact_references"]:
+        if str(artifact_reference["artifact_role_id"]) == DASHBOARD_SESSION_METADATA_ROLE_ID:
+            upstream_dashboard_metadata_path = str(
+                Path(artifact_reference["path"]).resolve()
+            )
+            break
     return {
         "bundle_id": str(showcase_session["bundle_id"]),
         "metadata_path": str(metadata_path.resolve()),
@@ -512,8 +525,11 @@ def package_showcase_session(plan: Mapping[str, Any]) -> dict[str, Any]:
             Path(showcase_session["bundle_layout"]["bundle_directory"]).resolve()
         ),
         "upstream_dashboard_metadata_path": (
-            None if dashboard_package is None else str(dashboard_package["metadata_path"])
+            str(dashboard_package["metadata_path"])
+            if dashboard_package is not None
+            else upstream_dashboard_metadata_path
         ),
+        "output_locations": copy.deepcopy(dict(normalized_plan["output_locations"])),
     }
 
 
@@ -904,6 +920,7 @@ def _resolve_suite_context(
     suite_review_summary: Mapping[str, Any] | None,
     suite_review_summary_path: str | Path | None,
     table_dimension_ids: Sequence[str] | None,
+    raw_explicit_artifacts: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any] | None:
     package_metadata = None
     package_metadata_path_value = None
@@ -930,7 +947,46 @@ def _resolve_suite_context(
         )
 
     if package_metadata is None and review_summary_value is None:
-        return None
+        explicit_summary_table = _explicit_suite_artifact(
+            raw_explicit_artifacts,
+            role_id=SUITE_SUMMARY_TABLE_ROLE_ID,
+            default_artifact_id="summary_table",
+            default_section_id="shared_comparison_metrics",
+        )
+        explicit_comparison_plot = _explicit_suite_artifact(
+            raw_explicit_artifacts,
+            role_id=SUITE_COMPARISON_PLOT_ROLE_ID,
+            default_artifact_id="comparison_plot",
+            default_section_id="shared_comparison_metrics",
+        )
+        explicit_review_artifact = _explicit_suite_artifact(
+            raw_explicit_artifacts,
+            role_id=SUITE_REVIEW_ARTIFACT_ROLE_ID,
+            default_artifact_id="review_artifact",
+            default_section_id=None,
+        )
+        if not any(
+            artifact is not None
+            for artifact in (
+                explicit_summary_table,
+                explicit_comparison_plot,
+                explicit_review_artifact,
+            )
+        ):
+            return None
+        return {
+            "experiment_id": None,
+            "package_metadata": None,
+            "package_metadata_path": None,
+            "review_summary": None,
+            "suite_plan_path": None,
+            "suite_plan": {},
+            "artifact_catalog_path": None,
+            "artifact_catalog": {},
+            "summary_table_artifact": explicit_summary_table,
+            "comparison_plot_artifact": explicit_comparison_plot,
+            "review_artifact": explicit_review_artifact,
+        }
 
     if review_summary_value is None:
         review_summary_value = generate_experiment_suite_review_report(
@@ -985,6 +1041,23 @@ def _resolve_suite_context(
         "summary_table_artifact": summary_table_artifact,
         "comparison_plot_artifact": comparison_plot_artifact,
         "review_artifact": review_artifact,
+    }
+
+
+def _explicit_suite_artifact(
+    raw_explicit_artifacts: Mapping[str, Mapping[str, Any]],
+    *,
+    role_id: str,
+    default_artifact_id: str,
+    default_section_id: str | None,
+) -> dict[str, Any] | None:
+    artifact = raw_explicit_artifacts.get(role_id)
+    if artifact is None:
+        return None
+    return {
+        "artifact_id": str(artifact.get("artifact_id", default_artifact_id)),
+        "section_id": default_section_id,
+        "path": str(Path(artifact["path"]).resolve()),
     }
 
 
@@ -1254,7 +1327,7 @@ def _build_saved_presets(
                 },
             },
         },
-        "retinal_input_focus": {
+        RETINAL_INPUT_FOCUS_PRESET_ID: {
             "step_id": FLY_VIEW_INPUT_STEP_ID,
             "display_name": "Retinal Input Focus",
             "note": "Pause on the packaged input surface before the circuit replay begins.",
@@ -1284,7 +1357,7 @@ def _build_saved_presets(
             },
         },
         SUBSET_CONTEXT_PRESET_ID: {
-            "step_id": "active_visual_subset",
+            "step_id": ACTIVE_VISUAL_SUBSET_STEP_ID,
             "display_name": "Subset Context",
             "note": "Expose the selected roots and current focus neuron.",
             "presentation_status": PRESENTATION_STATUS_READY,
@@ -1301,8 +1374,8 @@ def _build_saved_presets(
                 },
             },
         },
-        "propagation_replay": {
-            "step_id": "activity_propagation",
+        PROPAGATION_REPLAY_PRESET_ID: {
+            "step_id": ACTIVITY_PROPAGATION_STEP_ID,
             "display_name": "Propagation Replay",
             "note": "Use the shared replay cursor on the matched baseline-versus-wave surface.",
             "presentation_status": PRESENTATION_STATUS_READY,
@@ -1427,7 +1500,7 @@ def _build_saved_presets(
                 },
             },
         },
-        SUMMARY_ANALYSIS_PRESET_ID: {
+        ANALYSIS_SUMMARY_PRESET_ID: {
             "step_id": SUMMARY_ANALYSIS_STEP_ID,
             "display_name": "Analysis Summary",
             "note": "Close on packaged analysis and review-facing evidence.",
@@ -1560,7 +1633,7 @@ def _build_showcase_steps(
         ),
         build_showcase_step(
             step_id=FLY_VIEW_INPUT_STEP_ID,
-            preset_id="retinal_input_focus",
+            preset_id=RETINAL_INPUT_FOCUS_PRESET_ID,
             cue_kind_id=PLAYBACK_SCRUB_CUE_KIND_ID,
             presentation_status=PRESENTATION_STATUS_READY,
             narrative_annotations=[
@@ -1591,7 +1664,7 @@ def _build_showcase_steps(
             ),
         ),
         build_showcase_step(
-            step_id="active_visual_subset",
+            step_id=ACTIVE_VISUAL_SUBSET_STEP_ID,
             preset_id=SUBSET_CONTEXT_PRESET_ID,
             cue_kind_id=OVERLAY_REVEAL_CUE_KIND_ID,
             presentation_status=PRESENTATION_STATUS_READY,
@@ -1619,12 +1692,12 @@ def _build_showcase_steps(
             export_target_role_ids=_step_exports(
                 [HERO_FRAME_EXPORT_TARGET_ROLE_ID],
                 enabled_exports=enabled_exports,
-                step_id="active_visual_subset",
+                step_id=ACTIVE_VISUAL_SUBSET_STEP_ID,
             ),
         ),
         build_showcase_step(
-            step_id="activity_propagation",
-            preset_id="propagation_replay",
+            step_id=ACTIVITY_PROPAGATION_STEP_ID,
+            preset_id=PROPAGATION_REPLAY_PRESET_ID,
             cue_kind_id=PLAYBACK_SCRUB_CUE_KIND_ID,
             presentation_status=PRESENTATION_STATUS_READY,
             narrative_annotations=[
@@ -1651,7 +1724,7 @@ def _build_showcase_steps(
             export_target_role_ids=_step_exports(
                 [SCRIPTED_CLIP_EXPORT_TARGET_ROLE_ID],
                 enabled_exports=enabled_exports,
-                step_id="activity_propagation",
+                step_id=ACTIVITY_PROPAGATION_STEP_ID,
             ),
         ),
         build_showcase_step(
@@ -1740,7 +1813,7 @@ def _build_showcase_steps(
         ),
         build_showcase_step(
             step_id=SUMMARY_ANALYSIS_STEP_ID,
-            preset_id=SUMMARY_ANALYSIS_PRESET_ID,
+            preset_id=ANALYSIS_SUMMARY_PRESET_ID,
             cue_kind_id="export_capture",
             presentation_status=PRESENTATION_STATUS_READY,
             narrative_annotations=[
@@ -2702,4 +2775,3 @@ def _require_mapping(value: Any, *, field_name: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{field_name} must be a mapping.")
     return copy.deepcopy(dict(value))
-
