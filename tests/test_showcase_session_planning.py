@@ -31,25 +31,30 @@ from flywire_wave.io_utils import write_json
 from flywire_wave.showcase_session_contract import (
     ACTIVE_VISUAL_SUBSET_STEP_ID,
     ACTIVITY_PROPAGATION_STEP_ID,
+    ANALYSIS_UI_PAYLOAD_ROLE_ID,
     ANALYSIS_SUMMARY_PRESET_ID,
     APPROVED_HIGHLIGHT_PRESET_ID,
     APPROVED_WAVE_HIGHLIGHT_STEP_ID,
     BASELINE_WAVE_COMPARISON_STEP_ID,
     DASHBOARD_SESSION_METADATA_ROLE_ID,
     FLY_VIEW_INPUT_STEP_ID,
+    HIGHLIGHT_FALLBACK_PRESET_ID,
     METADATA_JSON_KEY,
     PAIRED_COMPARISON_PRESET_ID,
     SCENE_SELECTION_STEP_ID,
     SHOWCASE_EXPORT_MANIFEST_ARTIFACT_ID,
     SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID,
     SHOWCASE_SCRIPT_PAYLOAD_ARTIFACT_ID,
+    SUITE_SUMMARY_TABLE_ROLE_ID,
     SUMMARY_ANALYSIS_STEP_ID,
+    VALIDATION_REVIEW_HANDOFF_ROLE_ID,
     discover_showcase_session_bundle_paths,
     load_showcase_session_metadata,
 )
 from flywire_wave.showcase_session_planning import (
     package_showcase_session,
     resolve_showcase_session_plan,
+    SHOWCASE_FIXTURE_MODE_REHEARSAL,
 )
 from flywire_wave.validation_contract import (
     REVIEW_HANDOFF_ARTIFACT_ID,
@@ -280,6 +285,115 @@ class ShowcaseSessionPlanningTest(unittest.TestCase):
             self.assertEqual(
                 _saved_preset(explicit_plan, ANALYSIS_SUMMARY_PRESET_ID)["step_id"],
                 SUMMARY_ANALYSIS_STEP_ID,
+            )
+
+    def test_rehearsal_fixture_packages_curated_preset_library_and_evidence_backed_highlight(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+            _approve_validation_highlight(fixture)
+
+            plan = resolve_showcase_session_plan(
+                config_path=fixture["config_path"],
+                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                suite_review_summary_path=fixture["suite_review_summary_path"],
+                table_dimension_ids=["motion_direction"],
+                fixture_mode=SHOWCASE_FIXTURE_MODE_REHEARSAL,
+                highlight_override={
+                    "phenomenon_id": "phase_alignment_focus",
+                    "locator": "wave_only_diagnostics.phase_map_references[0]",
+                    "citation_label": "Approved phase alignment",
+                },
+            )
+            packaged = package_showcase_session(plan)
+            catalog = json.loads(
+                Path(packaged["narrative_preset_catalog_path"]).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(plan["fixture_mode"], SHOWCASE_FIXTURE_MODE_REHEARSAL)
+            self.assertTrue(plan["showcase_fixture"]["keeps_readiness_fixtures_fast"])
+            self.assertEqual(
+                catalog["fixture_profile"]["fixture_mode"],
+                SHOWCASE_FIXTURE_MODE_REHEARSAL,
+            )
+            self.assertEqual(
+                catalog["story_arc_preset_ids"],
+                {
+                    "scene_choice": "scene_context",
+                    "fly_view_framing": "retinal_input_focus",
+                    "active_subset_emphasis": "subset_context",
+                    "propagation_view": "propagation_replay",
+                    "comparison_pairing": "paired_comparison",
+                    "highlight_phenomenon_reference": "approved_highlight",
+                    "highlight_fallback": "highlight_fallback",
+                    "final_analysis_landing": "analysis_summary",
+                },
+            )
+            self.assertEqual(
+                catalog["preset_discovery_order"],
+                [
+                    "scene_context",
+                    "retinal_input_focus",
+                    "subset_context",
+                    "propagation_replay",
+                    "paired_comparison",
+                    "approved_highlight",
+                    "highlight_fallback",
+                    "analysis_summary",
+                ],
+            )
+            self.assertEqual(
+                [item["preset_id"] for item in catalog["saved_presets"]],
+                catalog["preset_discovery_order"],
+            )
+
+            approved_preset = next(
+                item
+                for item in catalog["saved_presets"]
+                if item["preset_id"] == APPROVED_HIGHLIGHT_PRESET_ID
+            )
+            self.assertEqual(
+                approved_preset["presentation_state_patch"]["rehearsal_metadata"][
+                    "story_role"
+                ],
+                "highlight_phenomenon_reference",
+            )
+            self.assertEqual(
+                catalog["highlight_metadata"]["phenomenon_id"],
+                "phase_alignment_focus",
+            )
+            self.assertEqual(
+                catalog["highlight_metadata"]["fallback_path"]["fallback_preset_id"],
+                HIGHLIGHT_FALLBACK_PRESET_ID,
+            )
+            self.assertEqual(
+                catalog["highlight_metadata"]["fallback_path"]["fallback_step_id"],
+                BASELINE_WAVE_COMPARISON_STEP_ID,
+            )
+            support_roles = {
+                item["artifact_role_id"]
+                for item in catalog["highlight_metadata"]["supporting_evidence_references"]
+            }
+            self.assertIn(SUITE_SUMMARY_TABLE_ROLE_ID, support_roles)
+            self.assertIn(VALIDATION_REVIEW_HANDOFF_ROLE_ID, support_roles)
+
+            highlight_step = _showcase_step(plan, APPROVED_WAVE_HIGHLIGHT_STEP_ID)
+            self.assertEqual(
+                {
+                    item["artifact_role_id"]
+                    for item in highlight_step["evidence_references"]
+                },
+                {
+                    ANALYSIS_UI_PAYLOAD_ROLE_ID,
+                    SUITE_SUMMARY_TABLE_ROLE_ID,
+                    VALIDATION_REVIEW_HANDOFF_ROLE_ID,
+                },
+            )
+            self.assertEqual(
+                catalog["highlight_step_evidence_references"],
+                highlight_step["evidence_references"],
             )
 
     def test_planning_fails_clearly_for_unsupported_preset_overlay_and_missing_highlight_review(

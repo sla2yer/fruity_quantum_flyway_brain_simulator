@@ -212,6 +212,39 @@ make suite-aggregate SUITE_AGGREGATE_ARGS='--suite-package-metadata data/process
 make suite-report SUITE_REPORT_ARGS='--suite-package-metadata data/processed/milestone_15_verification/simulator_results/readiness/milestone_15/generated_fixture/review_workflow/o/package/experiment_suite_package.json --table-dimension-id motion_direction'
 ```
 
+## Milestone 16 local rehearsal
+
+Milestone 16 does not replace the compact Milestone 14 and Milestone 15
+readiness fixtures. Those remain the fast integration gates. The richer local
+rehearsal surface is packaged one level downstream as a showcase session with
+fixture mode `milestone16_rehearsal`.
+
+The canonical local entrypoint is:
+
+```bash
+make showcase-session SHOWCASE_ARGS='--dashboard-session-metadata <dashboard_session.json> --suite-package-metadata <experiment_suite_package.json> --suite-review-summary <suite_review_summary.json> --table-dimension-id motion_direction --fixture-mode milestone16_rehearsal --highlight-phenomenon-id phase_alignment_focus --highlight-locator wave_only_diagnostics.phase_map_references[0] --highlight-citation-label "Approved phase alignment"'
+```
+
+That command packages a deterministic `showcase_session.v1` bundle under
+`data/processed/.../showcase_sessions/<experiment_id>/<showcase_spec_hash>/`
+and writes:
+
+- `showcase_session.json` for discovery
+- `narrative_preset_catalog.json` for the curated preset library
+- `showcase_state.json` and `showcase_script.json` for later runtime work
+- `exports/showcase_export_manifest.json` for downstream review/export wiring
+
+The rehearsal catalog now records:
+
+- one stable story-arc preset map for scene choice, fly-view framing,
+  active-subset emphasis, propagation replay, paired comparison, highlight
+  reference, highlight fallback, and final analysis landing
+- richer preset-local rehearsal metadata such as camera anchors, subset-focus
+  targets, comparison pairing, and analysis landing context
+- explicit highlight metadata with the nominated phenomenon id, the primary
+  analysis evidence reference, supporting suite and validation references, and
+  a declared fallback path back to the fair paired-comparison surface
+
 ## Pipeline at a glance
 
 The main pipeline order is:

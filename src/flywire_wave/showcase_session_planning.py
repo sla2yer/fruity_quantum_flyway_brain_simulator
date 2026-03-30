@@ -109,6 +109,7 @@ from .showcase_session_contract import (
     SCENE_CONTEXT_PRESET_ID,
     SCENE_SELECTION_STEP_ID,
     SCIENTIFIC_GUARDRAIL_ANNOTATION_ID,
+    SHARED_COMPARISON_EVIDENCE_ROLE_ID,
     SCRIPT_PLAYBACK_SCOPE,
     SCRIPTED_CLIP_EXPORT_TARGET_ROLE_ID,
     SHOWCASE_EXPORT_MANIFEST_ARTIFACT_ID,
@@ -176,6 +177,10 @@ SHOWCASE_SESSION_SOURCE_MODE_EXPLICIT = "explicit_artifact_inputs"
 
 DEFAULT_SHOWCASE_ID = "milestone_16_showcase"
 DEFAULT_SHOWCASE_DISPLAY_NAME = "Milestone 16 Showcase"
+SHOWCASE_FIXTURE_MODE_REHEARSAL = "milestone16_rehearsal"
+SUPPORTED_SHOWCASE_FIXTURE_MODES = (SHOWCASE_FIXTURE_MODE_REHEARSAL,)
+DEFAULT_SHOWCASE_FIXTURE_MODE = SHOWCASE_FIXTURE_MODE_REHEARSAL
+DEFAULT_NARRATIVE_PRESET_LIBRARY_ID = "milestone16_rehearsal_preset_library.v1"
 
 DEFAULT_ACTIVE_PANE_BY_STEP = {
     SCENE_SELECTION_STEP_ID: SCENE_PANE_ID,
@@ -250,6 +255,7 @@ def resolve_showcase_session_plan(
     explicit_artifact_references: Sequence[Mapping[str, Any]] | None = None,
     showcase_id: str = DEFAULT_SHOWCASE_ID,
     display_name: str = DEFAULT_SHOWCASE_DISPLAY_NAME,
+    fixture_mode: str = DEFAULT_SHOWCASE_FIXTURE_MODE,
     table_dimension_ids: Sequence[str] | None = None,
     saved_preset_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     highlight_override: Mapping[str, Any] | None = None,
@@ -262,6 +268,7 @@ def resolve_showcase_session_plan(
     project_root = get_project_root(cfg)
     if config_file is None or project_root is None:
         raise ValueError("Loaded config is missing config metadata.")
+    normalized_fixture_mode = _normalize_fixture_mode(fixture_mode)
 
     normalized_contract = parse_showcase_session_contract_metadata(
         contract_metadata
@@ -340,6 +347,7 @@ def resolve_showcase_session_plan(
     saved_presets = _build_saved_presets(
         dashboard_context=dashboard_context,
         narrative_context=narrative_context,
+        fixture_mode=normalized_fixture_mode,
         saved_preset_overrides=saved_preset_overrides,
     )
     showcase_steps = _build_showcase_steps(
@@ -399,6 +407,9 @@ def resolve_showcase_session_plan(
     narrative_preset_catalog = _build_narrative_preset_catalog(
         showcase_session=showcase_session,
         dashboard_context=dashboard_context,
+        fixture_mode=normalized_fixture_mode,
+        narrative_context=narrative_context,
+        showcase_steps=showcase_steps,
         saved_presets=saved_presets,
     )
     showcase_export_manifest = _build_showcase_export_manifest(
@@ -410,6 +421,7 @@ def resolve_showcase_session_plan(
     return {
         "plan_version": SHOWCASE_SESSION_PLAN_VERSION,
         "source_mode": source_mode,
+        "fixture_mode": normalized_fixture_mode,
         "manifest_reference": copy.deepcopy(
             dict(dashboard_context["metadata"]["manifest_reference"])
         ),
@@ -447,6 +459,12 @@ def resolve_showcase_session_plan(
         "showcase_presentation_state": copy.deepcopy(showcase_presentation_state),
         "narrative_preset_catalog": copy.deepcopy(narrative_preset_catalog),
         "showcase_export_manifest": copy.deepcopy(showcase_export_manifest),
+        "showcase_fixture": _build_showcase_fixture_profile(
+            fixture_mode=normalized_fixture_mode,
+            dashboard_context=dashboard_context,
+            suite_context=suite_context,
+            narrative_context=narrative_context,
+        ),
         "output_locations": copy.deepcopy(output_locations),
     }
 
@@ -1118,6 +1136,7 @@ def _build_narrative_context(
     highlight_selection = _resolve_highlight_selection(
         analysis_context=analysis_context,
         validation_context=validation_context,
+        suite_context=suite_context,
         override=highlight_override,
     )
     return {
@@ -1185,6 +1204,7 @@ def _resolve_highlight_selection(
     *,
     analysis_context: Mapping[str, Any],
     validation_context: Mapping[str, Any],
+    suite_context: Mapping[str, Any] | None,
     override: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     normalized_override = _normalize_highlight_override(override)
@@ -1225,6 +1245,10 @@ def _resolve_highlight_selection(
         else str(review_handoff["review_status"])
     )
     approved = scientific_decision in _APPROVED_HIGHLIGHT_DECISIONS
+    suite_support_references = _highlight_suite_support_references(suite_context)
+    validation_support_references = _highlight_validation_support_references(
+        validation_context
+    )
 
     if normalized_override is not None:
         requested_role = str(normalized_override["artifact_role_id"])
@@ -1235,6 +1259,12 @@ def _resolve_highlight_selection(
                 phase_refs=phase_refs,
                 diagnostic_cards=diagnostic_cards,
             )
+        source_reference = _resolve_highlight_source_reference(
+            artifact_role_id=requested_role,
+            locator=locator,
+            phase_refs=phase_refs,
+            diagnostic_cards=diagnostic_cards,
+        )
         if not approved:
             raise ValueError(
                 "Showcase planning received a nominated highlight override, but "
@@ -1251,6 +1281,23 @@ def _resolve_highlight_selection(
             "scientific_plausibility_decision": scientific_decision,
             "review_status": review_status,
             "fallback_reason": None,
+            "source_reference": source_reference,
+            "primary_evidence_reference": build_showcase_evidence_reference(
+                evidence_role_id=APPROVED_WAVE_HIGHLIGHT_EVIDENCE_ROLE_ID,
+                artifact_role_id=requested_role,
+                citation_label=str(normalized_override["citation_label"]),
+                locator=locator,
+            ),
+            "supporting_evidence_references": suite_support_references
+            + validation_support_references,
+            "fallback_path": _build_highlight_fallback_path(
+                suite_support_references=suite_support_references,
+                validation_support_references=validation_support_references,
+                fallback_reason=(
+                    "Redirect to the paired comparison if the nominated wave-only beat "
+                    "cannot be shown honestly at rehearsal time."
+                ),
+            ),
         }
 
     if phase_refs:
@@ -1263,6 +1310,15 @@ def _resolve_highlight_selection(
             "artifact_role_id": ANALYSIS_UI_PAYLOAD_ROLE_ID,
             "locator": "wave_only_diagnostics.phase_map_references[0]",
             "citation_label": "Wave phase-map reference",
+            "source_reference": {
+                "source_kind": "phase_map_reference",
+                "bundle_id": str(first_phase.get("bundle_id", "")),
+                "arm_id": str(first_phase.get("arm_id", "")),
+                "seed": int(first_phase.get("seed", 0)),
+                "artifact_id": str(first_phase.get("artifact_id", "")),
+                "root_ids": [int(item) for item in first_phase.get("root_ids", [])],
+                "path": str(first_phase.get("path", "")),
+            },
         }
     else:
         first_card = diagnostic_cards[0]
@@ -1272,7 +1328,21 @@ def _resolve_highlight_selection(
             "artifact_role_id": ANALYSIS_UI_PAYLOAD_ROLE_ID,
             "locator": "wave_only_diagnostics.diagnostic_cards[0]",
             "citation_label": label,
+            "source_reference": {
+                "source_kind": "diagnostic_card",
+                "card_id": str(first_card.get("card_id", "")),
+                "arm_id": str(first_card.get("arm_id", "")),
+                "metric_id": str(first_card.get("metric_id", "")),
+                "mean_value": first_card.get("mean_value"),
+                "units": str(first_card.get("units", "")),
+                "seed_count": int(first_card.get("seed_count", 0)),
+            },
         }
+    fallback_reason = (
+        None
+        if approved
+        else "validation review_handoff has not approved the requested wave-only beat"
+    )
     return {
         **candidate,
         "presentation_status": (
@@ -1280,10 +1350,27 @@ def _resolve_highlight_selection(
         ),
         "scientific_plausibility_decision": scientific_decision,
         "review_status": review_status,
-        "fallback_reason": (
-            None
-            if approved
-            else "validation review_handoff has not approved the requested wave-only beat"
+        "fallback_reason": fallback_reason,
+        "primary_evidence_reference": build_showcase_evidence_reference(
+            evidence_role_id=APPROVED_WAVE_HIGHLIGHT_EVIDENCE_ROLE_ID,
+            artifact_role_id=str(candidate["artifact_role_id"]),
+            citation_label=str(candidate["citation_label"]),
+            locator=(
+                None
+                if candidate.get("locator") is None
+                else str(candidate["locator"])
+            ),
+        ),
+        "supporting_evidence_references": suite_support_references
+        + validation_support_references,
+        "fallback_path": _build_highlight_fallback_path(
+            suite_support_references=suite_support_references,
+            validation_support_references=validation_support_references,
+            fallback_reason=(
+                str(fallback_reason)
+                if fallback_reason is not None
+                else "Redirect to the paired comparison if the preferred highlight is unavailable."
+            ),
         ),
     }
 
@@ -1292,6 +1379,7 @@ def _build_saved_presets(
     *,
     dashboard_context: Mapping[str, Any],
     narrative_context: Mapping[str, Any],
+    fixture_mode: str,
     saved_preset_overrides: Mapping[str, Mapping[str, Any]] | None,
 ) -> list[dict[str, Any]]:
     payload = dashboard_context["payload"]
@@ -1317,6 +1405,17 @@ def _build_saved_presets(
                     "source_kind": str(scene_context["source_kind"]),
                     "active_layer_id": str(scene_context["active_layer_id"]),
                 },
+                "rehearsal_metadata": {
+                    "fixture_mode": fixture_mode,
+                    "story_role": "scene_choice",
+                    "camera_anchor": {
+                        "anchor_id": "opening_scene_context",
+                        "framing_mode": "wide_establishing",
+                        "source_kind": str(scene_context["source_kind"]),
+                        "active_layer_id": str(scene_context["active_layer_id"]),
+                        "target_root_ids": selected_root_ids[:1],
+                    },
+                },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
                         "time_cursor": {"sample_index": 0, "time_ms": 0.0},
@@ -1337,6 +1436,16 @@ def _build_saved_presets(
                 "scene_surface": {
                     "source_kind": str(scene_context["source_kind"]),
                     "active_layer_id": str(scene_context["active_layer_id"]),
+                },
+                "rehearsal_metadata": {
+                    "fixture_mode": fixture_mode,
+                    "story_role": "fly_view_framing",
+                    "camera_anchor": {
+                        "anchor_id": "retinal_input_hold",
+                        "framing_mode": "input_surface_hold",
+                        "surface_kind": str(narrative_context["input_surface"]["surface_kind"]),
+                        "active_layer_id": str(scene_context["active_layer_id"]),
+                    },
                 },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
@@ -1364,6 +1473,13 @@ def _build_saved_presets(
             "presentation_state_patch": {
                 "active_pane_id": CIRCUIT_PANE_ID,
                 "focus_root_ids": selected_root_ids,
+                "rehearsal_metadata": {
+                    "fixture_mode": fixture_mode,
+                    "story_role": "active_subset_emphasis",
+                    "subset_focus": copy.deepcopy(
+                        dict(narrative_context["active_subset_focus_targets"])
+                    ),
+                },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
                         "selected_neuron_id": selected_neuron_id,
@@ -1382,6 +1498,13 @@ def _build_saved_presets(
             "presentation_state_patch": {
                 "active_pane_id": TIME_SERIES_PANE_ID,
                 "focus_root_ids": selected_root_ids[:1],
+                "rehearsal_metadata": {
+                    "fixture_mode": fixture_mode,
+                    "story_role": "propagation_view",
+                    "propagation_view": copy.deepcopy(
+                        dict(narrative_context["activity_propagation_views"])
+                    ),
+                },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
                         "selected_readout_id": selected_readout_id,
@@ -1411,6 +1534,13 @@ def _build_saved_presets(
             "presentation_status": PRESENTATION_STATUS_READY,
             "presentation_state_patch": {
                 "active_pane_id": ANALYSIS_PANE_ID,
+                "rehearsal_metadata": {
+                    "fixture_mode": fixture_mode,
+                    "story_role": "comparison_pairing",
+                    "comparison_pairing": copy.deepcopy(
+                        dict(narrative_context["approved_comparison_arms"])
+                    ),
+                },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
                         "comparison_mode": "paired_baseline_vs_wave",
@@ -1442,6 +1572,13 @@ def _build_saved_presets(
                 "highlight_selection": copy.deepcopy(
                     dict(narrative_context["highlight_selection"])
                 ),
+                "rehearsal_metadata": {
+                    "fixture_mode": fixture_mode,
+                    "story_role": "highlight_phenomenon_reference",
+                    "highlight_metadata": copy.deepcopy(
+                        dict(narrative_context["highlight_selection"])
+                    ),
+                },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
                         "comparison_mode": "single_arm",
@@ -1480,6 +1617,13 @@ def _build_saved_presets(
                 "highlight_selection": copy.deepcopy(
                     dict(narrative_context["highlight_selection"])
                 ),
+                "rehearsal_metadata": {
+                    "fixture_mode": fixture_mode,
+                    "story_role": "highlight_fallback",
+                    "highlight_metadata": copy.deepcopy(
+                        dict(narrative_context["highlight_selection"])
+                    ),
+                },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
                         "comparison_mode": "paired_baseline_vs_wave",
@@ -1507,6 +1651,26 @@ def _build_saved_presets(
             "presentation_status": PRESENTATION_STATUS_READY,
             "presentation_state_patch": {
                 "active_pane_id": ANALYSIS_PANE_ID,
+                "rehearsal_metadata": {
+                    "fixture_mode": fixture_mode,
+                    "story_role": "final_analysis_landing",
+                    "analysis_landing": {
+                        "analysis_summary_locator": str(
+                            narrative_context["closing_analysis_assets"][
+                                "analysis_summary_locator"
+                            ]
+                        ),
+                        "suite_summary_table_path": narrative_context[
+                            "closing_analysis_assets"
+                        ]["suite_summary_table_path"],
+                        "suite_comparison_plot_path": narrative_context[
+                            "closing_analysis_assets"
+                        ]["suite_comparison_plot_path"],
+                        "suite_review_artifact_path": narrative_context[
+                            "closing_analysis_assets"
+                        ]["suite_review_artifact_path"],
+                    },
+                },
                 "dashboard_state_patch": {
                     "global_interaction_state": {
                         "active_overlay_id": _preferred_overlay(
@@ -1785,7 +1949,7 @@ def _build_showcase_steps(
             cue_kind_id=highlight_cue_kind_id,
             presentation_status=highlight_status,
             narrative_annotations=_highlight_annotations(
-                highlight_ready=highlight_ready,
+                highlight_selection=narrative_context["highlight_selection"],
             ),
             evidence_references=[
                 build_showcase_evidence_reference(
@@ -1796,11 +1960,60 @@ def _build_showcase_steps(
                     ),
                     locator=narrative_context["highlight_selection"]["locator"],
                 ),
+                *(
+                    [
+                        build_showcase_evidence_reference(
+                            evidence_role_id=SUITE_ROLLUP_EVIDENCE_ROLE_ID,
+                            artifact_role_id=SUITE_SUMMARY_TABLE_ROLE_ID,
+                            citation_label="Suite summary table",
+                            locator="shared_comparison_metrics.summary_table_rows",
+                            required=False,
+                        )
+                    ]
+                    if summary_evidence_role is not None
+                    else []
+                ),
                 build_showcase_evidence_reference(
                     evidence_role_id=VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
-                    artifact_role_id=VALIDATION_FINDINGS_ROLE_ID,
-                    citation_label="Validation findings",
-                    locator="validator_findings",
+                    artifact_role_id=(
+                        VALIDATION_REVIEW_HANDOFF_ROLE_ID
+                        if narrative_context["highlight_selection"]
+                        .get("supporting_evidence_references", [])
+                        and any(
+                            str(item.get("artifact_role_id"))
+                            == VALIDATION_REVIEW_HANDOFF_ROLE_ID
+                            for item in narrative_context["highlight_selection"][
+                                "supporting_evidence_references"
+                            ]
+                        )
+                        else VALIDATION_FINDINGS_ROLE_ID
+                    ),
+                    citation_label=(
+                        "Validation review handoff"
+                        if narrative_context["highlight_selection"]
+                        .get("supporting_evidence_references", [])
+                        and any(
+                            str(item.get("artifact_role_id"))
+                            == VALIDATION_REVIEW_HANDOFF_ROLE_ID
+                            for item in narrative_context["highlight_selection"][
+                                "supporting_evidence_references"
+                            ]
+                        )
+                        else "Validation findings"
+                    ),
+                    locator=(
+                        "scientific_plausibility_decision"
+                        if narrative_context["highlight_selection"]
+                        .get("supporting_evidence_references", [])
+                        and any(
+                            str(item.get("artifact_role_id"))
+                            == VALIDATION_REVIEW_HANDOFF_ROLE_ID
+                            for item in narrative_context["highlight_selection"][
+                                "supporting_evidence_references"
+                            ]
+                        )
+                        else "validator_findings"
+                    ),
                 ),
             ],
             operator_control_ids=["load_preset", "pause_script"],
@@ -2177,8 +2390,17 @@ def _build_narrative_preset_catalog(
     *,
     showcase_session: Mapping[str, Any],
     dashboard_context: Mapping[str, Any],
+    fixture_mode: str,
+    narrative_context: Mapping[str, Any],
+    showcase_steps: Sequence[Mapping[str, Any]],
     saved_presets: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
+    preset_discovery_order = [str(item["preset_id"]) for item in saved_presets]
+    highlight_step = next(
+        item
+        for item in showcase_steps
+        if str(item["step_id"]) == APPROVED_WAVE_HIGHLIGHT_STEP_ID
+    )
     return {
         "format_version": JSON_NARRATIVE_PRESET_CATALOG_FORMAT,
         "contract_version": SHOWCASE_SESSION_CONTRACT_VERSION,
@@ -2190,6 +2412,18 @@ def _build_narrative_preset_catalog(
             "artifact_role_id": DASHBOARD_SESSION_STATE_ROLE_ID,
             "bundle_id": str(dashboard_context["metadata"]["bundle_id"]),
         },
+        "preset_library_id": DEFAULT_NARRATIVE_PRESET_LIBRARY_ID,
+        "fixture_profile": {
+            "fixture_mode": fixture_mode,
+            "keeps_readiness_fixtures_fast": True,
+            "workflow_kind": "local_showcase_rehearsal",
+        },
+        "story_arc_preset_ids": _story_arc_preset_ids(),
+        "preset_discovery_order": preset_discovery_order,
+        "highlight_metadata": copy.deepcopy(dict(narrative_context["highlight_selection"])),
+        "highlight_step_evidence_references": copy.deepcopy(
+            list(highlight_step["evidence_references"])
+        ),
         "saved_presets": [copy.deepcopy(dict(item)) for item in saved_presets],
     }
 
@@ -2404,6 +2638,15 @@ def _normalize_saved_preset_overrides(
     return normalized
 
 
+def _normalize_fixture_mode(value: Any) -> str:
+    normalized = _normalize_identifier(value, field_name="fixture_mode")
+    if normalized not in SUPPORTED_SHOWCASE_FIXTURE_MODES:
+        raise ValueError(
+            f"fixture_mode must be one of {SUPPORTED_SHOWCASE_FIXTURE_MODES!r}."
+        )
+    return normalized
+
+
 def _normalize_highlight_override(
     payload: Mapping[str, Any] | None,
 ) -> dict[str, Any] | None:
@@ -2477,6 +2720,7 @@ def _validate_presentation_state_patch(
         "focus_root_ids",
         "scene_surface",
         "highlight_selection",
+        "rehearsal_metadata",
         "dashboard_state_patch",
     }
     unsupported = set(patch) - supported_keys
@@ -2515,6 +2759,12 @@ def _validate_presentation_state_patch(
                 f"saved preset {preset_id!r} references unavailable scene layer "
                 f"{surface['active_layer_id']!r}."
             )
+
+    if "rehearsal_metadata" in patch:
+        _require_mapping(
+            patch["rehearsal_metadata"],
+            field_name=f"saved_presets[{preset_id!r}].rehearsal_metadata",
+        )
 
     dashboard_state_patch = patch.get("dashboard_state_patch")
     if isinstance(dashboard_state_patch, Mapping):
@@ -2621,12 +2871,18 @@ def _step_exports(
     return selected
 
 
-def _highlight_annotations(*, highlight_ready: bool) -> list[dict[str, Any]]:
+def _highlight_annotations(
+    *,
+    highlight_selection: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    highlight_ready = (
+        str(highlight_selection["presentation_status"]) == PRESENTATION_STATUS_READY
+    )
     annotations = [
         build_showcase_narrative_annotation(
             annotation_id=SCIENTIFIC_GUARDRAIL_ANNOTATION_ID,
             text=(
-                "This wave-only beat is validation-backed and approved."
+                f"Approved highlight: {highlight_selection['citation_label']}."
                 if highlight_ready
                 else "The requested highlight is not approved for display."
             ),
@@ -2637,9 +2893,10 @@ def _highlight_annotations(*, highlight_ready: bool) -> list[dict[str, Any]]:
         ),
         build_showcase_narrative_annotation(
             annotation_id=EVIDENCE_CAPTION_ANNOTATION_ID,
-            text="Keep the highlight traceable to analysis and validation artifacts.",
+            text="Keep the highlight traceable to analysis, suite, and validation artifacts.",
             linked_evidence_role_ids=[
                 APPROVED_WAVE_HIGHLIGHT_EVIDENCE_ROLE_ID,
+                SUITE_ROLLUP_EVIDENCE_ROLE_ID,
                 VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
             ],
         ),
@@ -2648,10 +2905,155 @@ def _highlight_annotations(*, highlight_ready: bool) -> list[dict[str, Any]]:
         annotations.append(
             build_showcase_narrative_annotation(
                 annotation_id=FALLBACK_NOTICE_ANNOTATION_ID,
-                text="Fall back to the paired comparison rather than fabricating a substitute wave-only effect.",
+                text=str(highlight_selection["fallback_path"]["fallback_explanation"]),
             )
         )
     return annotations
+
+
+def _highlight_suite_support_references(
+    suite_context: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if suite_context is None or suite_context.get("summary_table_artifact") is None:
+        return []
+    return [
+        build_showcase_evidence_reference(
+            evidence_role_id=SUITE_ROLLUP_EVIDENCE_ROLE_ID,
+            artifact_role_id=SUITE_SUMMARY_TABLE_ROLE_ID,
+            citation_label="Suite summary table",
+            locator="shared_comparison_metrics.summary_table_rows",
+            required=False,
+        )
+    ]
+
+
+def _highlight_validation_support_references(
+    validation_context: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    references = [
+        build_showcase_evidence_reference(
+            evidence_role_id=VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
+            artifact_role_id=VALIDATION_FINDINGS_ROLE_ID,
+            citation_label="Validation findings",
+            locator="validator_findings",
+        )
+    ]
+    if validation_context.get("review_handoff_path") is not None:
+        references.append(
+            build_showcase_evidence_reference(
+                evidence_role_id=VALIDATION_GUARDRAIL_EVIDENCE_ROLE_ID,
+                artifact_role_id=VALIDATION_REVIEW_HANDOFF_ROLE_ID,
+                citation_label="Validation review handoff",
+                locator="scientific_plausibility_decision",
+            )
+        )
+    return references
+
+
+def _resolve_highlight_source_reference(
+    *,
+    artifact_role_id: str,
+    locator: str | None,
+    phase_refs: Sequence[Mapping[str, Any]],
+    diagnostic_cards: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    if (
+        artifact_role_id == ANALYSIS_UI_PAYLOAD_ROLE_ID
+        and locator == "wave_only_diagnostics.phase_map_references[0]"
+        and phase_refs
+    ):
+        first_phase = phase_refs[0]
+        return {
+            "source_kind": "phase_map_reference",
+            "bundle_id": str(first_phase.get("bundle_id", "")),
+            "arm_id": str(first_phase.get("arm_id", "")),
+            "seed": int(first_phase.get("seed", 0)),
+            "artifact_id": str(first_phase.get("artifact_id", "")),
+            "root_ids": [int(item) for item in first_phase.get("root_ids", [])],
+            "path": str(first_phase.get("path", "")),
+        }
+    if (
+        artifact_role_id == ANALYSIS_UI_PAYLOAD_ROLE_ID
+        and locator == "wave_only_diagnostics.diagnostic_cards[0]"
+        and diagnostic_cards
+    ):
+        first_card = diagnostic_cards[0]
+        return {
+            "source_kind": "diagnostic_card",
+            "card_id": str(first_card.get("card_id", "")),
+            "arm_id": str(first_card.get("arm_id", "")),
+            "metric_id": str(first_card.get("metric_id", "")),
+            "mean_value": first_card.get("mean_value"),
+            "units": str(first_card.get("units", "")),
+            "seed_count": int(first_card.get("seed_count", 0)),
+        }
+    return {
+        "source_kind": "explicit_reference",
+        "artifact_role_id": str(artifact_role_id),
+        "locator": None if locator is None else str(locator),
+    }
+
+
+def _build_highlight_fallback_path(
+    *,
+    suite_support_references: Sequence[Mapping[str, Any]],
+    validation_support_references: Sequence[Mapping[str, Any]],
+    fallback_reason: str,
+) -> dict[str, Any]:
+    return {
+        "fallback_step_id": BASELINE_WAVE_COMPARISON_STEP_ID,
+        "fallback_preset_id": HIGHLIGHT_FALLBACK_PRESET_ID,
+        "cue_kind_id": FALLBACK_REDIRECT_CUE_KIND_ID,
+        "fallback_explanation": str(fallback_reason),
+        "supporting_evidence_references": [
+            build_showcase_evidence_reference(
+                evidence_role_id=SHARED_COMPARISON_EVIDENCE_ROLE_ID,
+                artifact_role_id=ANALYSIS_UI_PAYLOAD_ROLE_ID,
+                citation_label="Analysis shared-comparison payload",
+                locator="shared_comparison",
+            ),
+            *[copy.deepcopy(dict(item)) for item in suite_support_references],
+            *[copy.deepcopy(dict(item)) for item in validation_support_references],
+        ],
+    }
+
+
+def _story_arc_preset_ids() -> dict[str, str]:
+    return {
+        "scene_choice": SCENE_CONTEXT_PRESET_ID,
+        "fly_view_framing": RETINAL_INPUT_FOCUS_PRESET_ID,
+        "active_subset_emphasis": SUBSET_CONTEXT_PRESET_ID,
+        "propagation_view": PROPAGATION_REPLAY_PRESET_ID,
+        "comparison_pairing": PAIRED_COMPARISON_PRESET_ID,
+        "highlight_phenomenon_reference": APPROVED_HIGHLIGHT_PRESET_ID,
+        "highlight_fallback": HIGHLIGHT_FALLBACK_PRESET_ID,
+        "final_analysis_landing": ANALYSIS_SUMMARY_PRESET_ID,
+    }
+
+
+def _build_showcase_fixture_profile(
+    *,
+    fixture_mode: str,
+    dashboard_context: Mapping[str, Any],
+    suite_context: Mapping[str, Any] | None,
+    narrative_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "fixture_mode": str(fixture_mode),
+        "fixture_id": "milestone16_local_rehearsal",
+        "display_name": "Milestone 16 Local Rehearsal",
+        "workflow_kind": "local_showcase_rehearsal",
+        "keeps_readiness_fixtures_fast": True,
+        "uses_packaged_dashboard_session": True,
+        "uses_packaged_suite_review": bool(
+            suite_context is not None and suite_context.get("summary_table_artifact") is not None
+        ),
+        "dashboard_origin": str(dashboard_context["origin"]),
+        "selected_root_count": int(
+            narrative_context["active_subset_focus_targets"]["root_count"]
+        ),
+        "story_arc_preset_ids": _story_arc_preset_ids(),
+    }
 
 
 def _select_suite_artifact(

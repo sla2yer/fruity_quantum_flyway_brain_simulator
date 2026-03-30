@@ -837,6 +837,38 @@ Contract notes:
 later tickets should cite it instead of re-litigating the showcase vocabulary,
 fallback semantics, or the Jack-versus-Grant ownership boundary.
 
+### Showcase rehearsal workflow
+
+Milestone 14 and Milestone 15 readiness fixtures stay intentionally compact so
+their integration gates remain fast and deterministic. Milestone 16 rehearsal
+work now packages a richer downstream showcase surface instead of inflating
+those readiness fixtures.
+
+The canonical local wrapper is:
+
+- `make showcase-session`
+- the wrapper runs `scripts/35_showcase_session.py build --config <config> ...`
+
+Rehearsal notes:
+
+- the planner fixture mode is `milestone16_rehearsal`
+- the packaged `narrative_preset_catalog.json` now acts as the curated preset
+  library for the full story arc
+- `story_arc_preset_ids` records the stable preset ids for scene choice,
+  fly-view framing, active-subset emphasis, propagation replay, paired
+  comparison, highlight reference, highlight fallback, and final analysis
+  landing
+- each saved preset now carries rehearsal metadata for anchors or focus
+  context, for example camera framing, subset-focus state, comparison pairing,
+  highlight reference state, or analysis landing state
+- highlight metadata is explicit rather than inferred from presentation state:
+  it records the nominated phenomenon id, the primary analysis evidence
+  locator, supporting suite and validation references, and a declared fallback
+  path back to the fair paired-comparison surface
+- this keeps the showcase layer honest: the presentation package cites shipped
+  suite and validation evidence, but it does not pretend the UI discovered the
+  science on its own
+
 ### Offline retinal inspection contract
 
 Milestone 8B now also defines one deterministic offline inspection workflow for

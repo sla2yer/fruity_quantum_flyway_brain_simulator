@@ -18,6 +18,23 @@ The contract composes with earlier milestones instead of replacing them:
 - `validation_ladder.v1` still owns validation findings and reviewer handoff
   state that act as scientific guardrails on the highlighted wave-only beat.
 
+## Readiness Vs Rehearsal
+
+Milestone 14 and Milestone 15 keep their shipped readiness fixtures compact on
+purpose. Those flows are integration gates, not polished-demo rehearsal
+surfaces.
+
+Milestone 16 therefore adds a downstream rehearsal layer rather than widening
+the readiness fixtures themselves:
+
+- upstream readiness fixtures stay fast and deterministic
+- the richer local review surface is packaged as a showcase session with
+  fixture mode `milestone16_rehearsal`
+- the curated preset library lives in
+  `narrative_preset_catalog.json`, not in ad hoc operator memory
+- highlight approval metadata belongs to the showcase package and cites shipped
+  suite and validation evidence rather than inventing story claims in the UI
+
 ## Bundle Surface
 
 The default bundle layout is:
