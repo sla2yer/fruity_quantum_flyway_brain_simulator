@@ -25,8 +25,11 @@ DASHBOARD_ARGS ?=
 DASHBOARD_SESSION_METADATA ?=
 DASHBOARD_EXPORT_ARGS ?=
 SHOWCASE_ARGS ?=
+SHOWCASE_PLAYER_ARGS ?=
+SHOWCASE_SESSION_METADATA ?=
+SHOWCASE_PLAYER_COMMAND ?= status
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate suite-run suite-aggregate suite-report compare-analysis dashboard dashboard-open dashboard-export showcase-session wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness milestone15-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate suite-run suite-aggregate suite-report compare-analysis dashboard dashboard-open dashboard-export showcase-session showcase-player wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness milestone15-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
@@ -65,6 +68,7 @@ help:
 		'dashboard-open     Build and open the deterministic Milestone 14 dashboard shell from local disk' \
 		'dashboard-export   Export deterministic dashboard review artifacts from one packaged session' \
 		'showcase-session  Package the deterministic Milestone 16 showcase rehearsal surface from packaged local artifacts' \
+		'showcase-player   Drive a packaged Milestone 16 showcase session through the scripted player controls' \
 		'wave-inspect       Run local surface-wave sweep and offline inspection report(s)' \
 		'mixed-fidelity-inspect Run offline surrogate-versus-reference mixed-fidelity inspection' \
 		'numerical-validate Run the Milestone 13 numerical-sanity validation suite' \
@@ -143,6 +147,10 @@ dashboard-export:
 
 showcase-session:
 	$(PYTHON) scripts/35_showcase_session.py build --config $(CONFIG) $(SHOWCASE_ARGS)
+
+showcase-player:
+	test -n "$(SHOWCASE_SESSION_METADATA)"
+	$(PYTHON) scripts/35_showcase_session.py $(SHOWCASE_PLAYER_COMMAND) --showcase-session-metadata $(SHOWCASE_SESSION_METADATA) $(SHOWCASE_PLAYER_ARGS)
 
 wave-inspect:
 	$(PYTHON) scripts/15_surface_wave_inspection.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(WAVE_INSPECT_ARGS)

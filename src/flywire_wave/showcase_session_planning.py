@@ -104,6 +104,7 @@ from .showcase_session_contract import (
     PRESENTATION_STATUS_SCIENTIFIC_REVIEW_REQUIRED,
     PROPAGATION_REPLAY_PRESET_ID,
     REVIEW_MANIFEST_EXPORT_TARGET_ROLE_ID,
+    SCRUB_TIME_CONTROL_ID,
     RETINAL_INPUT_FOCUS_PRESET_ID,
     SCENE_CONTEXT_EVIDENCE_ROLE_ID,
     SCENE_CONTEXT_PRESET_ID,
@@ -150,6 +151,15 @@ from .showcase_session_contract import (
     discover_showcase_session_bundle_paths,
     parse_showcase_session_contract_metadata,
     write_showcase_session_metadata,
+)
+from .showcase_player import (
+    GUIDED_AUTOPLAY_MODE,
+    PRESENTER_REHEARSAL_MODE,
+    SHOWCASE_PLAYER_RUNTIME_VERSION,
+    SUPPORTED_SHOWCASE_PLAYER_COMMANDS,
+    SUPPORTED_SHOWCASE_PLAYER_MODES,
+    build_showcase_player_context,
+    build_showcase_player_state,
 )
 from .simulator_result_contract import DEFAULT_PROCESSED_SIMULATOR_RESULTS_DIR
 from .stimulus_contract import (
@@ -392,7 +402,7 @@ def resolve_showcase_session_plan(
         dashboard_context=dashboard_context,
         showcase_session=showcase_session,
     )
-    showcase_presentation_state = _build_showcase_presentation_state(
+    showcase_presentation_state_seed = _build_showcase_presentation_state(
         showcase_session=showcase_session,
         dashboard_context=dashboard_context,
         showcase_steps=showcase_steps,
@@ -411,6 +421,21 @@ def resolve_showcase_session_plan(
         narrative_context=narrative_context,
         showcase_steps=showcase_steps,
         saved_presets=saved_presets,
+    )
+    showcase_player_context = build_showcase_player_context(
+        showcase_session=showcase_session,
+        showcase_script_payload=showcase_script_payload,
+        showcase_presentation_state=showcase_presentation_state_seed,
+        narrative_preset_catalog=narrative_preset_catalog,
+        dashboard_payload=dashboard_context["payload"],
+    )
+    showcase_presentation_state = build_showcase_player_state(
+        context=showcase_player_context,
+        current_step_id=str(operator_defaults["current_step_id"]),
+        current_preset_id=str(operator_defaults["current_preset_id"]),
+        runtime_mode=_initial_showcase_runtime_mode(operator_defaults),
+        visited_step_ids=[str(operator_defaults["current_step_id"])],
+        completed_step_ids=[],
     )
     showcase_export_manifest = _build_showcase_export_manifest(
         showcase_session=showcase_session,
@@ -2301,6 +2326,14 @@ def _build_operator_defaults(
     }
 
 
+def _initial_showcase_runtime_mode(operator_defaults: Mapping[str, Any]) -> str:
+    rehearsal_mode = bool(operator_defaults.get("rehearsal_mode", True))
+    auto_advance = bool(operator_defaults.get("auto_advance", False))
+    if rehearsal_mode and not auto_advance:
+        return PRESENTER_REHEARSAL_MODE
+    return GUIDED_AUTOPLAY_MODE
+
+
 def _build_showcase_presentation_state(
     *,
     showcase_session: Mapping[str, Any],
@@ -2350,10 +2383,12 @@ def _build_showcase_script_payload(
     saved_presets: Sequence[Mapping[str, Any]],
     operator_defaults: Mapping[str, Any],
 ) -> dict[str, Any]:
+    initial_runtime_mode = _initial_showcase_runtime_mode(operator_defaults)
     return {
         "format_version": JSON_SHOWCASE_SCRIPT_FORMAT,
         "contract_version": SHOWCASE_SESSION_CONTRACT_VERSION,
         "plan_version": SHOWCASE_SESSION_PLAN_VERSION,
+        "runtime_version": SHOWCASE_PLAYER_RUNTIME_VERSION,
         "bundle_reference": {
             "bundle_id": str(showcase_session["bundle_id"]),
             "showcase_spec_hash": str(showcase_session["showcase_spec_hash"]),
@@ -2362,14 +2397,29 @@ def _build_showcase_script_payload(
         "display_name": str(showcase_session["display_name"]),
         "presentation_status": str(showcase_session["presentation_status"]),
         "operator_defaults": copy.deepcopy(dict(operator_defaults)),
+        "supported_runtime_modes": list(SUPPORTED_SHOWCASE_PLAYER_MODES),
+        "supported_commands": list(SUPPORTED_SHOWCASE_PLAYER_COMMANDS),
+        "step_order": [str(step["step_id"]) for step in showcase_steps],
+        "initial_checkpoint": {
+            "step_id": str(operator_defaults["current_step_id"]),
+            "preset_id": str(operator_defaults["current_preset_id"]),
+            "runtime_mode": initial_runtime_mode,
+        },
         "step_sequence": [
             {
+                "sequence_index": index,
                 "step_id": str(step["step_id"]),
                 "preset_id": str(step["preset_id"]),
                 "cue_kind_id": str(step["cue_kind_id"]),
                 "presentation_status": str(step["presentation_status"]),
                 "fallback_preset_id": step.get("fallback_preset_id"),
                 "operator_control_ids": list(step["operator_control_ids"]),
+                "supports_seek": SCRUB_TIME_CONTROL_ID in step["operator_control_ids"],
+                "supports_direct_jump": str(step["presentation_status"])
+                not in {
+                    PRESENTATION_STATUS_BLOCKED,
+                    PRESENTATION_STATUS_SCIENTIFIC_REVIEW_REQUIRED,
+                },
                 "export_target_role_ids": list(step["export_target_role_ids"]),
                 "annotation_ids": [
                     str(annotation["annotation_id"])
@@ -2380,7 +2430,7 @@ def _build_showcase_script_payload(
                     for reference in step["evidence_references"]
                 ],
             }
-            for step in showcase_steps
+            for index, step in enumerate(showcase_steps)
         ],
         "saved_preset_ids": [str(item["preset_id"]) for item in saved_presets],
     }
