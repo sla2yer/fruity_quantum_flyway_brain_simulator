@@ -70,4 +70,5 @@ __all__ = [
     "validation_task",
     "wave_structure_analysis",
     "whole_brain_context_contract",
+    "whole_brain_context_planning",
 ]

@@ -139,6 +139,13 @@ class SubsetArtifactPaths:
     preview_markdown: Path
 
 
+def build_subset_artifact_paths(
+    base_dir: str | Path,
+    preset_name: str,
+) -> SubsetArtifactPaths:
+    return _artifact_paths_for_preset(Path(base_dir), preset_name)
+
+
 def _find_first_existing(df: pd.DataFrame, candidates: list[str]) -> str:
     lower_to_original = {c.lower(): c for c in df.columns}
     for candidate in candidates:
