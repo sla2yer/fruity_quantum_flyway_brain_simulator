@@ -34,6 +34,15 @@ config/*.local.yaml
 # Generated pipeline outputs
 data/interim/
 data/processed/
+agent_tickets/runs/
+
+# Local scratch and temp files
+/tmp*/
+*.tmp
+*.temp
+*~
+.#*
+\#*#
 
 # Editor and OS clutter
 .DS_Store

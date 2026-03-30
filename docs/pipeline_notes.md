@@ -776,6 +776,67 @@ workflow:
   `no_waves` runtime coverage and the full-stage analysis handoff remain
   explicit rather than implicit
 
+### Showcase session contract
+
+Milestone 16 now reserves one explicit showcase-session and polished-demo
+surface under the versioned contract `showcase_session.v1`.
+
+The contract is implemented in `flywire_wave.showcase_session_contract`.
+
+The library-owned default layout is:
+
+- `config.paths.processed_simulator_results_dir/showcase_sessions/<experiment_id>/<showcase_spec_hash>/showcase_session.json`:
+  authoritative showcase-session metadata and discovery anchor
+- `config.paths.processed_simulator_results_dir/showcase_sessions/<experiment_id>/<showcase_spec_hash>/showcase_script.json`:
+  reserved scripted showcase payload for later playback work
+- `config.paths.processed_simulator_results_dir/showcase_sessions/<experiment_id>/<showcase_spec_hash>/showcase_state.json`:
+  exportable serialized showcase presentation state
+- `config.paths.processed_simulator_results_dir/showcase_sessions/<experiment_id>/<showcase_spec_hash>/narrative_preset_catalog.json`:
+  saved narrative preset catalog
+- `config.paths.processed_simulator_results_dir/showcase_sessions/<experiment_id>/<showcase_spec_hash>/exports/showcase_export_manifest.json`:
+  reserved discovery anchor for showcase-owned visual exports
+
+Contract notes:
+
+- the seven stable showcase step ids are:
+  `scene_selection`,
+  `fly_view_input`,
+  `active_visual_subset`,
+  `activity_propagation`,
+  `baseline_wave_comparison`,
+  `approved_wave_highlight`,
+  and `summary_analysis`
+- the contract also freezes stable preset ids, cue kinds, narrative-annotation
+  ids, evidence-role ids, operator-control ids, export-target-role ids, and
+  presentation-status ids
+- deterministic artifact-hook discovery now exists for:
+  - upstream dashboard-session metadata, payload, and serialized session state
+  - suite-level summary tables, comparison plots, and review artifacts
+  - Milestone 12 analysis metadata, UI payloads, and offline report links
+  - Milestone 13 validation metadata, summary, findings, and reviewer handoff
+  - showcase-owned preset catalog, script payload, presentation state, and
+    export manifest
+- `showcase_session.v1` composes with `dashboard_session.v1`,
+  `experiment_suite.v1`, `experiment_analysis_bundle.v1`, and
+  `validation_ladder.v1`; it does not mutate those earlier contracts
+- the ownership boundary is explicit:
+  Jack owns scripted presentation mechanics, saved presets, operator controls,
+  camera or UI polish, and export surfaces; Grant owns which scientific
+  comparison and wave-specific phenomenon are approved for the highlighted beat
+- the canonical fallback rule is also explicit:
+  if the requested highlight is unavailable or not scientifically defensible,
+  the highlight beat must redirect to the reserved `highlight_fallback` preset
+  and include a visible fallback notice instead of inventing a substitute
+  effect
+- later Milestone 16 tickets must preserve the seven-step order, keep the
+  paired comparison beat as the fairness boundary for direct arm-versus-arm
+  claims, and keep validation findings separate as guardrail evidence rather
+  than silently merging them into the highlight story
+
+`docs/showcase_mode_design.md` is the authoritative Milestone 16 decision note;
+later tickets should cite it instead of re-litigating the showcase vocabulary,
+fallback semantics, or the Jack-versus-Grant ownership boundary.
+
 ### Offline retinal inspection contract
 
 Milestone 8B now also defines one deterministic offline inspection workflow for
