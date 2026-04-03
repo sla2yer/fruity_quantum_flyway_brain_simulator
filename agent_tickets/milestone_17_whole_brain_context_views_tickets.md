@@ -95,7 +95,7 @@ Implement the library-owned context-query engine for Milestone 17. The engine sh
 Assume `FW-M17-001` and `FW-M17-002` are already in place. Keep the first query engine boring and inspectable: deterministic local graph extraction is more valuable here than introducing live services, speculative caching layers, or a maximal graph-visualization stack. Do not attempt to create a git commit as part of this ticket.
 
 ## FW-M17-004 - Curate a richer whole-brain context fixture set, query-profile presets, and review-oriented packaging paths
-- Status: open
+- Status: completed
 - Priority: high
 - Source: Milestone 17 roadmap 2026-03-30
 - Area: fixtures / presets / review workflows

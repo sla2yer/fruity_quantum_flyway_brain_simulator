@@ -593,6 +593,115 @@ a {
   filter: drop-shadow(0 8px 14px rgba(199, 154, 89, 0.16));
 }
 
+.context-band-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.context-stage-column,
+.context-side-column {
+  display: grid;
+  gap: 12px;
+}
+
+.context-toolbar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.context-stage-shell {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(18, 69, 89, 0.1);
+  background:
+    radial-gradient(circle at 18% 22%, rgba(10, 92, 99, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 245, 239, 0.92));
+}
+
+.whole-brain-graph {
+  min-height: 280px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(18, 69, 89, 0.02), rgba(18, 69, 89, 0.05)),
+    radial-gradient(circle at 72% 18%, rgba(199, 154, 89, 0.14), transparent 24%);
+}
+
+.context-graph-edge {
+  fill: none;
+  stroke-linecap: round;
+  opacity: 0.86;
+}
+
+.context-graph-edge.is-active_internal {
+  stroke: rgba(10, 92, 99, 0.82);
+}
+
+.context-graph-edge.is-active_to_context,
+.context-graph-edge.is-context_to_active {
+  stroke: rgba(166, 106, 34, 0.72);
+  stroke-dasharray: 5 4;
+}
+
+.context-graph-edge.is-context_internal {
+  stroke: rgba(166, 106, 34, 0.46);
+}
+
+.context-graph-edge.is-pathway_highlight {
+  stroke: rgba(199, 121, 34, 0.92);
+}
+
+.context-graph-edge.is-downstream_module_summary {
+  stroke: rgba(88, 100, 112, 0.62);
+  stroke-dasharray: 3 3;
+}
+
+.context-graph-node {
+  stroke-width: 1.7px;
+  transition:
+    transform 180ms ease,
+    stroke 180ms ease,
+    fill 180ms ease,
+    filter 180ms ease;
+}
+
+.context-graph-node.is-active_selected {
+  fill: rgba(215, 238, 236, 0.98);
+  stroke: rgba(10, 92, 99, 0.76);
+}
+
+.context-graph-node.is-pathway-highlighted {
+  filter: drop-shadow(0 8px 14px rgba(199, 154, 89, 0.2));
+  stroke-width: 2px;
+}
+
+.context-graph-node.is-context_only {
+  fill: rgba(250, 240, 228, 0.98);
+  stroke: rgba(166, 106, 34, 0.32);
+}
+
+.context-graph-node.is-active_pathway_highlight {
+  fill: rgba(226, 241, 220, 0.98);
+  stroke: rgba(137, 111, 37, 0.88);
+}
+
+.context-graph-node.is-context_pathway_highlight {
+  fill: rgba(255, 236, 205, 0.98);
+  stroke: rgba(199, 121, 34, 0.82);
+}
+
+.context-graph-node.is-selected {
+  filter: drop-shadow(0 8px 14px rgba(10, 92, 99, 0.16));
+}
+
+.context-graph-node.is-hovered {
+  filter: drop-shadow(0 8px 14px rgba(199, 154, 89, 0.2));
+  stroke-width: 2px;
+}
+
 .mini-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1051,6 +1160,7 @@ a {
 
   .scene-band-grid,
   .circuit-band-grid,
+  .context-band-grid,
   .morphology-band-grid {
     grid-template-columns: 1fr;
   }

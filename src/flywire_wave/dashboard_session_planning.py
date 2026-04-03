@@ -14,6 +14,8 @@ from .dashboard_replay import (
     build_dashboard_time_series_context,
 )
 from .dashboard_scene_circuit import (
+    DASHBOARD_WHOLE_BRAIN_CONTEXT_VERSION,
+    load_dashboard_whole_brain_context,
     normalize_dashboard_circuit_context,
     resolve_dashboard_scene_context,
 )
@@ -53,6 +55,10 @@ from .dashboard_session_contract import (
     VALIDATION_REVIEW_HANDOFF_ROLE_ID,
     VALIDATION_STATUS_BADGES_OVERLAY_ID,
     VALIDATION_SUMMARY_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID,
     WAVE_BUNDLE_METADATA_ROLE_ID,
     WAVE_PATCH_ACTIVITY_OVERLAY_ID,
     WAVE_UI_PAYLOAD_ROLE_ID,
@@ -107,6 +113,15 @@ from .validation_contract import (
     load_validation_bundle_metadata,
     parse_validation_bundle_metadata,
 )
+from .whole_brain_context_contract import (
+    CONTEXT_QUERY_CATALOG_ARTIFACT_ID,
+    CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID,
+    CONTEXT_VIEW_STATE_ARTIFACT_ID,
+    WHOLE_BRAIN_CONTEXT_SESSION_CONTRACT_VERSION,
+    discover_whole_brain_context_session_bundle_paths,
+    load_whole_brain_context_session_metadata,
+    parse_whole_brain_context_session_metadata,
+)
 from .stimulus_contract import (
     ASSET_STATUS_READY,
     _normalize_identifier,
@@ -155,6 +170,8 @@ def resolve_dashboard_session_plan(
     analysis_bundle_metadata_path: str | Path | None = None,
     validation_bundle_metadata: Mapping[str, Any] | None = None,
     validation_bundle_metadata_path: str | Path | None = None,
+    whole_brain_context_metadata: Mapping[str, Any] | None = None,
+    whole_brain_context_metadata_path: str | Path | None = None,
     baseline_arm_id: str | None = None,
     wave_arm_id: str | None = None,
     active_arm_id: str | None = None,
@@ -203,6 +220,11 @@ def resolve_dashboard_session_plan(
         bundle_metadata=validation_bundle_metadata,
         bundle_metadata_path=validation_bundle_metadata_path,
         field_name="validation_bundle_metadata",
+    )
+    explicit_whole_brain_context = _resolve_optional_whole_brain_context_bundle(
+        bundle_metadata=whole_brain_context_metadata,
+        bundle_metadata_path=whole_brain_context_metadata_path,
+        field_name="whole_brain_context_metadata",
     )
 
     source_mode = _resolve_source_mode(
@@ -347,6 +369,10 @@ def resolve_dashboard_session_plan(
         selected_root_ids=selection_context["selected_root_ids"],
         local_synapse_registry_path=Path(selection_context["local_synapse_registry_path"]),
     )
+    circuit_context["whole_brain_context"] = _resolve_whole_brain_context(
+        whole_brain_context_bundle=explicit_whole_brain_context,
+        selected_root_ids=selection_context["selected_root_ids"],
+    )
     raw_analysis_context = _resolve_analysis_context(resolved_analysis_bundle)
     morphology_context = _resolve_morphology_context(
         circuit_context=circuit_context,
@@ -390,6 +416,7 @@ def resolve_dashboard_session_plan(
         wave_metadata=wave_metadata,
         analysis_bundle=resolved_analysis_bundle,
         validation_bundle=resolved_validation_bundle,
+        whole_brain_context_bundle=explicit_whole_brain_context,
     )
     overlay_resolution = _resolve_overlay_catalog(
         contract_metadata=normalized_contract,
@@ -608,6 +635,20 @@ def _resolve_optional_validation_bundle(
         return parse_validation_bundle_metadata(bundle_metadata)
     if bundle_metadata_path is not None:
         return load_validation_bundle_metadata(bundle_metadata_path)
+    return None
+
+
+def _resolve_optional_whole_brain_context_bundle(
+    *,
+    bundle_metadata: Mapping[str, Any] | None,
+    bundle_metadata_path: str | Path | None,
+    field_name: str,
+) -> dict[str, Any] | None:
+    del field_name
+    if bundle_metadata is not None:
+        return parse_whole_brain_context_session_metadata(bundle_metadata)
+    if bundle_metadata_path is not None:
+        return load_whole_brain_context_session_metadata(bundle_metadata_path)
     return None
 
 
@@ -1153,6 +1194,26 @@ def _resolve_circuit_context(
     )
 
 
+def _resolve_whole_brain_context(
+    *,
+    whole_brain_context_bundle: Mapping[str, Any] | None,
+    selected_root_ids: Sequence[int],
+) -> dict[str, Any]:
+    if whole_brain_context_bundle is None:
+        return {
+            "context_version": DASHBOARD_WHOLE_BRAIN_CONTEXT_VERSION,
+            "availability": "absent",
+            "reason": "No packaged whole-brain context session is linked to this dashboard package.",
+        }
+    bundle_paths = discover_whole_brain_context_session_bundle_paths(
+        whole_brain_context_bundle
+    )
+    return load_dashboard_whole_brain_context(
+        metadata_path=bundle_paths[METADATA_JSON_KEY],
+        selected_root_ids=selected_root_ids,
+    )
+
+
 def _resolve_morphology_context(
     *,
     circuit_context: Mapping[str, Any],
@@ -1301,6 +1362,7 @@ def _build_external_artifact_references(
     wave_metadata: Mapping[str, Any],
     analysis_bundle: Mapping[str, Any],
     validation_bundle: Mapping[str, Any],
+    whole_brain_context_bundle: Mapping[str, Any] | None,
 ) -> list[dict[str, Any]]:
     baseline_paths = discover_simulator_result_bundle_paths(baseline_metadata)
     wave_paths = discover_simulator_result_bundle_paths(wave_metadata)
@@ -1426,6 +1488,82 @@ def _build_external_artifact_references(
                 artifact_scope=str(validation_bundle["artifacts"][OFFLINE_REVIEW_REPORT_ARTIFACT_ID]["artifact_scope"]),
                 status=str(validation_bundle["artifacts"][OFFLINE_REVIEW_REPORT_ARTIFACT_ID]["status"]),
             )
+        )
+    if whole_brain_context_bundle is not None:
+        whole_brain_paths = discover_whole_brain_context_session_bundle_paths(
+            whole_brain_context_bundle
+        )
+        references.extend(
+            [
+                build_dashboard_session_artifact_reference(
+                    artifact_role_id=WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
+                    source_kind="whole_brain_context_session_package",
+                    path=whole_brain_paths[METADATA_JSON_KEY],
+                    contract_version=WHOLE_BRAIN_CONTEXT_SESSION_CONTRACT_VERSION,
+                    bundle_id=str(whole_brain_context_bundle["bundle_id"]),
+                    artifact_id=METADATA_JSON_KEY,
+                    format=str(
+                        whole_brain_context_bundle["artifacts"][METADATA_JSON_KEY]["format"]
+                    ),
+                    artifact_scope=str(
+                        whole_brain_context_bundle["artifacts"][METADATA_JSON_KEY]["artifact_scope"]
+                    ),
+                    status=str(
+                        whole_brain_context_bundle["artifacts"][METADATA_JSON_KEY]["status"]
+                    ),
+                ),
+                build_dashboard_session_artifact_reference(
+                    artifact_role_id=WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+                    source_kind="whole_brain_context_session_package",
+                    path=whole_brain_paths[CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID],
+                    contract_version=WHOLE_BRAIN_CONTEXT_SESSION_CONTRACT_VERSION,
+                    bundle_id=str(whole_brain_context_bundle["bundle_id"]),
+                    artifact_id=CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID,
+                    format=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID]["format"]
+                    ),
+                    artifact_scope=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID]["artifact_scope"]
+                    ),
+                    status=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID]["status"]
+                    ),
+                ),
+                build_dashboard_session_artifact_reference(
+                    artifact_role_id=WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID,
+                    source_kind="whole_brain_context_session_package",
+                    path=whole_brain_paths[CONTEXT_QUERY_CATALOG_ARTIFACT_ID],
+                    contract_version=WHOLE_BRAIN_CONTEXT_SESSION_CONTRACT_VERSION,
+                    bundle_id=str(whole_brain_context_bundle["bundle_id"]),
+                    artifact_id=CONTEXT_QUERY_CATALOG_ARTIFACT_ID,
+                    format=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_QUERY_CATALOG_ARTIFACT_ID]["format"]
+                    ),
+                    artifact_scope=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_QUERY_CATALOG_ARTIFACT_ID]["artifact_scope"]
+                    ),
+                    status=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_QUERY_CATALOG_ARTIFACT_ID]["status"]
+                    ),
+                ),
+                build_dashboard_session_artifact_reference(
+                    artifact_role_id=WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID,
+                    source_kind="whole_brain_context_session_package",
+                    path=whole_brain_paths[CONTEXT_VIEW_STATE_ARTIFACT_ID],
+                    contract_version=WHOLE_BRAIN_CONTEXT_SESSION_CONTRACT_VERSION,
+                    bundle_id=str(whole_brain_context_bundle["bundle_id"]),
+                    artifact_id=CONTEXT_VIEW_STATE_ARTIFACT_ID,
+                    format=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_VIEW_STATE_ARTIFACT_ID]["format"]
+                    ),
+                    artifact_scope=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_VIEW_STATE_ARTIFACT_ID]["artifact_scope"]
+                    ),
+                    status=str(
+                        whole_brain_context_bundle["artifacts"][CONTEXT_VIEW_STATE_ARTIFACT_ID]["status"]
+                    ),
+                ),
+            ]
         )
     return references
 

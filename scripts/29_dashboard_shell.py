@@ -82,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--validation-bundle-metadata",
         help="Path to one validation_bundle.json.",
     )
+    build.add_argument(
+        "--whole-brain-context-metadata",
+        help="Optional path to one whole_brain_context_session.json for Milestone 17 circuit context rendering.",
+    )
     build.add_argument("--baseline-arm-id", help="Optional baseline arm id override.")
     build.add_argument("--wave-arm-id", help="Optional wave arm id override.")
     build.add_argument("--active-arm-id", help="Optional active arm id override.")
@@ -175,6 +179,11 @@ def _build_dashboard(args: argparse.Namespace) -> dict[str, object]:
             None
             if args.validation_bundle_metadata is None
             else Path(args.validation_bundle_metadata)
+        ),
+        "whole_brain_context_metadata_path": (
+            None
+            if args.whole_brain_context_metadata is None
+            else Path(args.whole_brain_context_metadata)
         ),
         "baseline_arm_id": args.baseline_arm_id,
         "wave_arm_id": args.wave_arm_id,

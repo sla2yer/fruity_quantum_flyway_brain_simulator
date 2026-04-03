@@ -66,11 +66,13 @@ SIMULATOR_RESULT_SOURCE_KIND = "simulator_result_bundle"
 EXPERIMENT_ANALYSIS_SOURCE_KIND = "experiment_analysis_bundle"
 VALIDATION_BUNDLE_SOURCE_KIND = "validation_bundle"
 DASHBOARD_SESSION_PACKAGE_SOURCE_KIND = "dashboard_session_package"
+WHOLE_BRAIN_CONTEXT_SESSION_SOURCE_KIND = "whole_brain_context_session_package"
 SUPPORTED_ARTIFACT_SOURCE_KINDS = (
     SIMULATOR_RESULT_SOURCE_KIND,
     EXPERIMENT_ANALYSIS_SOURCE_KIND,
     VALIDATION_BUNDLE_SOURCE_KIND,
     DASHBOARD_SESSION_PACKAGE_SOURCE_KIND,
+    WHOLE_BRAIN_CONTEXT_SESSION_SOURCE_KIND,
 )
 
 SCENE_PANE_ID = "scene"
@@ -170,6 +172,10 @@ VALIDATION_BUNDLE_METADATA_ROLE_ID = "validation_bundle_metadata"
 VALIDATION_SUMMARY_ROLE_ID = "validation_summary"
 VALIDATION_REVIEW_HANDOFF_ROLE_ID = "validation_review_handoff"
 VALIDATION_OFFLINE_REPORT_ROLE_ID = "validation_offline_report"
+WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID = "whole_brain_context_session_metadata"
+WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID = "context_view_payload"
+WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID = "context_query_catalog"
+WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID = "context_view_state"
 DASHBOARD_SESSION_METADATA_ROLE_ID = "dashboard_session_metadata"
 DASHBOARD_SESSION_PAYLOAD_ROLE_ID = "dashboard_session_payload"
 DASHBOARD_SESSION_STATE_ROLE_ID = "dashboard_session_state"
@@ -186,6 +192,10 @@ SUPPORTED_ARTIFACT_ROLE_IDS = (
     VALIDATION_SUMMARY_ROLE_ID,
     VALIDATION_REVIEW_HANDOFF_ROLE_ID,
     VALIDATION_OFFLINE_REPORT_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID,
     DASHBOARD_SESSION_METADATA_ROLE_ID,
     DASHBOARD_SESSION_PAYLOAD_ROLE_ID,
     DASHBOARD_SESSION_STATE_ROLE_ID,
@@ -1895,7 +1905,7 @@ def _default_pane_catalog() -> list[dict[str, Any]]:
         build_dashboard_pane_definition(
             pane_id=CIRCUIT_PANE_ID,
             display_name="Circuit",
-            description="Selected-circuit roster, connectivity context, and linked neuron inspection.",
+            description="Selected-circuit roster, connectivity context, optional whole-brain review bridge, and linked neuron inspection.",
             sequence_index=1,
             supports_time_cursor=True,
             supports_neuron_selection=True,
@@ -2290,6 +2300,50 @@ def _default_artifact_hook_catalog() -> list[dict[str, Any]]:
             discovery_note="Treat this as a bridge target from the dashboard instead of replacing the packaged offline report workflow.",
         ),
         build_dashboard_artifact_hook_definition(
+            artifact_role_id=WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
+            display_name="Whole-Brain Context Metadata",
+            description="Authoritative Milestone 17 whole-brain-context metadata linked into the dashboard circuit pane.",
+            source_kind=WHOLE_BRAIN_CONTEXT_SESSION_SOURCE_KIND,
+            required_contract_version="whole_brain_context_session.v1",
+            artifact_id=METADATA_JSON_KEY,
+            artifact_scope=CONTRACT_METADATA_SCOPE,
+            supported_pane_ids=[CIRCUIT_PANE_ID],
+            discovery_note="Resolve from whole_brain_context_session.json so the dashboard can trace richer context views back to one packaged Milestone 17 bundle.",
+        ),
+        build_dashboard_artifact_hook_definition(
+            artifact_role_id=WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+            display_name="Whole-Brain Context View Payload",
+            description="Packaged Milestone 17 context-view payload used to render overview and focused graph representations.",
+            source_kind=WHOLE_BRAIN_CONTEXT_SESSION_SOURCE_KIND,
+            required_contract_version="whole_brain_context_session.v1",
+            artifact_id="context_view_payload",
+            artifact_scope="context_view",
+            supported_pane_ids=[CIRCUIT_PANE_ID],
+            discovery_note="Resolve through whole_brain_context_session.v1 metadata instead of inventing dashboard-local graph JSON.",
+        ),
+        build_dashboard_artifact_hook_definition(
+            artifact_role_id=WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID,
+            display_name="Whole-Brain Context Query Catalog",
+            description="Preset and query-catalog metadata that explains which richer whole-brain review views are packaged.",
+            source_kind=WHOLE_BRAIN_CONTEXT_SESSION_SOURCE_KIND,
+            required_contract_version="whole_brain_context_session.v1",
+            artifact_id="context_query_catalog",
+            artifact_scope="context_query",
+            supported_pane_ids=[CIRCUIT_PANE_ID],
+            discovery_note="Use the packaged query catalog to explain overview-versus-focused context views without re-scanning raw source files.",
+        ),
+        build_dashboard_artifact_hook_definition(
+            artifact_role_id=WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID,
+            display_name="Whole-Brain Context View State",
+            description="Serialized Milestone 17 context-view state used for deterministic handoff into richer circuit inspection.",
+            source_kind=WHOLE_BRAIN_CONTEXT_SESSION_SOURCE_KIND,
+            required_contract_version="whole_brain_context_session.v1",
+            artifact_id="context_view_state",
+            artifact_scope="context_state",
+            supported_pane_ids=[CIRCUIT_PANE_ID],
+            discovery_note="Resolve the packaged view state through whole_brain_context_session.v1 metadata rather than dashboard-local heuristics.",
+        ),
+        build_dashboard_artifact_hook_definition(
             artifact_role_id=DASHBOARD_SESSION_METADATA_ROLE_ID,
             display_name="Dashboard Session Metadata",
             description="Authoritative metadata for the dashboard session package itself.",
@@ -2351,6 +2405,7 @@ def _default_fairness_boundary_invariants() -> tuple[str, ...]:
         "shared_comparison overlays remain tied to simulator_result_bundle.v1 shared readouts and experiment_analysis_bundle.v1 shared-comparison summaries.",
         "wave_only_diagnostic overlays may depend on wave-specific artifacts, but they must remain visibly labeled as diagnostics rather than the fair comparison surface.",
         "validation_evidence overlays are reviewer-oriented evidence and may not be silently merged into shared comparison cards or wave diagnostics.",
+        "whole-brain context bridges may widen structural context, but they may not relabel context-only nodes as active simulated neurons.",
         "offline reports remain bridge artifacts discovered from upstream package metadata rather than replacement data sources for the dashboard session.",
     )
 

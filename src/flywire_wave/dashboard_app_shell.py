@@ -17,6 +17,10 @@ from .dashboard_session_contract import (
     SESSION_PAYLOAD_ARTIFACT_ID,
     SESSION_STATE_ARTIFACT_ID,
     TIME_SERIES_PANE_ID,
+    WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID,
     build_dashboard_session_contract_metadata,
     discover_dashboard_export_targets,
     discover_dashboard_panes,
@@ -321,6 +325,26 @@ def _build_dashboard_app_bootstrap(
                 app_directory,
                 validation_evidence.get("offline_report_path"),
                 bool(validation_evidence.get("offline_report_exists", False)),
+            ),
+            "whole_brain_context_metadata": _artifact_inventory_link(
+                app_directory,
+                payload,
+                WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
+            ),
+            "whole_brain_context_view_payload": _artifact_inventory_link(
+                app_directory,
+                payload,
+                WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+            ),
+            "whole_brain_context_query_catalog": _artifact_inventory_link(
+                app_directory,
+                payload,
+                WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID,
+            ),
+            "whole_brain_context_view_state": _artifact_inventory_link(
+                app_directory,
+                payload,
+                WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID,
             ),
             "asset_manifest": _relative_href(app_directory, asset_manifest_path),
         },
@@ -701,6 +725,28 @@ def _optional_relative_href(
     if not exists or target in {None, ""}:
         return None
     return _relative_href(app_directory, Path(str(target)).resolve())
+
+
+def _artifact_inventory_link(
+    app_directory: Path,
+    payload: Mapping[str, Any],
+    artifact_role_id: str,
+) -> str | None:
+    for item in payload.get("artifact_inventory", []):
+        if not isinstance(item, Mapping):
+            continue
+        if str(item.get("artifact_role_id")) != str(artifact_role_id):
+            continue
+        if str(item.get("status", "")) != "ready":
+            return None
+        target = item.get("path")
+        if target in {None, ""}:
+            return None
+        resolved_target = Path(str(target)).resolve()
+        if not resolved_target.exists():
+            return None
+        return _relative_href(app_directory, resolved_target)
+    return None
 
 
 def _relative_href(source_directory: Path, target_path: Path) -> str:

@@ -32,6 +32,10 @@ from flywire_wave.dashboard_session_contract import (
     VALIDATION_OFFLINE_REPORT_ROLE_ID,
     VALIDATION_REVIEW_HANDOFF_ROLE_ID,
     VALIDATION_SUMMARY_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+    WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID,
     WAVE_BUNDLE_METADATA_ROLE_ID,
     WAVE_UI_PAYLOAD_ROLE_ID,
     WAVE_ONLY_DIAGNOSTIC_OVERLAY_CATEGORY,
@@ -126,6 +130,21 @@ class DashboardSessionContractTest(unittest.TestCase):
                 VALIDATION_SUMMARY_ROLE_ID,
                 VALIDATION_REVIEW_HANDOFF_ROLE_ID,
                 VALIDATION_OFFLINE_REPORT_ROLE_ID,
+            ],
+        )
+        self.assertEqual(
+            [
+                item["artifact_role_id"]
+                for item in discover_dashboard_artifact_hooks(
+                    metadata,
+                    source_kind="Whole Brain Context Session Package",
+                )
+            ],
+            [
+                WHOLE_BRAIN_CONTEXT_SESSION_METADATA_ROLE_ID,
+                WHOLE_BRAIN_CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+                WHOLE_BRAIN_CONTEXT_QUERY_CATALOG_ROLE_ID,
+                WHOLE_BRAIN_CONTEXT_VIEW_STATE_ROLE_ID,
             ],
         )
         self.assertEqual(

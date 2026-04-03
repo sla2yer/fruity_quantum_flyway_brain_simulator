@@ -3,7 +3,8 @@ from __future__ import annotations
 import base64
 import copy
 import csv
-from collections import defaultdict
+import json
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -37,14 +38,39 @@ from .stimulus_contract import (
     STIMULUS_BUNDLE_CONTRACT_VERSION,
     load_stimulus_bundle_metadata,
 )
+from .whole_brain_context_contract import (
+    ACTIVE_PATHWAY_HIGHLIGHT_NODE_ROLE_ID,
+    ACTIVE_SELECTED_NODE_ROLE_ID,
+    ACTIVE_TO_CONTEXT_EDGE_ROLE_ID,
+    CONTEXT_INTERNAL_EDGE_ROLE_ID,
+    CONTEXT_ONLY_NODE_ROLE_ID,
+    CONTEXT_QUERY_CATALOG_ARTIFACT_ID,
+    CONTEXT_TO_ACTIVE_EDGE_ROLE_ID,
+    CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID,
+    CONTEXT_VIEW_STATE_ARTIFACT_ID,
+    DOWNSTREAM_MODULE_SUMMARY_EDGE_ROLE_ID,
+    METADATA_JSON_KEY as WHOLE_BRAIN_CONTEXT_METADATA_JSON_KEY,
+    PATHWAY_HIGHLIGHT_EDGE_ROLE_ID,
+    CONTEXT_PATHWAY_HIGHLIGHT_NODE_ROLE_ID,
+    discover_whole_brain_context_session_bundle_paths,
+    load_whole_brain_context_session_metadata,
+)
 
 
 DASHBOARD_SCENE_CONTEXT_VERSION = "dashboard_scene_context.v1"
 DASHBOARD_CIRCUIT_CONTEXT_VERSION = "dashboard_circuit_context.v1"
 DASHBOARD_LINKED_NEURON_PAYLOAD_VERSION = "dashboard_linked_neuron_payload.v1"
+DASHBOARD_WHOLE_BRAIN_CONTEXT_VERSION = "dashboard_whole_brain_context.v1"
 
 SCENE_FRAME_UINT8_ENCODING = "base64_uint8_grayscale_row_major"
 DEFAULT_SCENE_MAX_RENDER_DIMENSION = 48
+DEFAULT_OVERVIEW_CONTEXT_MAX_RENDER_NODE_COUNT = 28
+DEFAULT_OVERVIEW_CONTEXT_MAX_RENDER_EDGE_COUNT = 36
+DEFAULT_FOCUSED_CONTEXT_MAX_RENDER_NODE_COUNT = 18
+DEFAULT_FOCUSED_CONTEXT_MAX_RENDER_EDGE_COUNT = 24
+
+OVERVIEW_CONTEXT_PRESET_ID = "overview_context"
+PATHWAY_FOCUS_PRESET_ID = "pathway_focus"
 
 
 def resolve_dashboard_scene_context(
@@ -163,6 +189,9 @@ def normalize_dashboard_circuit_context(
         "selected_root_ids": normalized_selected_root_ids,
         "root_catalog": selected_root_catalog,
         "connectivity_context": connectivity_context,
+        "whole_brain_context": _absent_dashboard_whole_brain_context(
+            selected_root_ids=normalized_selected_root_ids
+        ),
     }
 
 
@@ -199,6 +228,1010 @@ def build_dashboard_linked_neuron_payload(
     else:
         payload["select"] = None
     return payload
+
+
+def load_dashboard_whole_brain_context(
+    *,
+    metadata_path: str | Path,
+    selected_root_ids: Sequence[int],
+    max_overview_node_count: int = DEFAULT_OVERVIEW_CONTEXT_MAX_RENDER_NODE_COUNT,
+    max_overview_edge_count: int = DEFAULT_OVERVIEW_CONTEXT_MAX_RENDER_EDGE_COUNT,
+    max_focused_node_count: int = DEFAULT_FOCUSED_CONTEXT_MAX_RENDER_NODE_COUNT,
+    max_focused_edge_count: int = DEFAULT_FOCUSED_CONTEXT_MAX_RENDER_EDGE_COUNT,
+) -> dict[str, Any]:
+    resolved_metadata_path = Path(metadata_path).resolve()
+    normalized_selected_root_ids = sorted({int(root_id) for root_id in selected_root_ids})
+    result = _absent_dashboard_whole_brain_context(
+        selected_root_ids=normalized_selected_root_ids
+    )
+    result["availability"] = "unavailable"
+    result["artifact_paths"]["metadata_path"] = str(resolved_metadata_path)
+    try:
+        metadata = load_whole_brain_context_session_metadata(resolved_metadata_path)
+    except Exception as exc:
+        result["reason"] = (
+            "Packaged whole-brain context metadata could not be loaded: "
+            f"{exc}"
+        )
+        result["summary"]["status"] = "metadata_unavailable"
+        return result
+
+    bundle_paths = discover_whole_brain_context_session_bundle_paths(metadata)
+    result["bundle_id"] = str(metadata["bundle_id"])
+    result["artifact_paths"] = {
+        "metadata_path": str(bundle_paths[WHOLE_BRAIN_CONTEXT_METADATA_JSON_KEY].resolve()),
+        "context_view_payload_path": str(
+            bundle_paths[CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID].resolve()
+        ),
+        "context_query_catalog_path": str(
+            bundle_paths[CONTEXT_QUERY_CATALOG_ARTIFACT_ID].resolve()
+        ),
+        "context_view_state_path": str(
+            bundle_paths[CONTEXT_VIEW_STATE_ARTIFACT_ID].resolve()
+        ),
+    }
+    result["artifact_statuses"] = _whole_brain_context_artifact_statuses(metadata)
+    result["summary"] = _whole_brain_context_session_summary(
+        metadata=metadata,
+        dashboard_selected_root_ids=normalized_selected_root_ids,
+    )
+
+    payload, payload_error = _load_optional_json_mapping(
+        bundle_paths[CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID]
+    )
+    query_catalog, _query_catalog_error = _load_optional_json_mapping(
+        bundle_paths[CONTEXT_QUERY_CATALOG_ARTIFACT_ID]
+    )
+    view_state, _view_state_error = _load_optional_json_mapping(
+        bundle_paths[CONTEXT_VIEW_STATE_ARTIFACT_ID]
+    )
+
+    result["linked_sessions"] = copy.deepcopy(
+        _require_mapping(payload.get("linked_sessions", {}), field_name="context_payload.linked_sessions")
+        if payload is not None and isinstance(payload.get("linked_sessions", {}), Mapping)
+        else (
+            {
+                "dashboard": copy.deepcopy(
+                    dict(_require_mapping(view_state.get("linked_dashboard", {}), field_name="context_view_state.linked_dashboard"))
+                )
+                if view_state is not None and isinstance(view_state.get("linked_dashboard", {}), Mapping)
+                else {},
+                "showcase": copy.deepcopy(
+                    dict(_require_mapping(view_state.get("linked_showcase", {}), field_name="context_view_state.linked_showcase"))
+                )
+                if view_state is not None and isinstance(view_state.get("linked_showcase", {}), Mapping)
+                else {},
+            }
+        )
+    )
+
+    preset_payloads = _context_preset_payloads(
+        payload=payload,
+        view_state=view_state,
+    )
+    result["preset_catalog"] = _dashboard_context_preset_catalog(
+        preset_payloads=preset_payloads,
+        query_catalog=query_catalog,
+    )
+    result["available_preset_ids"] = [
+        str(item["preset_id"]) for item in result["preset_catalog"]
+    ]
+    result["active_preset_id"] = _context_active_preset_id(
+        payload=payload,
+        view_state=view_state,
+        available_preset_ids=result["available_preset_ids"],
+    )
+
+    if payload is None:
+        result["reason"] = (
+            "Packaged whole-brain context payload is unavailable: "
+            f"{payload_error or 'context_view_payload.json is missing or unreadable.'}"
+        )
+        result["summary"]["status"] = "payload_unavailable"
+        result["representation_catalog"] = [
+            _context_representation_stub(
+                representation_id="overview",
+                display_name="Whole-Brain Overview",
+                description="Budgeted Milestone 17 overview graph around the active subset.",
+                reason=result["reason"],
+            ),
+            _context_representation_stub(
+                representation_id="focused",
+                display_name="Focused Context",
+                description="Path-preserving focused extract around the active subset.",
+                reason=result["reason"],
+            ),
+        ]
+        return result
+
+    selection = _require_mapping(payload.get("selection", {}), field_name="context_payload.selection")
+    context_selected_root_ids = sorted(
+        {int(root_id) for root_id in selection.get("selected_root_ids", [])}
+    )
+    result["summary"]["context_selected_root_ids"] = list(context_selected_root_ids)
+    if context_selected_root_ids:
+        if context_selected_root_ids == normalized_selected_root_ids:
+            result["selection_alignment"] = {
+                "status": "matched",
+                "dashboard_selected_root_ids": list(normalized_selected_root_ids),
+                "context_selected_root_ids": list(context_selected_root_ids),
+                "reason": None,
+            }
+        else:
+            mismatch_reason = (
+                "Packaged whole-brain context selected_root_ids do not match the active dashboard subset."
+            )
+            result["selection_alignment"] = {
+                "status": "mismatch",
+                "dashboard_selected_root_ids": list(normalized_selected_root_ids),
+                "context_selected_root_ids": list(context_selected_root_ids),
+                "reason": mismatch_reason,
+            }
+            result["reason"] = mismatch_reason
+            result["summary"]["status"] = "selection_mismatch"
+            result["representation_catalog"] = [
+                _context_representation_stub(
+                    representation_id="overview",
+                    display_name="Whole-Brain Overview",
+                    description="Budgeted Milestone 17 overview graph around the active subset.",
+                    reason=mismatch_reason,
+                ),
+                _context_representation_stub(
+                    representation_id="focused",
+                    display_name="Focused Context",
+                    description="Path-preserving focused extract around the active subset.",
+                    reason=mismatch_reason,
+                ),
+            ]
+            return result
+
+    overview_preset_id = _preferred_preset_id(
+        preset_payloads=preset_payloads,
+        preferred_ids=[
+            OVERVIEW_CONTEXT_PRESET_ID,
+            result["active_preset_id"],
+        ],
+        graph_view_id="overview_graph",
+    )
+    focused_preset_id = _preferred_preset_id(
+        preset_payloads=preset_payloads,
+        preferred_ids=[
+            PATHWAY_FOCUS_PRESET_ID,
+            result["active_preset_id"],
+            overview_preset_id,
+        ],
+        graph_view_id="focused_subgraph",
+    )
+
+    overview_representation = _build_dashboard_context_representation(
+        representation_id="overview",
+        display_name="Whole-Brain Overview",
+        description="Budgeted Milestone 17 overview graph around the active subset.",
+        preset_id=overview_preset_id,
+        graph_view_id="overview_graph",
+        preset_payloads=preset_payloads,
+        max_node_count=max_overview_node_count,
+        max_edge_count=max_overview_edge_count,
+    )
+    focused_representation = _build_dashboard_context_representation(
+        representation_id="focused",
+        display_name="Focused Context",
+        description="Path-preserving focused extract around the active subset.",
+        preset_id=focused_preset_id,
+        graph_view_id="focused_subgraph",
+        preset_payloads=preset_payloads,
+        max_node_count=max_focused_node_count,
+        max_edge_count=max_focused_edge_count,
+    )
+    result["representation_catalog"] = [
+        overview_representation,
+        focused_representation,
+    ]
+    available_representation_ids = [
+        str(item["representation_id"])
+        for item in result["representation_catalog"]
+        if str(item["availability"]) in {"available", "summary_only"}
+    ]
+    result["available_representation_ids"] = available_representation_ids
+    result["active_representation_id"] = (
+        available_representation_ids[0] if available_representation_ids else "overview"
+    )
+    availability_values = {
+        str(item["availability"]) for item in result["representation_catalog"]
+    }
+    if "available" in availability_values and len(availability_values) == 1:
+        result["availability"] = "available"
+        result["reason"] = None
+        result["summary"]["status"] = "available"
+    elif "available" in availability_values or "summary_only" in availability_values:
+        result["availability"] = "partial"
+        result["reason"] = (
+            "One or more whole-brain context representations were reduced to summary-only mode."
+        )
+        result["summary"]["status"] = "partial"
+    else:
+        result["availability"] = "unavailable"
+        result["reason"] = "No whole-brain context representation is graph-renderable."
+        result["summary"]["status"] = "unavailable"
+    return result
+
+
+def _absent_dashboard_whole_brain_context(
+    *,
+    selected_root_ids: Sequence[int],
+) -> dict[str, Any]:
+    return {
+        "context_version": DASHBOARD_WHOLE_BRAIN_CONTEXT_VERSION,
+        "availability": "absent",
+        "reason": "No packaged whole-brain context session is linked to this dashboard package.",
+        "bundle_id": None,
+        "artifact_paths": {
+            "metadata_path": None,
+            "context_view_payload_path": None,
+            "context_query_catalog_path": None,
+            "context_view_state_path": None,
+        },
+        "artifact_statuses": {},
+        "summary": {
+            "status": "absent",
+            "dashboard_selected_root_ids": [int(root_id) for root_id in selected_root_ids],
+            "representative_context_root_count": 0,
+            "representative_context_node_role_counts": {},
+        },
+        "selection_alignment": {
+            "status": "absent",
+            "dashboard_selected_root_ids": [int(root_id) for root_id in selected_root_ids],
+            "context_selected_root_ids": [],
+            "reason": "No packaged whole-brain context session is linked to this dashboard package.",
+        },
+        "linked_sessions": {},
+        "preset_catalog": [],
+        "available_preset_ids": [],
+        "active_preset_id": None,
+        "active_representation_id": "overview",
+        "available_representation_ids": [],
+        "representation_catalog": [
+            _context_representation_stub(
+                representation_id="overview",
+                display_name="Whole-Brain Overview",
+                description="Budgeted Milestone 17 overview graph around the active subset.",
+                reason="No packaged whole-brain context session is linked to this dashboard package.",
+            ),
+            _context_representation_stub(
+                representation_id="focused",
+                display_name="Focused Context",
+                description="Path-preserving focused extract around the active subset.",
+                reason="No packaged whole-brain context session is linked to this dashboard package.",
+            ),
+        ],
+    }
+
+
+def _context_representation_stub(
+    *,
+    representation_id: str,
+    display_name: str,
+    description: str,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "representation_id": str(representation_id),
+        "display_name": str(display_name),
+        "description": str(description),
+        "availability": "unavailable",
+        "render_mode": "unavailable",
+        "reason": str(reason),
+        "source_preset_id": None,
+        "source_query_profile_id": None,
+        "source_query_family": None,
+        "source_graph_view_id": None,
+        "summary": {
+            "distinct_root_count": 0,
+            "node_count": 0,
+            "edge_count": 0,
+            "active_root_count": 0,
+            "context_root_count": 0,
+            "pathway_highlight_root_count": 0,
+            "downstream_module_count": 0,
+            "node_style_counts": {},
+            "edge_style_counts": {},
+        },
+        "node_catalog": [],
+        "edge_catalog": [],
+        "pathway_catalog": [],
+        "downstream_module_catalog": [],
+    }
+
+
+def _whole_brain_context_artifact_statuses(
+    metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    artifacts = _require_mapping(
+        metadata.get("artifacts", {}),
+        field_name="whole_brain_context_metadata.artifacts",
+    )
+    result: dict[str, Any] = {}
+    for artifact_id in (
+        WHOLE_BRAIN_CONTEXT_METADATA_JSON_KEY,
+        CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID,
+        CONTEXT_QUERY_CATALOG_ARTIFACT_ID,
+        CONTEXT_VIEW_STATE_ARTIFACT_ID,
+    ):
+        artifact = _require_mapping(
+            artifacts.get(artifact_id, {}),
+            field_name=f"whole_brain_context_metadata.artifacts[{artifact_id!r}]",
+        )
+        result[str(artifact_id)] = {
+            "status": str(artifact.get("status", "unknown")),
+            "path": str(artifact.get("path", "")),
+            "format": artifact.get("format"),
+            "artifact_scope": artifact.get("artifact_scope"),
+        }
+    return result
+
+
+def _whole_brain_context_session_summary(
+    *,
+    metadata: Mapping[str, Any],
+    dashboard_selected_root_ids: Sequence[int],
+) -> dict[str, Any]:
+    representative_context = _require_mapping(
+        metadata.get("representative_context", {}),
+        field_name="whole_brain_context_metadata.representative_context",
+    )
+    node_records = representative_context.get("node_records", [])
+    node_role_counts = Counter(
+        str(_require_mapping(item, field_name="representative_context.node_records[]")["node_role_id"])
+        for item in node_records
+        if isinstance(item, Mapping)
+    )
+    distinct_root_ids = {
+        int(_require_mapping(item, field_name="representative_context.node_records[]")["root_id"])
+        for item in node_records
+        if isinstance(item, Mapping)
+    }
+    return {
+        "status": "metadata_available",
+        "dashboard_selected_root_ids": [int(root_id) for root_id in dashboard_selected_root_ids],
+        "representative_context_root_count": len(distinct_root_ids),
+        "representative_context_node_role_counts": dict(sorted(node_role_counts.items())),
+        "query_profile_id": (
+            _require_mapping(metadata.get("query_state", {}), field_name="whole_brain_context_metadata.query_state").get("query_profile_id")
+            if isinstance(metadata.get("query_state", {}), Mapping)
+            else None
+        ),
+    }
+
+
+def _load_optional_json_mapping(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    resolved_path = Path(path).resolve()
+    if not resolved_path.exists():
+        return (None, f"{resolved_path.name} is missing.")
+    try:
+        payload = json.loads(resolved_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return (None, f"{resolved_path.name} could not be parsed: {exc}")
+    if not isinstance(payload, Mapping):
+        return (None, f"{resolved_path.name} must contain a JSON object.")
+    return (copy.deepcopy(dict(payload)), None)
+
+
+def _context_active_preset_id(
+    *,
+    payload: Mapping[str, Any] | None,
+    view_state: Mapping[str, Any] | None,
+    available_preset_ids: Sequence[str],
+) -> str | None:
+    if payload is not None and payload.get("active_preset_id") is not None:
+        return str(payload["active_preset_id"])
+    if view_state is not None and view_state.get("active_preset_id") is not None:
+        return str(view_state["active_preset_id"])
+    return None if not available_preset_ids else str(available_preset_ids[0])
+
+
+def _context_preset_payloads(
+    *,
+    payload: Mapping[str, Any] | None,
+    view_state: Mapping[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    if payload is not None and isinstance(payload.get("query_preset_payloads", {}), Mapping):
+        return {
+            str(preset_id): copy.deepcopy(dict(preset_payload))
+            for preset_id, preset_payload in payload["query_preset_payloads"].items()
+            if isinstance(preset_payload, Mapping)
+        }
+    if payload is not None and isinstance(payload.get("query_execution", {}), Mapping):
+        active_preset_id = _context_active_preset_id(
+            payload=payload,
+            view_state=view_state,
+            available_preset_ids=[],
+        ) or OVERVIEW_CONTEXT_PRESET_ID
+        query_execution = _require_mapping(
+            payload.get("query_execution", {}),
+            field_name="context_payload.query_execution",
+        )
+        return {
+            str(active_preset_id): {
+                "preset_id": str(active_preset_id),
+                "display_name": "Packaged Whole-Brain Context",
+                "query_profile_id": query_execution.get("query_profile_id"),
+                "query_family": query_execution.get("query_family"),
+                "execution_summary": copy.deepcopy(
+                    dict(_require_mapping(query_execution.get("execution_summary", {}), field_name="context_payload.query_execution.execution_summary"))
+                ),
+                "overview_graph": copy.deepcopy(
+                    dict(_require_mapping(query_execution.get("overview_graph", {}), field_name="context_payload.query_execution.overview_graph"))
+                ),
+                "focused_subgraph": copy.deepcopy(
+                    dict(_require_mapping(query_execution.get("focused_subgraph", {}), field_name="context_payload.query_execution.focused_subgraph"))
+                ),
+                "pathway_highlights": [
+                    copy.deepcopy(dict(item))
+                    for item in query_execution.get("pathway_highlights", [])
+                    if isinstance(item, Mapping)
+                ],
+            }
+        }
+    return {}
+
+
+def _dashboard_context_preset_catalog(
+    *,
+    preset_payloads: Mapping[str, Mapping[str, Any]],
+    query_catalog: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    records_by_id: dict[str, dict[str, Any]] = {}
+    if query_catalog is not None:
+        for item in query_catalog.get("available_query_presets", []):
+            if not isinstance(item, Mapping):
+                continue
+            preset_id = str(item.get("preset_id", "")).strip()
+            if not preset_id:
+                continue
+            records_by_id[preset_id] = {
+                "preset_id": preset_id,
+                "display_name": str(item.get("display_name", preset_id)),
+                "description": str(item.get("description", "")),
+                "query_profile_id": item.get("query_profile_id"),
+                "primary_graph_view_id": item.get("primary_graph_view_id"),
+                "availability": str(item.get("availability", "available")),
+            }
+    for preset_id, payload in preset_payloads.items():
+        existing = records_by_id.setdefault(
+            str(preset_id),
+            {
+                "preset_id": str(preset_id),
+                "display_name": str(payload.get("display_name", preset_id)),
+                "description": "",
+                "query_profile_id": payload.get("query_profile_id"),
+                "primary_graph_view_id": "overview_graph",
+                "availability": "available",
+            },
+        )
+        existing["display_name"] = str(
+            existing.get("display_name")
+            or payload.get("display_name")
+            or preset_id
+        )
+        existing["query_profile_id"] = (
+            existing.get("query_profile_id") or payload.get("query_profile_id")
+        )
+    return [
+        records_by_id[preset_id]
+        for preset_id in sorted(records_by_id)
+    ]
+
+
+def _preferred_preset_id(
+    *,
+    preset_payloads: Mapping[str, Mapping[str, Any]],
+    preferred_ids: Sequence[str | None],
+    graph_view_id: str,
+) -> str | None:
+    for preferred_id in preferred_ids:
+        if preferred_id is None:
+            continue
+        payload = preset_payloads.get(str(preferred_id))
+        if payload is None:
+            continue
+        graph_view = payload.get(graph_view_id)
+        if isinstance(graph_view, Mapping):
+            summary = graph_view.get("summary", {})
+            if isinstance(summary, Mapping) and int(summary.get("node_record_count", 0)) >= 1:
+                return str(preferred_id)
+    for preset_id in sorted(preset_payloads):
+        graph_view = preset_payloads[preset_id].get(graph_view_id)
+        if isinstance(graph_view, Mapping):
+            summary = graph_view.get("summary", {})
+            if isinstance(summary, Mapping) and int(summary.get("node_record_count", 0)) >= 1:
+                return str(preset_id)
+    return None
+
+
+def _build_dashboard_context_representation(
+    *,
+    representation_id: str,
+    display_name: str,
+    description: str,
+    preset_id: str | None,
+    graph_view_id: str,
+    preset_payloads: Mapping[str, Mapping[str, Any]],
+    max_node_count: int,
+    max_edge_count: int,
+) -> dict[str, Any]:
+    if preset_id is None or preset_id not in preset_payloads:
+        return _context_representation_stub(
+            representation_id=representation_id,
+            display_name=display_name,
+            description=description,
+            reason="The packaged whole-brain context session does not include the required preset.",
+        )
+    preset_payload = _require_mapping(
+        preset_payloads[preset_id],
+        field_name=f"query_preset_payloads[{preset_id!r}]",
+    )
+    graph_view = _require_mapping(
+        preset_payload.get(graph_view_id, {}),
+        field_name=f"query_preset_payloads[{preset_id!r}].{graph_view_id}",
+    )
+    emphasize_pathway_highlight = str(representation_id) == "focused"
+    collapsed_nodes = _collapse_context_nodes(
+        graph_view.get("node_records", []),
+        emphasize_pathway_highlight=emphasize_pathway_highlight,
+    )
+    collapsed_edges = _collapse_context_edges(
+        graph_view.get("edge_records", []),
+        emphasize_pathway_highlight=emphasize_pathway_highlight,
+    )
+    _apply_context_incident_stats(
+        nodes=collapsed_nodes,
+        edges=collapsed_edges,
+    )
+    downstream_module_catalog = _normalize_downstream_module_catalog(
+        graph_view.get("downstream_module_records", [])
+    )
+    pathway_catalog = _normalize_pathway_catalog(
+        preset_payload.get("pathway_highlights", [])
+    )
+    summary = {
+        "distinct_root_count": len(collapsed_nodes),
+        "node_count": len(collapsed_nodes),
+        "edge_count": len(collapsed_edges),
+        "active_root_count": sum(
+            1 for item in collapsed_nodes if bool(item["selection_enabled"])
+        ),
+        "context_root_count": sum(
+            1 for item in collapsed_nodes if not bool(item["selection_enabled"])
+        ),
+        "pathway_highlight_root_count": sum(
+            1 for item in collapsed_nodes if bool(item["pathway_highlight"])
+        ),
+        "downstream_module_count": len(downstream_module_catalog),
+        "node_style_counts": dict(
+            sorted(Counter(str(item["style_variant"]) for item in collapsed_nodes).items())
+        ),
+        "edge_style_counts": dict(
+            sorted(Counter(str(item["style_variant"]) for item in collapsed_edges).items())
+        ),
+    }
+    record = {
+        "representation_id": str(representation_id),
+        "display_name": str(display_name),
+        "description": str(description),
+        "availability": "available",
+        "render_mode": "graph",
+        "reason": None,
+        "source_preset_id": str(preset_id),
+        "source_query_profile_id": preset_payload.get("query_profile_id"),
+        "source_query_family": preset_payload.get("query_family"),
+        "source_graph_view_id": str(graph_view_id),
+        "summary": summary,
+        "node_catalog": collapsed_nodes,
+        "edge_catalog": collapsed_edges,
+        "pathway_catalog": pathway_catalog,
+        "downstream_module_catalog": downstream_module_catalog,
+    }
+    if len(collapsed_nodes) == 0:
+        record["availability"] = "unavailable"
+        record["render_mode"] = "unavailable"
+        record["reason"] = "The packaged representation does not contain any graph nodes."
+        return record
+    if len(collapsed_nodes) > int(max_node_count) or len(collapsed_edges) > int(max_edge_count):
+        record["availability"] = "summary_only"
+        record["render_mode"] = "summary_only"
+        record["reason"] = (
+            "The packaged representation exceeds the dashboard render budget and was reduced to summary cards."
+        )
+        record["node_catalog"] = []
+        record["edge_catalog"] = []
+    return record
+
+
+def _collapse_context_nodes(
+    payload: Any,
+    *,
+    emphasize_pathway_highlight: bool,
+) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    grouped: dict[int, dict[str, Any]] = {}
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        record = copy.deepcopy(dict(item))
+        root_id = int(record["root_id"])
+        entry = grouped.setdefault(
+            root_id,
+            {"base_record": None, "highlight_record": None, "source_records": []},
+        )
+        entry["source_records"].append(record)
+        node_role_id = str(record.get("node_role_id", ""))
+        if node_role_id in {
+            ACTIVE_PATHWAY_HIGHLIGHT_NODE_ROLE_ID,
+            CONTEXT_PATHWAY_HIGHLIGHT_NODE_ROLE_ID,
+        }:
+            entry["highlight_record"] = record
+        elif entry["base_record"] is None:
+            entry["base_record"] = record
+    collapsed: list[dict[str, Any]] = []
+    for root_id, entry in grouped.items():
+        base_record = entry["base_record"] or entry["highlight_record"]
+        if base_record is None:
+            continue
+        highlight_record = entry["highlight_record"]
+        metadata_facet_values = {}
+        for record in (base_record, highlight_record):
+            if record is None:
+                continue
+            if isinstance(record.get("metadata_facet_values", {}), Mapping):
+                metadata_facet_values.update(dict(record["metadata_facet_values"]))
+        anchor_record = None
+        for record in (base_record, highlight_record):
+            if record is None:
+                continue
+            if isinstance(record.get("anchor_record"), Mapping):
+                anchor_record = copy.deepcopy(dict(record["anchor_record"]))
+                break
+        selection_enabled = bool(base_record.get("is_active_selected"))
+        pathway_highlight = highlight_record is not None
+        style_variant = _context_node_style_variant(
+            selection_enabled=selection_enabled,
+            pathway_highlight=pathway_highlight,
+            emphasize_pathway_highlight=emphasize_pathway_highlight,
+        )
+        collapsed.append(
+            {
+                "root_id": int(root_id),
+                "display_label": str(base_record.get("display_label") or root_id),
+                "context_layer_id": str(base_record.get("context_layer_id") or ""),
+                "highlight_context_layer_id": (
+                    None
+                    if highlight_record is None
+                    else str(highlight_record.get("context_layer_id") or "")
+                ),
+                "node_role_id": str(base_record.get("node_role_id") or ""),
+                "source_node_role_ids": sorted(
+                    {
+                        str(record.get("node_role_id") or "")
+                        for record in entry["source_records"]
+                    }
+                ),
+                "style_variant": style_variant,
+                "pathway_highlight": pathway_highlight,
+                "selection_enabled": selection_enabled,
+                "boundary_status": str(base_record.get("boundary_status") or ""),
+                "nearest_active_hop_count": base_record.get("nearest_active_hop_count"),
+                "directional_context": sorted(
+                    {
+                        str(value)
+                        for record in entry["source_records"]
+                        for value in record.get("directional_context", [])
+                    }
+                ),
+                "overlay_ids": sorted(
+                    {
+                        str(value)
+                        for record in entry["source_records"]
+                        for value in record.get("overlay_ids", [])
+                    }
+                ),
+                "cell_type": (
+                    str(metadata_facet_values.get("cell_type"))
+                    if metadata_facet_values.get("cell_type") is not None
+                    else (
+                        ""
+                        if anchor_record is None
+                        else str(anchor_record.get("cell_type") or "")
+                    )
+                ),
+                "cell_class": (
+                    str(metadata_facet_values.get("cell_class"))
+                    if metadata_facet_values.get("cell_class") is not None
+                    else (
+                        ""
+                        if anchor_record is None
+                        else str(
+                            anchor_record.get("project_role")
+                            or anchor_record.get("super_class")
+                            or ""
+                        )
+                    )
+                ),
+                "project_role": (
+                    ""
+                    if anchor_record is None
+                    else str(anchor_record.get("project_role") or "")
+                ),
+                "morphology_class": (
+                    ""
+                    if anchor_record is None
+                    else str(anchor_record.get("morphology_class") or "")
+                ),
+                "neuropil": (
+                    "" if metadata_facet_values.get("neuropil") is None else str(metadata_facet_values.get("neuropil"))
+                ),
+                "side": (
+                    "" if metadata_facet_values.get("side") is None else str(metadata_facet_values.get("side"))
+                ),
+                "nt_type": (
+                    "" if metadata_facet_values.get("nt_type") is None else str(metadata_facet_values.get("nt_type"))
+                ),
+                "selection_boundary_status": (
+                    "" if metadata_facet_values.get("selection_boundary_status") is None else str(metadata_facet_values.get("selection_boundary_status"))
+                ),
+                "pathway_relevance_status": (
+                    ""
+                    if metadata_facet_values.get("pathway_relevance_status") is None
+                    else str(metadata_facet_values.get("pathway_relevance_status"))
+                ),
+                "metadata_facet_values": metadata_facet_values,
+                "anchor_record": anchor_record,
+                "subset_membership": (
+                    "selected_subset" if selection_enabled else "whole_brain_context"
+                ),
+                "source_node_ids": sorted(
+                    {
+                        str(record.get("node_id") or "")
+                        for record in entry["source_records"]
+                    }
+                ),
+                "neighbor_root_ids": [],
+                "context_root_ids": [],
+                "incoming_synapse_count": 0,
+                "outgoing_synapse_count": 0,
+                "incident_synapse_count": 0,
+                "linked_selection": build_dashboard_linked_neuron_payload(
+                    root_id=int(root_id),
+                    source_layer="whole_brain_context",
+                    source_item_id=(
+                        str(highlight_record.get("node_id"))
+                        if highlight_record is not None
+                        else str(base_record.get("node_id") or root_id)
+                    ),
+                    selection_enabled=selection_enabled,
+                ),
+            }
+        )
+    collapsed.sort(key=_context_node_sort_key)
+    return collapsed
+
+
+def _collapse_context_edges(
+    payload: Any,
+    *,
+    emphasize_pathway_highlight: bool,
+) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    grouped: dict[tuple[int, int], dict[str, Any]] = {}
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        record = copy.deepcopy(dict(item))
+        edge_key = (int(record["source_root_id"]), int(record["target_root_id"]))
+        entry = grouped.setdefault(
+            edge_key,
+            {"base_record": None, "highlight_record": None, "source_records": []},
+        )
+        entry["source_records"].append(record)
+        edge_role_id = str(record.get("edge_role_id") or "")
+        if edge_role_id == PATHWAY_HIGHLIGHT_EDGE_ROLE_ID:
+            entry["highlight_record"] = record
+        elif entry["base_record"] is None:
+            entry["base_record"] = record
+    collapsed: list[dict[str, Any]] = []
+    for (source_root_id, target_root_id), entry in grouped.items():
+        base_record = entry["base_record"] or entry["highlight_record"]
+        if base_record is None:
+            continue
+        highlight_record = entry["highlight_record"]
+        style_variant = _context_edge_style_variant(
+            base_edge_role_id=str(base_record.get("edge_role_id") or ""),
+            highlighted=highlight_record is not None,
+            emphasize_pathway_highlight=emphasize_pathway_highlight,
+        )
+        collapsed.append(
+            {
+                "source_root_id": int(source_root_id),
+                "target_root_id": int(target_root_id),
+                "edge_role_id": str(base_record.get("edge_role_id") or ""),
+                "style_variant": style_variant,
+                "highlighted": highlight_record is not None,
+                "synapse_count": int(base_record.get("synapse_count", 0) or 0),
+                "weight": float(base_record.get("weight", 0.0) or 0.0),
+                "mean_confidence": _parse_optional_float(base_record.get("mean_confidence")),
+                "overlay_ids": sorted(
+                    {
+                        str(value)
+                        for record in entry["source_records"]
+                        for value in record.get("overlay_ids", [])
+                    }
+                ),
+                "directional_context": sorted(
+                    {
+                        str(value)
+                        for record in entry["source_records"]
+                        for value in record.get("directional_context", [])
+                    }
+                ),
+                "dominant_neuropil": base_record.get("dominant_neuropil"),
+                "dominant_nt_type": base_record.get("dominant_nt_type"),
+                "source_edge_ids": sorted(
+                    {
+                        str(record.get("edge_id") or "")
+                        for record in entry["source_records"]
+                    }
+                ),
+            }
+        )
+    collapsed.sort(key=_context_edge_sort_key)
+    return collapsed
+
+
+def _normalize_downstream_module_catalog(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        record = copy.deepcopy(dict(item))
+        result.append(
+            {
+                "module_id": str(record.get("module_id") or ""),
+                "display_name": str(record.get("display_name") or record.get("module_id") or ""),
+                "downstream_module_role_id": str(record.get("downstream_module_role_id") or ""),
+                "represented_root_ids": [
+                    int(root_id) for root_id in record.get("represented_root_ids", [])
+                ],
+                "metadata_facet_values": copy.deepcopy(
+                    dict(record.get("metadata_facet_values", {}))
+                )
+                if isinstance(record.get("metadata_facet_values", {}), Mapping)
+                else {},
+            }
+        )
+    return result
+
+
+def _normalize_pathway_catalog(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        record = copy.deepcopy(dict(item))
+        result.append(
+            {
+                "pathway_id": str(record.get("pathway_id") or ""),
+                "direction": str(record.get("direction") or ""),
+                "anchor_root_id": int(record.get("anchor_root_id", 0) or 0),
+                "target_root_id": int(record.get("target_root_id", 0) or 0),
+                "node_root_ids": [int(root_id) for root_id in record.get("node_root_ids", [])],
+                "hop_count": int(record.get("hop_count", 0) or 0),
+                "path_synapse_count": int(record.get("path_synapse_count", 0) or 0),
+            }
+        )
+    return result
+
+
+def _apply_context_incident_stats(
+    *,
+    nodes: list[dict[str, Any]],
+    edges: Sequence[Mapping[str, Any]],
+) -> None:
+    node_by_root = {int(item["root_id"]): item for item in nodes}
+    neighbor_sets: dict[int, set[int]] = defaultdict(set)
+    context_neighbor_sets: dict[int, set[int]] = defaultdict(set)
+    for edge in edges:
+        source_root_id = int(edge["source_root_id"])
+        target_root_id = int(edge["target_root_id"])
+        synapse_count = int(edge["synapse_count"])
+        neighbor_sets[source_root_id].add(target_root_id)
+        neighbor_sets[target_root_id].add(source_root_id)
+        source_node = node_by_root.get(source_root_id)
+        target_node = node_by_root.get(target_root_id)
+        if source_node is not None:
+            source_node["outgoing_synapse_count"] += synapse_count
+            source_node["incident_synapse_count"] += synapse_count
+        if target_node is not None:
+            target_node["incoming_synapse_count"] += synapse_count
+            target_node["incident_synapse_count"] += synapse_count
+        if source_node is not None and target_node is not None:
+            if not bool(target_node["selection_enabled"]):
+                context_neighbor_sets[source_root_id].add(target_root_id)
+            if not bool(source_node["selection_enabled"]):
+                context_neighbor_sets[target_root_id].add(source_root_id)
+    for root_id, node in node_by_root.items():
+        node["neighbor_root_ids"] = sorted(int(value) for value in neighbor_sets.get(root_id, set()))
+        node["context_root_ids"] = sorted(
+            int(value) for value in context_neighbor_sets.get(root_id, set())
+        )
+
+
+def _context_node_style_variant(
+    *,
+    selection_enabled: bool,
+    pathway_highlight: bool,
+    emphasize_pathway_highlight: bool,
+) -> str:
+    if selection_enabled:
+        return "active_selected"
+    if pathway_highlight and emphasize_pathway_highlight:
+        return "context_pathway_highlight"
+    return "context_only"
+
+
+def _context_edge_style_variant(
+    *,
+    base_edge_role_id: str,
+    highlighted: bool,
+    emphasize_pathway_highlight: bool,
+) -> str:
+    if highlighted and emphasize_pathway_highlight:
+        return "pathway_highlight"
+    if base_edge_role_id == ACTIVE_TO_CONTEXT_EDGE_ROLE_ID:
+        return "active_to_context"
+    if base_edge_role_id == CONTEXT_TO_ACTIVE_EDGE_ROLE_ID:
+        return "context_to_active"
+    if base_edge_role_id == CONTEXT_INTERNAL_EDGE_ROLE_ID:
+        return "context_internal"
+    if base_edge_role_id == DOWNSTREAM_MODULE_SUMMARY_EDGE_ROLE_ID:
+        return "downstream_module_summary"
+    return "active_internal"
+
+
+def _context_node_sort_key(node: Mapping[str, Any]) -> tuple[Any, ...]:
+    style_order = {
+        "active_selected": 0,
+        "active_pathway_highlight": 1,
+        "context_pathway_highlight": 2,
+        "context_only": 3,
+    }
+    hop_count = node.get("nearest_active_hop_count")
+    return (
+        style_order.get(str(node.get("style_variant")), 9),
+        999 if hop_count is None else int(hop_count),
+        int(node["root_id"]),
+    )
+
+
+def _context_edge_sort_key(edge: Mapping[str, Any]) -> tuple[Any, ...]:
+    style_order = {
+        "active_internal": 0,
+        "active_to_context": 1,
+        "context_to_active": 2,
+        "pathway_highlight": 3,
+        "context_internal": 4,
+        "downstream_module_summary": 5,
+    }
+    return (
+        style_order.get(str(edge.get("style_variant")), 9),
+        -int(edge.get("synapse_count", 0) or 0),
+        int(edge["source_root_id"]),
+        int(edge["target_root_id"]),
+    )
 
 
 def _resolve_stimulus_scene_context(
@@ -862,7 +1895,9 @@ __all__ = [
     "DASHBOARD_CIRCUIT_CONTEXT_VERSION",
     "DASHBOARD_LINKED_NEURON_PAYLOAD_VERSION",
     "DASHBOARD_SCENE_CONTEXT_VERSION",
+    "DASHBOARD_WHOLE_BRAIN_CONTEXT_VERSION",
     "build_dashboard_linked_neuron_payload",
+    "load_dashboard_whole_brain_context",
     "normalize_dashboard_circuit_context",
     "resolve_dashboard_scene_context",
 ]

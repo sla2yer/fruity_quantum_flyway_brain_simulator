@@ -23,6 +23,7 @@
     let state = clone(model.global_interaction_state);
     state.hovered_neuron_id = null;
     state.hover_source_pane_id = null;
+    state.active_context_representation_id = defaultContextRepresentationId(model);
 
     const listeners = new Set();
     const replayModel = model.replay_model || {};
@@ -177,6 +178,12 @@
       setHoveredNeuronId(null, null);
     }
 
+    function setActiveContextRepresentationId(representationId) {
+      setState(function update(draft) {
+        draft.active_context_representation_id = String(representationId);
+      });
+    }
+
     return {
       subscribe: function subscribe(listener) {
         listeners.add(listener);
@@ -193,6 +200,7 @@
         setActiveArmId: setActiveArmId,
         setActiveOverlayId: setActiveOverlayId,
         setComparisonMode: setComparisonMode,
+        setActiveContextRepresentationId: setActiveContextRepresentationId,
         setHoveredNeuronId: setHoveredNeuronId,
         setPlaybackState: setPlaybackState,
         setSelectedNeuronId: setSelectedNeuronId,
@@ -225,7 +233,7 @@
       next.selected_neuron_id = selectedRootIds[0] || 0;
     }
 
-    const circuitNodes = getCircuitNodes(model);
+    const circuitNodes = getCircuitNodes(model, next);
     const hoverableRootIds = circuitNodes.map(function collect(item) {
       return Number(item.root_id);
     });
@@ -242,6 +250,18 @@
     } else {
       next.hovered_neuron_id = null;
       next.hover_source_pane_id = null;
+    }
+
+    const availableContextRepresentationIds = getAvailableContextRepresentationIds(model);
+    if (
+      availableContextRepresentationIds.indexOf(
+        String(next.active_context_representation_id || "")
+      ) === -1
+    ) {
+      next.active_context_representation_id =
+        availableContextRepresentationIds[0] || defaultContextRepresentationId(model);
+    } else {
+      next.active_context_representation_id = String(next.active_context_representation_id);
     }
 
     const readouts = Array.isArray(model.time_series_context.comparable_readout_catalog)
@@ -449,6 +469,7 @@
       return;
     }
     const circuit = model.circuit_context || {};
+    const wholeBrain = circuit.whole_brain_context || {};
     const selectedRoots = Array.isArray(circuit.root_catalog) ? circuit.root_catalog : [];
     const connectivity = circuit.connectivity_context || {};
     const graphNodes = Array.isArray(connectivity.node_catalog) ? connectivity.node_catalog : [];
@@ -456,6 +477,7 @@
     const layerCards = circuitLayerCards(connectivity.context_layers || {});
 
     body.innerHTML = [
+      wholeBrainContextBandMarkup(state, model),
       paneBand(
         "Connectivity context",
         "",
@@ -485,6 +507,10 @@
             [
               "Context roots",
               String(((connectivity.network_summary || {}).context_root_count) || 0),
+            ],
+            [
+              "Whole-brain bridge",
+              String(wholeBrain.availability || "absent"),
             ],
             [
               "Total synapses",
@@ -1365,6 +1391,14 @@
   }
 
   function attachCircuitInteractions(body, store) {
+    body.querySelectorAll("[data-context-representation]").forEach(function attach(node) {
+      node.addEventListener("click", function onClick() {
+        const representationId = node.getAttribute("data-context-representation");
+        if (representationId) {
+          store.actions.setActiveContextRepresentationId(representationId);
+        }
+      });
+    });
     body.querySelectorAll("[data-root-select]").forEach(function attach(node) {
       node.addEventListener("click", function onClick() {
         store.actions.setSelectedNeuronId(node.getAttribute("data-root-select"));
@@ -2014,7 +2048,7 @@
   }
 
   function focusedCircuitNode(model, state) {
-    const nodes = getCircuitNodes(model);
+    const nodes = getCircuitNodes(model, state);
     if (state.hovered_neuron_id !== null && state.hovered_neuron_id !== undefined) {
       const hovered = nodes.find(function find(item) {
         return Number(item.root_id) === Number(state.hovered_neuron_id);
@@ -2032,10 +2066,395 @@
     );
   }
 
-  function getCircuitNodes(model) {
-    return Array.isArray((((model.circuit_context || {}).connectivity_context || {}).node_catalog))
+  function getCircuitNodes(model, state) {
+    const byRoot = {};
+    const compactNodes = Array.isArray((((model.circuit_context || {}).connectivity_context || {}).node_catalog))
       ? (((model.circuit_context || {}).connectivity_context || {}).node_catalog)
       : [];
+    compactNodes.forEach(function add(node) {
+      byRoot[String(node.root_id)] = clone(node);
+    });
+    const activeRepresentation = activeContextRepresentation(
+      model,
+      state || { active_context_representation_id: defaultContextRepresentationId(model) }
+    );
+    (Array.isArray((activeRepresentation || {}).node_catalog)
+      ? activeRepresentation.node_catalog
+      : []
+    ).forEach(function add(node) {
+      const key = String(node.root_id);
+      byRoot[key] = Object.assign({}, byRoot[key] || {}, clone(node));
+    });
+    return Object.keys(byRoot)
+      .map(function map(key) {
+        return byRoot[key];
+      })
+      .sort(function sort(a, b) {
+        if (Boolean(a.selection_enabled) !== Boolean(b.selection_enabled)) {
+          return Boolean(a.selection_enabled) ? -1 : 1;
+        }
+        if (Boolean(a.pathway_highlight) !== Boolean(b.pathway_highlight)) {
+          return Boolean(a.pathway_highlight) ? -1 : 1;
+        }
+        return Number(a.root_id) - Number(b.root_id);
+      });
+  }
+
+  function getWholeBrainContext(model) {
+    return ((model.circuit_context || {}).whole_brain_context || {});
+  }
+
+  function getWholeBrainRepresentations(model) {
+    const wholeBrain = getWholeBrainContext(model);
+    return Array.isArray(wholeBrain.representation_catalog)
+      ? wholeBrain.representation_catalog
+      : [];
+  }
+
+  function getAvailableContextRepresentationIds(model) {
+    return getWholeBrainRepresentations(model)
+      .filter(function filter(item) {
+        return String(item.availability) === "available" || String(item.availability) === "summary_only";
+      })
+      .map(function map(item) {
+        return String(item.representation_id);
+      });
+  }
+
+  function defaultContextRepresentationId(model) {
+    return getAvailableContextRepresentationIds(model)[0] || "overview";
+  }
+
+  function activeContextRepresentation(model, state) {
+    const representations = getWholeBrainRepresentations(model);
+    return (
+      representations.find(function find(item) {
+        return String(item.representation_id) === String(state.active_context_representation_id);
+      }) ||
+      representations[0] ||
+      null
+    );
+  }
+
+  function wholeBrainContextBandMarkup(state, model) {
+    const wholeBrain = getWholeBrainContext(model);
+    if (String(wholeBrain.availability || "absent") === "absent") {
+      return "";
+    }
+    const activeRepresentation = activeContextRepresentation(model, state);
+    const linkedDashboard = (wholeBrain.linked_sessions || {}).dashboard || {};
+    const linkedShowcase = (wholeBrain.linked_sessions || {}).showcase || {};
+    return paneBand(
+      "Whole-Brain Context",
+      "",
+      '<div class="context-band-grid">' +
+        '<div class="context-stage-column">' +
+          contextRepresentationControlsMarkup(state, model) +
+          contextRepresentationStageMarkup(activeRepresentation, state) +
+          wholeBrainContextLegendMarkup() +
+        "</div>" +
+        '<div class="context-side-column">' +
+          pillRow([
+            statePill("Availability", String(wholeBrain.availability || "unknown")),
+            statePill("Representation", String((activeRepresentation || {}).display_name || "n/a")),
+            statePill("Preset", String((activeRepresentation || {}).source_preset_id || wholeBrain.active_preset_id || "n/a")),
+            statePill("Hover", hoveredNeuronLabel(model, state)),
+          ]) +
+	          summaryList([
+	            ["Bundle", basename((((wholeBrain.artifact_paths || {}).metadata_path) || "n/a"))],
+	            ["Selection alignment", String(((wholeBrain.selection_alignment || {}).status) || "unknown")],
+	            ["Linked dashboard", String(linkedDashboard.bundle_id || "none")],
+	            ["Linked showcase", String(linkedShowcase.bundle_id || "none")],
+	            ["Source query", String((activeRepresentation || {}).source_query_profile_id || (wholeBrain.summary || {}).query_profile_id || "n/a")],
+	            ["Graph source", String((activeRepresentation || {}).source_graph_view_id || "n/a")],
+	          ]) +
+	          contextRepresentationSummaryMarkup(wholeBrain, activeRepresentation) +
+	        "</div>" +
+	      "</div>"
+	    );
+	  }
+
+  function contextRepresentationControlsMarkup(state, model) {
+    const representations = getWholeBrainRepresentations(model);
+    if (representations.length === 0) {
+      return "";
+    }
+    return (
+      '<div class="context-toolbar">' +
+      '<div class="segment-control">' +
+      representations.map(function render(item) {
+        const isActive =
+          String(item.representation_id) === String(state.active_context_representation_id);
+        const activeClass = isActive ? " is-active" : "";
+        const disabledAttr =
+          String(item.availability) === "unavailable" ? " disabled" : "";
+        return (
+          '<button type="button" class="segment-button' +
+          activeClass +
+          '" data-context-representation="' +
+          escapeHtml(String(item.representation_id)) +
+          '"' +
+          disabledAttr +
+          ">" +
+          escapeHtml(String(item.display_name || item.representation_id)) +
+          "</button>"
+        );
+      }).join("") +
+      "</div>" +
+      "</div>"
+    );
+  }
+
+  function contextRepresentationStageMarkup(representation, state) {
+    if (!representation) {
+      return comparisonFailureMarkup("No packaged whole-brain context representation is available.");
+    }
+    if (String(representation.availability) === "available") {
+      return (
+        '<div class="context-stage-shell">' +
+        wholeBrainGraphMarkup(representation.node_catalog || [], representation.edge_catalog || [], state) +
+        contextStageFooterMarkup(representation) +
+        "</div>"
+      );
+    }
+    return (
+      '<div class="context-stage-shell">' +
+      comparisonFailureMarkup(
+        String(
+          representation.reason ||
+            "This whole-brain context representation is not graph-renderable in the packaged dashboard."
+        )
+      ) +
+      contextStageFooterMarkup(representation) +
+      "</div>"
+    );
+  }
+
+  function contextStageFooterMarkup(representation) {
+    const summary = representation.summary || {};
+    const modules = Array.isArray(representation.downstream_module_catalog)
+      ? representation.downstream_module_catalog
+      : [];
+    const pathways = Array.isArray(representation.pathway_catalog)
+      ? representation.pathway_catalog
+      : [];
+    return (
+      summaryList([
+        ["Roots", String(summary.distinct_root_count || 0)],
+        ["Edges", String(summary.edge_count || 0)],
+        ["Context-only", String(summary.context_root_count || 0)],
+        ["Pathway highlights", String(summary.pathway_highlight_root_count || 0)],
+        ["Pathway extracts", String(pathways.length)],
+        ["Downstream modules", String(modules.length)],
+      ]) +
+      (pathways.length > 0
+        ? chipList(
+            pathways.slice(0, 3).map(function map(item) {
+              return {
+                label:
+                  String(item.anchor_root_id) +
+                  " -> " +
+                  String(item.target_root_id) +
+                  " | " +
+                  String(item.hop_count) +
+                  " hops",
+                tone: "warn",
+              };
+            })
+          )
+        : "")
+    );
+  }
+
+  function contextRepresentationSummaryMarkup(wholeBrain, representation) {
+    const summary = (representation || {}).summary || {};
+    const presetCatalog = Array.isArray(wholeBrain.preset_catalog)
+      ? wholeBrain.preset_catalog
+      : [];
+    const reasonText =
+      String(wholeBrain.reason || (representation || {}).reason || "");
+    return (
+      (reasonText ? paragraph(reasonText) : "") +
+      summaryList([
+        ["Active roots", String(summary.active_root_count || 0)],
+        ["Context roots", String(summary.context_root_count || 0)],
+        ["Node styles", formatKeyValueSummary(summary.node_style_counts)],
+        ["Edge styles", formatKeyValueSummary(summary.edge_style_counts)],
+        ["Packaged presets", String(presetCatalog.length)],
+        ["Active preset", String(wholeBrain.active_preset_id || "n/a")],
+      ]) +
+      (presetCatalog.length > 0
+        ? chipList(
+            presetCatalog.map(function map(item) {
+              return {
+                label:
+                  String(item.display_name || item.preset_id) +
+                  " | " +
+                  String(item.availability || "available"),
+                tone:
+                  String(item.preset_id) === String((representation || {}).source_preset_id)
+                    ? "good"
+                    : "neutral",
+              };
+            })
+          )
+        : "")
+    );
+  }
+
+  function wholeBrainContextLegendMarkup() {
+    return chipList([
+      { label: "Active selected", tone: "good" },
+      { label: "Context-only", tone: "neutral" },
+      { label: "Pathway highlight", tone: "warn" },
+    ]);
+  }
+
+  function wholeBrainGraphMarkup(nodes, edges, state) {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      return '<div class="scene-empty"><strong>No graph-renderable whole-brain representation.</strong></div>';
+    }
+    const width = 440;
+    const height = 290;
+    const positions = computeWholeBrainGraphLayout(nodes, width, height);
+    const maxCount = Math.max(
+      1,
+      ...((Array.isArray(edges) ? edges : []).map(function map(item) {
+        return Number(item.synapse_count || 0);
+      }))
+    );
+    const edgeMarkup = (Array.isArray(edges) ? edges : [])
+      .map(function render(edge) {
+        const source = positions[edge.source_root_id];
+        const target = positions[edge.target_root_id];
+        if (!source || !target) {
+          return "";
+        }
+        const strokeWidth = 1.2 + (3.4 * Number(edge.synapse_count || 0)) / maxCount;
+        return [
+          '<g class="graph-edge-group">',
+          '<line class="context-graph-edge is-' +
+            escapeHtml(String(edge.style_variant || "context_internal")) +
+            '" x1="' +
+            source.x.toFixed(2) +
+            '" y1="' +
+            source.y.toFixed(2) +
+            '" x2="' +
+            target.x.toFixed(2) +
+            '" y2="' +
+            target.y.toFixed(2) +
+            '" style="stroke-width:' +
+            strokeWidth.toFixed(2) +
+            'px"></line>',
+          '<text class="graph-edge-label" x="' +
+            ((source.x + target.x) / 2).toFixed(2) +
+            '" y="' +
+            ((source.y + target.y) / 2).toFixed(2) +
+            '">' +
+            escapeHtml(String(edge.synapse_count || 0)) +
+            "</text>",
+          "</g>",
+        ].join("");
+      })
+      .join("");
+    const nodeMarkup = nodes
+      .map(function render(node) {
+        const position = positions[node.root_id];
+        const isSelected = Number(node.root_id) === Number(state.selected_neuron_id);
+        const isHovered =
+          state.hovered_neuron_id !== null &&
+          Number(node.root_id) === Number(state.hovered_neuron_id);
+        const label = node.display_label || node.root_id;
+        return [
+          '<g class="graph-node-group" data-root-hover="' +
+            escapeHtml(String(node.root_id)) +
+            '"' +
+            (node.selection_enabled
+              ? ' data-root-select="' + escapeHtml(String(node.root_id)) + '"'
+              : "") +
+            '>',
+          '<circle class="context-graph-node is-' +
+            escapeHtml(String(node.style_variant || "context_only")) +
+            (node.pathway_highlight ? " is-pathway-highlighted" : "") +
+            (isSelected ? " is-selected" : "") +
+            (isHovered ? " is-hovered" : "") +
+            '" cx="' +
+            position.x.toFixed(2) +
+            '" cy="' +
+            position.y.toFixed(2) +
+            '" r="' +
+            String(position.radius) +
+            '"></circle>',
+          '<text class="graph-label" x="' +
+            position.x.toFixed(2) +
+            '" y="' +
+            (position.y + position.radius + 16).toFixed(2) +
+            '">' +
+            escapeHtml(String(label)) +
+            "</text>",
+          "</g>",
+        ].join("");
+      })
+      .join("");
+    return [
+      '<svg class="circuit-graph whole-brain-graph" viewBox="0 0 ' +
+        String(width) +
+        " " +
+        String(height) +
+        '">',
+      edgeMarkup,
+      nodeMarkup,
+      "</svg>",
+    ].join("");
+  }
+
+  function computeWholeBrainGraphLayout(nodes, width, height) {
+    const active = nodes.filter(function filter(node) {
+      return Boolean(node.selection_enabled);
+    });
+    const highlightedContext = nodes.filter(function filter(node) {
+      return !Boolean(node.selection_enabled) && Boolean(node.pathway_highlight);
+    });
+    const context = nodes.filter(function filter(node) {
+      return !Boolean(node.selection_enabled) && !Boolean(node.pathway_highlight);
+    });
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const positions = {};
+
+    positionRing(active, centerX, centerY, active.length <= 1 ? 0 : 56, 18);
+    positionRing(highlightedContext, centerX, centerY, highlightedContext.length <= 1 ? 106 : 112, 16);
+    positionRing(context, centerX, centerY, context.length <= 1 ? 154 : 160, 13);
+    return positions;
+
+    function positionRing(group, x, y, radius, nodeRadius) {
+      if (!group.length) {
+        return;
+      }
+      if (group.length === 1) {
+        positions[group[0].root_id] = {
+          x: x,
+          y: y + (radius === 0 ? 0 : radius),
+          radius: nodeRadius,
+        };
+        return;
+      }
+      group.forEach(function each(node, index) {
+        const angle = (-Math.PI / 2) + (2 * Math.PI * index) / group.length;
+        positions[node.root_id] = {
+          x: x + Math.cos(angle) * radius,
+          y: y + Math.sin(angle) * radius,
+          radius: nodeRadius,
+        };
+      });
+    }
+  }
+
+  function formatKeyValueSummary(mapping) {
+    const entries = Object.keys(mapping || {}).sort().map(function map(key) {
+      return String(key).replace(/_/g, " ") + ":" + String(mapping[key]);
+    });
+    return entries.join(", ") || "none";
   }
 
   function sceneCanvasMarkup(frame, renderStatus, scene) {
@@ -2125,12 +2544,32 @@
       summaryList([
         ["Root", String(focusNode.root_id)],
         ["Cell type", String(focusNode.cell_type || "unknown")],
-        ["Project role", String(focusNode.project_role || focusNode.subset_membership || "unknown")],
+        [
+          "Boundary",
+          String(
+            focusNode.selection_boundary_status ||
+              focusNode.boundary_status ||
+              focusNode.subset_membership ||
+              "unknown"
+          ),
+        ],
+        [
+          "Role",
+          String(
+            focusNode.pathway_relevance_status ||
+              focusNode.project_role ||
+              focusNode.cell_class ||
+              focusNode.subset_membership ||
+              "unknown"
+          ),
+        ],
         ["Morphology", String(focusNode.morphology_class || "unknown")],
+        ["Context layer", String(focusNode.context_layer_id || "n/a")],
         ["Neighbors", String((focusNode.neighbor_root_ids || []).join(", ") || "none")],
         ["Context neighbors", String((focusNode.context_root_ids || []).join(", ") || "none")],
         ["Incoming synapses", String(focusNode.incoming_synapse_count || 0)],
         ["Outgoing synapses", String(focusNode.outgoing_synapse_count || 0)],
+        ["Nearest active hop", String(focusNode.nearest_active_hop_count === null || focusNode.nearest_active_hop_count === undefined ? "n/a" : focusNode.nearest_active_hop_count)],
         [
           "Edge bundles",
           String(((layerContext.edge_coupling_bundles || {}).availability) || "unknown"),
