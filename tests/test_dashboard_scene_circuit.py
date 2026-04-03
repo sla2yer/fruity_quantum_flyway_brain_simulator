@@ -237,6 +237,35 @@ class DashboardSceneCircuitTest(unittest.TestCase):
                 representation_by_id["focused"]["availability"],
                 "available",
             )
+            self.assertEqual(
+                representation_by_id["overview"]["summary"]["interaction_flow_count"],
+                6,
+            )
+            self.assertIn(
+                "bidirectional_context_graph",
+                {
+                    item["overlay_id"]
+                    for item in representation_by_id["overview"][
+                        "overlay_workflow_catalog"
+                    ]
+                },
+            )
+            self.assertTrue(
+                {"cell_class", "neuropil"}.issubset(
+                    {
+                        item["metadata_facet_id"]
+                        for item in representation_by_id["overview"][
+                            "metadata_facet_group_catalog"
+                        ]
+                    }
+                )
+            )
+            self.assertGreater(
+                representation_by_id["focused"]["pathway_explanation_catalog"][0][
+                    "card_count"
+                ],
+                0,
+            )
 
             overview_styles = {
                 str(item["style_variant"])

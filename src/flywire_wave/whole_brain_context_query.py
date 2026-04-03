@@ -41,11 +41,14 @@ from .whole_brain_context_contract import (
     UPSTREAM_CONTEXT_QUERY_FAMILY,
     UPSTREAM_GRAPH_OVERLAY_ID,
     ACTIVE_TO_CONTEXT_EDGE_ROLE_ID,
+    BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID,
     BIDIRECTIONAL_CONTEXT_QUERY_FAMILY,
+    CELL_CLASS_METADATA_FACET_ID,
     DOWNSTREAM_CONTEXT_QUERY_FAMILY,
     DOWNSTREAM_MODULE_OVERLAY_ID,
     DOWNSTREAM_MODULE_SUMMARY_EDGE_ROLE_ID,
     get_whole_brain_context_query_profile_definition,
+    NEUROPIL_METADATA_FACET_ID,
 )
 
 
@@ -71,6 +74,28 @@ _DEFAULT_MAX_HOPS_BY_REDUCTION_PROFILE_ID = {
     "pathway_focus": 3,
     "downstream_module_collapsed": 2,
 }
+
+_OVERLAY_DISPLAY_NAMES = {
+    ACTIVE_BOUNDARY_OVERLAY_ID: "Active Boundary",
+    UPSTREAM_GRAPH_OVERLAY_ID: "Upstream Graph",
+    DOWNSTREAM_GRAPH_OVERLAY_ID: "Downstream Graph",
+    BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID: "Bidirectional Context Graph",
+    PATHWAY_HIGHLIGHT_OVERLAY_ID: "Pathway Highlight",
+    DOWNSTREAM_MODULE_OVERLAY_ID: "Downstream Module",
+    METADATA_FACET_BADGES_OVERLAY_ID: "Metadata Facet Badges",
+}
+
+_METADATA_FACET_DISPLAY_NAMES = {
+    CELL_CLASS_METADATA_FACET_ID: "Cell Class",
+    "cell_type": "Cell Type",
+    NEUROPIL_METADATA_FACET_ID: "Neuropil",
+    "side": "Side",
+    "nt_type": "NT Type",
+    "selection_boundary_status": "Selection Boundary Status",
+    "pathway_relevance_status": "Pathway Relevance Status",
+}
+
+_PATHWAY_EXPLANATION_MODE_ID = "active_to_context_pathwalk"
 
 _NODE_RECORD_SORT_ORDER = {
     ACTIVE_SELECTED_NODE_ROLE_ID: 0,
@@ -382,6 +407,7 @@ def execute_whole_brain_context_query(
         selected_context_root_ids=selected_context_root_ids,
         active_anchor_records=active_anchor_records,
         metadata_by_root=metadata_by_root,
+        query_family=query_family,
         enabled_overlays=enabled_overlays,
         enabled_facets=enabled_facets,
         directional_membership=directional_membership,
@@ -398,6 +424,7 @@ def execute_whole_brain_context_query(
     base_edge_records = _build_base_edge_records(
         selected_biological_edges=selected_biological_edges,
         active_root_set=active_root_set,
+        query_family=query_family,
         enabled_overlays=enabled_overlays,
         directional_membership=directional_membership,
         highlight_edge_keys=highlight_edge_keys,
@@ -412,6 +439,7 @@ def execute_whole_brain_context_query(
         selected_context_root_ids=selected_context_root_ids,
         directional_membership=directional_membership,
         reduction_controls=resolved_reduction_controls,
+        query_family=query_family,
         enabled_overlays=enabled_overlays,
         enabled_facets=enabled_facets,
     )
@@ -439,6 +467,26 @@ def execute_whole_brain_context_query(
         highlight_edge_records=highlight_edge_records,
         downstream_module_records=downstream_module_records,
         focused_path_records=focused_path_records,
+    )
+    overview_graph = _augment_graph_view_with_explanation_layer(
+        graph_view=overview_graph,
+        query_profile_id=query_profile_id,
+        query_family=query_family,
+        active_root_ids=active_root_ids,
+        enabled_overlays=enabled_overlays,
+        enabled_facets=enabled_facets,
+        metadata_by_root=metadata_by_root,
+        highlight_path_records=highlight_path_records,
+    )
+    focused_subgraph = _augment_graph_view_with_explanation_layer(
+        graph_view=focused_subgraph,
+        query_profile_id=query_profile_id,
+        query_family=query_family,
+        active_root_ids=active_root_ids,
+        enabled_overlays=enabled_overlays,
+        enabled_facets=enabled_facets,
+        metadata_by_root=metadata_by_root,
+        highlight_path_records=highlight_path_records,
     )
     summary = {
         "status": query_status,
@@ -1387,6 +1435,7 @@ def _build_base_node_records(
     selected_context_root_ids: set[int],
     active_anchor_records: Mapping[int, Mapping[str, Any]],
     metadata_by_root: Mapping[int, Mapping[str, Any]],
+    query_family: str,
     enabled_overlays: set[str],
     enabled_facets: set[str],
     directional_membership: Mapping[int, set[str]],
@@ -1415,6 +1464,18 @@ def _build_base_node_records(
             overlay_ids.append(UPSTREAM_GRAPH_OVERLAY_ID)
         if "downstream" in direction_membership and DOWNSTREAM_GRAPH_OVERLAY_ID in enabled_overlays:
             overlay_ids.append(DOWNSTREAM_GRAPH_OVERLAY_ID)
+        if (
+            query_family in {
+                BIDIRECTIONAL_CONTEXT_QUERY_FAMILY,
+                DOWNSTREAM_MODULE_REVIEW_QUERY_FAMILY,
+            }
+            and BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID in enabled_overlays
+            and (
+                root_id in active_root_set
+                or bool(direction_membership)
+            )
+        ):
+            overlay_ids.append(BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID)
         if METADATA_FACET_BADGES_OVERLAY_ID in enabled_overlays:
             overlay_ids.append(METADATA_FACET_BADGES_OVERLAY_ID)
         metadata = metadata_by_root.get(int(root_id), {})
@@ -1509,6 +1570,7 @@ def _build_base_edge_records(
     *,
     selected_biological_edges: Sequence[Mapping[str, Any]],
     active_root_set: set[int],
+    query_family: str,
     enabled_overlays: set[str],
     directional_membership: Mapping[int, set[str]],
     highlight_edge_keys: set[tuple[int, int]],
@@ -1535,6 +1597,19 @@ def _build_base_edge_records(
             edge_role_id == ACTIVE_TO_CONTEXT_EDGE_ROLE_ID or "downstream" in direction_membership
         ):
             overlay_ids.append(DOWNSTREAM_GRAPH_OVERLAY_ID)
+        if (
+            query_family in {
+                BIDIRECTIONAL_CONTEXT_QUERY_FAMILY,
+                DOWNSTREAM_MODULE_REVIEW_QUERY_FAMILY,
+            }
+            and BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID in enabled_overlays
+            and (
+                source_root_id in active_root_set
+                or target_root_id in active_root_set
+                or bool(direction_membership)
+            )
+        ):
+            overlay_ids.append(BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID)
         records.append(
             {
                 "source_root_id": str(source_root_id),
@@ -1606,6 +1681,7 @@ def _build_downstream_module_records(
     selected_context_root_ids: set[int],
     directional_membership: Mapping[int, set[str]],
     reduction_controls: Mapping[str, Any],
+    query_family: str,
     enabled_overlays: set[str],
     enabled_facets: set[str],
 ) -> list[dict[str, Any]]:
@@ -1666,13 +1742,815 @@ def _build_downstream_module_records(
                     "context roots."
                 ),
                 "represented_root_ids": [str(root_id) for root_id in represented_root_ids],
-                "overlay_ids": [DOWNSTREAM_MODULE_OVERLAY_ID],
+                "overlay_ids": (
+                    [
+                        DOWNSTREAM_MODULE_OVERLAY_ID,
+                        BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID,
+                    ]
+                    if (
+                        query_family in {
+                            BIDIRECTIONAL_CONTEXT_QUERY_FAMILY,
+                            DOWNSTREAM_MODULE_REVIEW_QUERY_FAMILY,
+                        }
+                        and BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID in enabled_overlays
+                    )
+                    else [DOWNSTREAM_MODULE_OVERLAY_ID]
+                ),
                 "metadata_facet_values": metadata_values,
                 "context_layer_id": DOWNSTREAM_MODULE_CONTEXT_LAYER_ID,
                 "module_kind": "collapsed_context_summary",
             }
         )
     return records
+
+
+def _augment_graph_view_with_explanation_layer(
+    *,
+    graph_view: Mapping[str, Any],
+    query_profile_id: str,
+    query_family: str,
+    active_root_ids: Sequence[int],
+    enabled_overlays: set[str],
+    enabled_facets: set[str],
+    metadata_by_root: Mapping[int, Mapping[str, Any]],
+    highlight_path_records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    result = copy.deepcopy(dict(graph_view))
+    node_index = _graph_node_index(result.get("node_records", []))
+    edge_index = _graph_edge_index(result.get("edge_records", []))
+    module_records = [
+        copy.deepcopy(dict(item))
+        for item in result.get("downstream_module_records", [])
+        if isinstance(item, Mapping)
+    ]
+    overlay_workflow_catalog = _build_overlay_workflow_catalog(
+        node_index=node_index,
+        edge_index=edge_index,
+        module_records=module_records,
+        query_family=query_family,
+        active_root_ids=active_root_ids,
+        enabled_overlays=enabled_overlays,
+    )
+    (
+        metadata_facet_group_catalog,
+        metadata_facet_filter_catalog,
+    ) = _build_metadata_facet_group_and_filter_catalogs(
+        node_index=node_index,
+        edge_index=edge_index,
+        module_records=module_records,
+        active_root_ids=active_root_ids,
+        enabled_facets=enabled_facets,
+    )
+    pathway_explanation_catalog = _build_pathway_explanation_catalog(
+        graph_root_ids=set(node_index),
+        highlight_path_records=highlight_path_records,
+        metadata_by_root=metadata_by_root,
+        active_root_ids=active_root_ids,
+    )
+    interaction_flow_catalog = _build_interaction_flow_catalog(
+        graph_view_id=str(result.get("view_id") or ""),
+        query_profile_id=query_profile_id,
+        overlay_workflow_catalog=overlay_workflow_catalog,
+        metadata_facet_group_catalog=metadata_facet_group_catalog,
+        pathway_explanation_catalog=pathway_explanation_catalog,
+    )
+    reviewer_summary_cards = _build_reviewer_summary_cards(
+        node_index=node_index,
+        overlay_workflow_catalog=overlay_workflow_catalog,
+        metadata_facet_group_catalog=metadata_facet_group_catalog,
+        pathway_explanation_catalog=pathway_explanation_catalog,
+    )
+    summary = copy.deepcopy(
+        dict(_require_mapping(result.get("summary", {}), field_name="graph_view.summary"))
+    )
+    summary["overlay_workflow_count"] = len(overlay_workflow_catalog)
+    summary["metadata_facet_group_count"] = len(metadata_facet_group_catalog)
+    summary["metadata_facet_filter_count"] = len(metadata_facet_filter_catalog)
+    summary["pathway_explanation_mode_count"] = len(pathway_explanation_catalog)
+    summary["interaction_flow_count"] = len(interaction_flow_catalog)
+    result["summary"] = summary
+    result["reviewer_caption"] = (
+        reviewer_summary_cards[0]["caption"] if reviewer_summary_cards else str(result["description"])
+    )
+    result["overlay_workflow_catalog"] = overlay_workflow_catalog
+    result["metadata_facet_group_catalog"] = metadata_facet_group_catalog
+    result["metadata_facet_filter_catalog"] = metadata_facet_filter_catalog
+    result["pathway_explanation_catalog"] = pathway_explanation_catalog
+    result["interaction_flow_catalog"] = interaction_flow_catalog
+    result["reviewer_summary_cards"] = reviewer_summary_cards
+    return result
+
+
+def _graph_node_index(payload: Any) -> dict[int, dict[str, Any]]:
+    index: dict[int, dict[str, Any]] = {}
+    if not isinstance(payload, Sequence):
+        return index
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        root_id = int(item["root_id"])
+        entry = index.setdefault(
+            root_id,
+            {
+                "root_id": root_id,
+                "display_label": "",
+                "overlay_ids": set(),
+                "directional_context": set(),
+                "metadata_facet_values": {},
+                "boundary_status": None,
+                "is_active_selected": False,
+                "is_context_only": False,
+                "nearest_active_hop_count": None,
+                "source_node_role_ids": set(),
+                "pathway_highlight": False,
+            },
+        )
+        if not entry["display_label"] and _string_or_none(item.get("display_label")) is not None:
+            entry["display_label"] = str(item["display_label"])
+        entry["overlay_ids"].update(
+            str(value) for value in item.get("overlay_ids", []) if _string_or_none(value) is not None
+        )
+        entry["directional_context"].update(
+            str(value)
+            for value in item.get("directional_context", [])
+            if _string_or_none(value) is not None
+        )
+        if isinstance(item.get("metadata_facet_values", {}), Mapping):
+            entry["metadata_facet_values"].update(dict(item["metadata_facet_values"]))
+        boundary_status = _string_or_none(item.get("boundary_status"))
+        if boundary_status is not None:
+            entry["boundary_status"] = boundary_status
+        entry["is_active_selected"] = bool(entry["is_active_selected"]) or bool(
+            item.get("is_active_selected")
+        )
+        entry["is_context_only"] = bool(entry["is_context_only"]) or bool(
+            item.get("is_context_only")
+        )
+        nearest_hop = _coerce_nullable_int(item.get("nearest_active_hop_count"))
+        if nearest_hop is not None and (
+            entry["nearest_active_hop_count"] is None
+            or nearest_hop < int(entry["nearest_active_hop_count"])
+        ):
+            entry["nearest_active_hop_count"] = nearest_hop
+        node_role_id = _string_or_none(item.get("node_role_id"))
+        if node_role_id is not None:
+            entry["source_node_role_ids"].add(node_role_id)
+            if node_role_id in {
+                ACTIVE_PATHWAY_HIGHLIGHT_NODE_ROLE_ID,
+                CONTEXT_PATHWAY_HIGHLIGHT_NODE_ROLE_ID,
+            }:
+                entry["pathway_highlight"] = True
+    return index
+
+
+def _graph_edge_index(payload: Any) -> dict[tuple[int, int], dict[str, Any]]:
+    index: dict[tuple[int, int], dict[str, Any]] = {}
+    if not isinstance(payload, Sequence):
+        return index
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        edge_key = (int(item["source_root_id"]), int(item["target_root_id"]))
+        entry = index.setdefault(
+            edge_key,
+            {
+                "source_root_id": edge_key[0],
+                "target_root_id": edge_key[1],
+                "overlay_ids": set(),
+                "edge_role_ids": set(),
+                "synapse_count": 0,
+                "weight": 0.0,
+                "dominant_neuropil": None,
+                "dominant_nt_type": None,
+                "highlighted": False,
+            },
+        )
+        entry["overlay_ids"].update(
+            str(value) for value in item.get("overlay_ids", []) if _string_or_none(value) is not None
+        )
+        edge_role_id = _string_or_none(item.get("edge_role_id"))
+        if edge_role_id is not None:
+            entry["edge_role_ids"].add(edge_role_id)
+        entry["synapse_count"] = max(
+            int(entry["synapse_count"]),
+            int(item.get("synapse_count", 0) or 0),
+        )
+        entry["weight"] = max(
+            float(entry["weight"]),
+            float(item.get("weight", 0.0) or 0.0),
+        )
+        if entry["dominant_neuropil"] is None and _string_or_none(item.get("dominant_neuropil")) is not None:
+            entry["dominant_neuropil"] = str(item["dominant_neuropil"])
+        if entry["dominant_nt_type"] is None and _string_or_none(item.get("dominant_nt_type")) is not None:
+            entry["dominant_nt_type"] = str(item["dominant_nt_type"])
+        entry["highlighted"] = bool(entry["highlighted"]) or bool(item.get("highlighted"))
+    return index
+
+
+def _build_overlay_workflow_catalog(
+    *,
+    node_index: Mapping[int, Mapping[str, Any]],
+    edge_index: Mapping[tuple[int, int], Mapping[str, Any]],
+    module_records: Sequence[Mapping[str, Any]],
+    query_family: str,
+    active_root_ids: Sequence[int],
+    enabled_overlays: set[str],
+) -> list[dict[str, Any]]:
+    overlay_order = [
+        ACTIVE_BOUNDARY_OVERLAY_ID,
+        UPSTREAM_GRAPH_OVERLAY_ID,
+        DOWNSTREAM_GRAPH_OVERLAY_ID,
+        BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID,
+        PATHWAY_HIGHLIGHT_OVERLAY_ID,
+        DOWNSTREAM_MODULE_OVERLAY_ID,
+        METADATA_FACET_BADGES_OVERLAY_ID,
+    ]
+    active_root_id_set = {int(root_id) for root_id in active_root_ids}
+    result: list[dict[str, Any]] = []
+    for overlay_id in overlay_order:
+        if overlay_id not in enabled_overlays:
+            continue
+        if overlay_id == ACTIVE_BOUNDARY_OVERLAY_ID:
+            matching_root_ids = sorted(node_index)
+            matching_edge_pairs = [list(pair) for pair in sorted(edge_index)]
+            matching_module_ids = []
+        else:
+            matching_root_ids = [
+                root_id
+                for root_id, node in sorted(node_index.items())
+                if overlay_id in set(node["overlay_ids"])
+            ]
+            matching_edge_pairs = [
+                list(pair)
+                for pair, edge in sorted(edge_index.items())
+                if overlay_id in set(edge["overlay_ids"])
+            ]
+            matching_module_ids = [
+                str(item["module_id"])
+                for item in module_records
+                if overlay_id
+                in {
+                    str(value)
+                    for value in item.get("overlay_ids", [])
+                    if _string_or_none(value) is not None
+                }
+            ]
+        visible_root_ids = sorted(
+            set(matching_root_ids)
+            | (
+                active_root_id_set
+                if overlay_id != ACTIVE_BOUNDARY_OVERLAY_ID
+                else set(matching_root_ids)
+            )
+        )
+        available = bool(matching_root_ids or matching_edge_pairs or matching_module_ids)
+        result.append(
+            {
+                "overlay_workflow_id": f"overlay_workflow:{overlay_id}",
+                "overlay_id": overlay_id,
+                "display_name": _OVERLAY_DISPLAY_NAMES.get(overlay_id, overlay_id),
+                "availability": "available" if available else "unavailable",
+                "query_family": query_family,
+                "matching_root_ids": [int(root_id) for root_id in matching_root_ids],
+                "visible_root_ids": [int(root_id) for root_id in visible_root_ids],
+                "matching_edge_pairs": matching_edge_pairs,
+                "matching_module_ids": matching_module_ids,
+                "matching_active_root_count": sum(
+                    1 for root_id in matching_root_ids if int(root_id) in active_root_id_set
+                ),
+                "matching_context_root_count": sum(
+                    1 for root_id in matching_root_ids if int(root_id) not in active_root_id_set
+                ),
+                "caption": _overlay_workflow_caption(
+                    overlay_id=overlay_id,
+                    node_index=node_index,
+                    matching_root_ids=matching_root_ids,
+                    matching_module_ids=matching_module_ids,
+                    active_root_id_set=active_root_id_set,
+                ),
+                "boundary_note": (
+                    "Active roots remain the simulator-facing subset even when this overlay is emphasized."
+                ),
+            }
+        )
+    return result
+
+
+def _overlay_workflow_caption(
+    *,
+    overlay_id: str,
+    node_index: Mapping[int, Mapping[str, Any]],
+    matching_root_ids: Sequence[int],
+    matching_module_ids: Sequence[str],
+    active_root_id_set: set[int],
+) -> str:
+    matching_root_id_set = {int(root_id) for root_id in matching_root_ids}
+    context_root_ids = sorted(matching_root_id_set - active_root_id_set)
+    if overlay_id == ACTIVE_BOUNDARY_OVERLAY_ID:
+        return (
+            f"Active boundary keeps {len(active_root_id_set)} simulated roots distinct from "
+            f"{sum(1 for root_id in node_index if root_id not in active_root_id_set)} context-only roots."
+        )
+    if overlay_id == UPSTREAM_GRAPH_OVERLAY_ID:
+        return (
+            f"Upstream emphasis surfaces {len(context_root_ids)} context roots that feed into "
+            f"{len(active_root_id_set)} active anchors."
+        )
+    if overlay_id == DOWNSTREAM_GRAPH_OVERLAY_ID:
+        return (
+            f"Downstream emphasis shows {len(context_root_ids)} context roots reached from "
+            f"{len(active_root_id_set)} active anchors."
+        )
+    if overlay_id == BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID:
+        upstream_count = 0
+        downstream_count = 0
+        mixed_count = 0
+        for root_id in context_root_ids:
+            directions = set(node_index[root_id]["directional_context"])
+            if directions == {"upstream"}:
+                upstream_count += 1
+            elif directions == {"downstream"}:
+                downstream_count += 1
+            elif directions == {"upstream", "downstream"}:
+                mixed_count += 1
+        return (
+            "Bidirectional context combines "
+            f"{upstream_count} upstream, {downstream_count} downstream, and {mixed_count} "
+            f"mixed-direction context roots around {len(active_root_id_set)} active anchors."
+        )
+    if overlay_id == PATHWAY_HIGHLIGHT_OVERLAY_ID:
+        return (
+            f"Pathway emphasis marks {len(context_root_ids)} contextual bridge roots without "
+            "changing their active-versus-context identity."
+        )
+    if overlay_id == DOWNSTREAM_MODULE_OVERLAY_ID:
+        return (
+            f"Downstream module overlay adds {len(matching_module_ids)} collapsed summary objects "
+            "for broader readout context."
+        )
+    if overlay_id == METADATA_FACET_BADGES_OVERLAY_ID:
+        return (
+            f"Metadata facet badges annotate {len(matching_root_id_set)} roots with reviewer-readable "
+            "group labels such as cell class and neuropil."
+        )
+    return f"{_OVERLAY_DISPLAY_NAMES.get(overlay_id, overlay_id)} is available for this graph view."
+
+
+def _build_metadata_facet_group_and_filter_catalogs(
+    *,
+    node_index: Mapping[int, Mapping[str, Any]],
+    edge_index: Mapping[tuple[int, int], Mapping[str, Any]],
+    module_records: Sequence[Mapping[str, Any]],
+    active_root_ids: Sequence[int],
+    enabled_facets: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    active_root_id_set = {int(root_id) for root_id in active_root_ids}
+    filter_catalog = [
+        {
+            "filter_id": "facet_filter:all_context",
+            "display_name": "All Context",
+            "metadata_facet_id": None,
+            "facet_value": None,
+            "availability": "available",
+            "matching_root_ids": [int(root_id) for root_id in sorted(node_index)],
+            "visible_root_ids": [int(root_id) for root_id in sorted(node_index)],
+            "visible_edge_pairs": [list(pair) for pair in sorted(edge_index)],
+            "visible_module_ids": [
+                str(item["module_id"]) for item in module_records if _string_or_none(item.get("module_id")) is not None
+            ],
+            "matching_active_root_count": len(active_root_id_set),
+            "matching_context_root_count": sum(
+                1 for root_id in node_index if int(root_id) not in active_root_id_set
+            ),
+            "caption": "No metadata facet filter is applied; the full packaged context remains visible.",
+            "boundary_note": "Active anchors remain visible even when later filters narrow context groups.",
+        }
+    ]
+    group_catalog: list[dict[str, Any]] = []
+    facet_order = [
+        CELL_CLASS_METADATA_FACET_ID,
+        NEUROPIL_METADATA_FACET_ID,
+        "cell_type",
+        "side",
+        "nt_type",
+        "selection_boundary_status",
+        "pathway_relevance_status",
+    ]
+    for facet_id in facet_order:
+        if facet_id not in enabled_facets:
+            continue
+        value_to_root_ids: dict[str, set[int]] = {}
+        value_to_module_ids: dict[str, set[str]] = {}
+        for root_id, node in node_index.items():
+            value = _string_or_none(node["metadata_facet_values"].get(facet_id))
+            if value is None:
+                continue
+            value_to_root_ids.setdefault(value, set()).add(int(root_id))
+        for item in module_records:
+            metadata_values = item.get("metadata_facet_values", {})
+            if not isinstance(metadata_values, Mapping):
+                continue
+            value = _string_or_none(metadata_values.get(facet_id))
+            if value is None:
+                continue
+            module_id = _string_or_none(item.get("module_id"))
+            if module_id is None:
+                continue
+            value_to_module_ids.setdefault(value, set()).add(module_id)
+        facet_values = sorted(
+            set(value_to_root_ids) | set(value_to_module_ids),
+            key=lambda item: (_normalize_identifier_token(item), item),
+        )
+        if not facet_values:
+            continue
+        available_filter_ids: list[str] = []
+        for facet_value in facet_values:
+            matching_root_ids = sorted(value_to_root_ids.get(facet_value, set()))
+            matching_module_ids = sorted(value_to_module_ids.get(facet_value, set()))
+            visible_root_id_set = set(matching_root_ids) | active_root_id_set
+            visible_edge_pairs = [
+                list(pair)
+                for pair in sorted(edge_index)
+                if pair[0] in visible_root_id_set and pair[1] in visible_root_id_set
+            ]
+            visible_module_ids = sorted(
+                set(matching_module_ids)
+                | {
+                    str(item["module_id"])
+                    for item in module_records
+                    if visible_root_id_set
+                    & {
+                        int(root_id)
+                        for root_id in item.get("represented_root_ids", [])
+                    }
+                }
+            )
+            filter_id = (
+                f"facet_filter:{facet_id}:{_normalize_identifier_token(facet_value)}"
+            )
+            available_filter_ids.append(filter_id)
+            matching_root_id_set = set(matching_root_ids)
+            filter_catalog.append(
+                {
+                    "filter_id": filter_id,
+                    "display_name": (
+                        f"{_METADATA_FACET_DISPLAY_NAMES.get(facet_id, facet_id)} = {facet_value}"
+                    ),
+                    "metadata_facet_id": facet_id,
+                    "facet_value": facet_value,
+                    "availability": "available",
+                    "matching_root_ids": [int(root_id) for root_id in matching_root_ids],
+                    "visible_root_ids": [int(root_id) for root_id in sorted(visible_root_id_set)],
+                    "visible_edge_pairs": visible_edge_pairs,
+                    "visible_module_ids": visible_module_ids,
+                    "matching_active_root_count": sum(
+                        1 for root_id in matching_root_id_set if root_id in active_root_id_set
+                    ),
+                    "matching_context_root_count": sum(
+                        1 for root_id in matching_root_id_set if root_id not in active_root_id_set
+                    ),
+                    "caption": (
+                        f"{_METADATA_FACET_DISPLAY_NAMES.get(facet_id, facet_id)} = {facet_value} "
+                        f"matches {sum(1 for root_id in matching_root_id_set if root_id not in active_root_id_set)} "
+                        "context roots while preserving active anchors for boundary reference."
+                    ),
+                    "boundary_note": (
+                        "Facet filtering narrows contextual groups but does not relabel context-only roots as simulated."
+                    ),
+                }
+            )
+        group_catalog.append(
+            {
+                "metadata_facet_id": facet_id,
+                "display_name": _METADATA_FACET_DISPLAY_NAMES.get(facet_id, facet_id),
+                "availability": "available",
+                "default_filter_id": available_filter_ids[0],
+                "available_filter_ids": available_filter_ids,
+                "facet_value_count": len(available_filter_ids),
+                "caption": (
+                    f"{_METADATA_FACET_DISPLAY_NAMES.get(facet_id, facet_id)} ships "
+                    f"{len(available_filter_ids)} deterministic filter values for this graph view."
+                ),
+            }
+        )
+    return group_catalog, filter_catalog
+
+
+def _build_pathway_explanation_catalog(
+    *,
+    graph_root_ids: set[int],
+    highlight_path_records: Sequence[Mapping[str, Any]],
+    metadata_by_root: Mapping[int, Mapping[str, Any]],
+    active_root_ids: Sequence[int],
+) -> list[dict[str, Any]]:
+    active_root_id_set = {int(root_id) for root_id in active_root_ids}
+    cards: list[dict[str, Any]] = []
+    for record in sorted(
+        (copy.deepcopy(dict(item)) for item in highlight_path_records),
+        key=lambda item: (
+            str(item.get("direction") or ""),
+            int(item.get("anchor_root_id", 0) or 0),
+            int(item.get("target_root_id", 0) or 0),
+        ),
+    ):
+        node_root_ids = [int(root_id) for root_id in record.get("node_root_ids", [])]
+        if not set(node_root_ids).issubset(graph_root_ids):
+            continue
+        anchor_root_id = int(record["anchor_root_id"])
+        target_root_id = int(record["target_root_id"])
+        direction = str(record["direction"])
+        review_root_ids = (
+            list(reversed(node_root_ids))
+            if direction == "upstream"
+            else list(node_root_ids)
+        )
+        anchor_metadata = metadata_by_root.get(anchor_root_id, {})
+        target_metadata = metadata_by_root.get(target_root_id, {})
+        anchor_label = _display_label(root_id=anchor_root_id, metadata=anchor_metadata)
+        target_label = _display_label(root_id=target_root_id, metadata=target_metadata)
+        facet_groupings = []
+        for facet_id in (CELL_CLASS_METADATA_FACET_ID, NEUROPIL_METADATA_FACET_ID):
+            facet_value = _pathway_grouping_value(
+                metadata=target_metadata,
+                metadata_facet_id=facet_id,
+            )
+            if facet_value is None:
+                continue
+            facet_groupings.append(
+                {
+                    "metadata_facet_id": facet_id,
+                    "display_name": _METADATA_FACET_DISPLAY_NAMES.get(facet_id, facet_id),
+                    "facet_value": facet_value,
+                }
+            )
+        facet_caption = (
+            "No facet grouping is available for the context target."
+            if not facet_groupings
+            else ", ".join(
+                f"{item['display_name']} = {item['facet_value']}" for item in facet_groupings
+            )
+        )
+        cards.append(
+            {
+                "explanation_id": f"pathway_explanation:{record['pathway_id']}",
+                "pathway_id": str(record["pathway_id"]),
+                "display_name": f"{anchor_label} to {target_label}",
+                "biological_direction": direction,
+                "review_direction": "active_to_context",
+                "anchor_root_id": anchor_root_id,
+                "target_root_id": target_root_id,
+                "review_node_root_ids": review_root_ids,
+                "node_root_ids": node_root_ids,
+                "edge_key_pairs": [
+                    [int(pair[0]), int(pair[1])] for pair in record.get("edge_key_pairs", [])
+                ],
+                "hop_count": int(record.get("hop_count", 0) or 0),
+                "path_synapse_count": int(record.get("path_synapse_count", 0) or 0),
+                "path_weight": float(record.get("path_weight", 0.0) or 0.0),
+                "active_root_ids": [
+                    int(root_id) for root_id in node_root_ids if int(root_id) in active_root_id_set
+                ],
+                "context_root_ids": [
+                    int(root_id) for root_id in node_root_ids if int(root_id) not in active_root_id_set
+                ],
+                "facet_groupings": facet_groupings,
+                "facet_caption": facet_caption,
+                "caption": (
+                    f"{anchor_label} is the active anchor and {target_label} remains context-only. "
+                    f"The highlighted {direction} bridge spans {int(record.get('hop_count', 0) or 0)} hop(s) "
+                    f"and {int(record.get('path_synapse_count', 0) or 0)} local synapses."
+                ),
+                "why_included": (
+                    f"Deterministic {direction} path from the active subset toward a broader-context target "
+                    f"under the packaged Milestone 17 reduction budget."
+                ),
+                "boundary_note": (
+                    "Pathway explanation clarifies why the context target is shown, but it does not move that target into the simulated subset."
+                ),
+            }
+        )
+    mode = {
+        "explanation_mode_id": _PATHWAY_EXPLANATION_MODE_ID,
+        "display_name": "Active-To-Context Pathway",
+        "description": (
+            "Follow one highlighted bridge from an active anchor toward a contextual target while keeping biological direction explicit."
+        ),
+        "availability": "available" if cards else "unavailable",
+        "default_explanation_id": None if not cards else str(cards[0]["explanation_id"]),
+        "card_count": len(cards),
+        "caption": (
+            "This explanation mode starts from the active subset, names the contextual target, and keeps active-versus-context labels explicit on every step."
+        ),
+        "boundary_note": (
+            "Context targets remain explanatory scaffolding even when the path itself is highlighted."
+        ),
+        "cards": cards,
+    }
+    return [mode]
+
+
+def _pathway_grouping_value(
+    *,
+    metadata: Mapping[str, Any],
+    metadata_facet_id: str,
+) -> str | None:
+    if metadata_facet_id == CELL_CLASS_METADATA_FACET_ID:
+        return (
+            _string_or_none(metadata.get("super_class"))
+            or _string_or_none(metadata.get("class"))
+            or _string_or_none(metadata.get("project_role"))
+        )
+    if metadata_facet_id == NEUROPIL_METADATA_FACET_ID:
+        return _string_or_none(metadata.get("neuropils"))
+    return _string_or_none(metadata.get(metadata_facet_id))
+
+
+def _build_interaction_flow_catalog(
+    *,
+    graph_view_id: str,
+    query_profile_id: str,
+    overlay_workflow_catalog: Sequence[Mapping[str, Any]],
+    metadata_facet_group_catalog: Sequence[Mapping[str, Any]],
+    pathway_explanation_catalog: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    overlay_by_id = {
+        str(item["overlay_id"]): copy.deepcopy(dict(item))
+        for item in overlay_workflow_catalog
+        if isinstance(item, Mapping) and item.get("overlay_id") is not None
+    }
+    facet_group_by_id = {
+        str(item["metadata_facet_id"]): copy.deepcopy(dict(item))
+        for item in metadata_facet_group_catalog
+        if isinstance(item, Mapping) and item.get("metadata_facet_id") is not None
+    }
+    pathway_mode = (
+        copy.deepcopy(dict(pathway_explanation_catalog[0]))
+        if pathway_explanation_catalog
+        else {
+            "explanation_mode_id": _PATHWAY_EXPLANATION_MODE_ID,
+            "availability": "unavailable",
+            "default_explanation_id": None,
+        }
+    )
+    result = []
+    for workflow_id, display_name, overlay_id, caption in (
+        (
+            "interaction_flow:overlay:upstream_emphasis",
+            "Upstream Emphasis",
+            UPSTREAM_GRAPH_OVERLAY_ID,
+            "Switch to incoming context while keeping active anchors visibly separate from context-only roots.",
+        ),
+        (
+            "interaction_flow:overlay:downstream_emphasis",
+            "Downstream Emphasis",
+            DOWNSTREAM_GRAPH_OVERLAY_ID,
+            "Switch to outgoing context while keeping context-only branches labeled as non-simulated structure.",
+        ),
+        (
+            "interaction_flow:overlay:bidirectional_context",
+            "Bidirectional Context",
+            BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID,
+            "Show the mixed whole-brain neighborhood when reviewers need upstream and downstream context together.",
+        ),
+    ):
+        overlay_record = overlay_by_id.get(overlay_id)
+        result.append(
+            {
+                "interaction_flow_id": workflow_id,
+                "display_name": display_name,
+                "flow_kind": "overlay_switch",
+                "graph_view_id": graph_view_id,
+                "query_profile_id": query_profile_id,
+                "overlay_id": overlay_id,
+                "availability": (
+                    "unavailable"
+                    if overlay_record is None
+                    else str(overlay_record["availability"])
+                ),
+                "default_target_id": (
+                    None
+                    if overlay_record is None
+                    else str(overlay_record["overlay_workflow_id"])
+                ),
+                "caption": caption,
+            }
+        )
+    for facet_id in (CELL_CLASS_METADATA_FACET_ID, NEUROPIL_METADATA_FACET_ID):
+        facet_group = facet_group_by_id.get(facet_id)
+        result.append(
+            {
+                "interaction_flow_id": f"interaction_flow:facet:{facet_id}",
+                "display_name": (
+                    f"{_METADATA_FACET_DISPLAY_NAMES.get(facet_id, facet_id)} Filter"
+                ),
+                "flow_kind": "metadata_facet_filter",
+                "graph_view_id": graph_view_id,
+                "query_profile_id": query_profile_id,
+                "overlay_id": METADATA_FACET_BADGES_OVERLAY_ID,
+                "metadata_facet_id": facet_id,
+                "availability": (
+                    "unavailable"
+                    if facet_group is None
+                    else str(facet_group["availability"])
+                ),
+                "default_target_id": (
+                    None if facet_group is None else str(facet_group["default_filter_id"])
+                ),
+                "caption": (
+                    f"Filter the packaged context by {_METADATA_FACET_DISPLAY_NAMES.get(facet_id, facet_id).lower()} "
+                    "while preserving active anchors for orientation."
+                ),
+            }
+        )
+    result.append(
+        {
+            "interaction_flow_id": "interaction_flow:pathway:active_to_context",
+            "display_name": "Active-To-Context Pathway",
+            "flow_kind": "pathway_explanation",
+            "graph_view_id": graph_view_id,
+            "query_profile_id": query_profile_id,
+            "overlay_id": PATHWAY_HIGHLIGHT_OVERLAY_ID,
+            "pathway_explanation_mode_id": str(pathway_mode["explanation_mode_id"]),
+            "availability": str(pathway_mode["availability"]),
+            "default_target_id": pathway_mode.get("default_explanation_id"),
+            "caption": (
+                "Explain one highlighted bridge from the active subset toward a broader-context target without blurring the active/context boundary."
+            ),
+        }
+    )
+    return result
+
+
+def _build_reviewer_summary_cards(
+    *,
+    node_index: Mapping[int, Mapping[str, Any]],
+    overlay_workflow_catalog: Sequence[Mapping[str, Any]],
+    metadata_facet_group_catalog: Sequence[Mapping[str, Any]],
+    pathway_explanation_catalog: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    active_root_count = sum(
+        1 for item in node_index.values() if bool(item["is_active_selected"])
+    )
+    context_root_count = sum(
+        1 for item in node_index.values() if not bool(item["is_active_selected"])
+    )
+    pathway_mode = (
+        pathway_explanation_catalog[0] if pathway_explanation_catalog else {"card_count": 0}
+    )
+    available_overlay_ids = [
+        str(item["overlay_id"])
+        for item in overlay_workflow_catalog
+        if str(item.get("availability", "unavailable")) == "available"
+    ]
+    return [
+        {
+            "card_id": "reviewer_card:boundary_summary",
+            "display_name": "Active Vs Context Boundary",
+            "caption": (
+                f"{active_root_count} roots remain in the active simulator-facing subset while "
+                f"{context_root_count} roots stay explicitly contextual."
+            ),
+            "facts": {
+                "active_root_count": active_root_count,
+                "context_root_count": context_root_count,
+            },
+        },
+        {
+            "card_id": "reviewer_card:overlay_summary",
+            "display_name": "Overlay Coverage",
+            "caption": (
+                "Directional and mixed-context overlays are packaged as deterministic review surfaces rather than client-side graph guesses."
+            ),
+            "facts": {
+                "available_overlay_ids": available_overlay_ids,
+                "available_overlay_count": len(available_overlay_ids),
+            },
+        },
+        {
+            "card_id": "reviewer_card:facet_summary",
+            "display_name": "Metadata Facets",
+            "caption": (
+                f"{len(metadata_facet_group_catalog)} metadata facet groupings are packaged so reviewers can filter context by named local metadata."
+            ),
+            "facts": {
+                "metadata_facet_ids": [
+                    str(item["metadata_facet_id"]) for item in metadata_facet_group_catalog
+                ],
+                "metadata_facet_group_count": len(metadata_facet_group_catalog),
+            },
+        },
+        {
+            "card_id": "reviewer_card:pathway_summary",
+            "display_name": "Pathway Explanation",
+            "caption": (
+                f"{int(pathway_mode.get('card_count', 0) or 0)} reviewer-readable pathway explanation cards are packaged for the current graph view."
+            ),
+            "facts": {
+                "pathway_explanation_card_count": int(pathway_mode.get("card_count", 0) or 0),
+                "pathway_explanation_mode_id": _PATHWAY_EXPLANATION_MODE_ID,
+            },
+        },
+    ]
 
 
 def _build_graph_view(

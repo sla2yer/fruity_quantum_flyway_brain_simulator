@@ -428,6 +428,53 @@ class WholeBrainContextPlanningTest(unittest.TestCase):
                 pathway_payload["focused_subgraph"]["summary"]["pathway_highlight_count"],
                 0,
             )
+            self.assertEqual(
+                overview_payload["query_state"]["default_overlay_id"],
+                "bidirectional_context_graph",
+            )
+            overview_overlay_ids = [
+                item["overlay_id"]
+                for item in overview_payload["overview_graph"]["overlay_workflow_catalog"]
+            ]
+            self.assertIn("bidirectional_context_graph", overview_overlay_ids)
+            self.assertEqual(
+                [
+                    item["interaction_flow_id"]
+                    for item in overview_payload["overview_graph"]["interaction_flow_catalog"]
+                ],
+                [
+                    "interaction_flow:overlay:upstream_emphasis",
+                    "interaction_flow:overlay:downstream_emphasis",
+                    "interaction_flow:overlay:bidirectional_context",
+                    "interaction_flow:facet:cell_class",
+                    "interaction_flow:facet:neuropil",
+                    "interaction_flow:pathway:active_to_context",
+                ],
+            )
+            overview_facet_groups = {
+                item["metadata_facet_id"]
+                for item in overview_payload["overview_graph"]["metadata_facet_group_catalog"]
+            }
+            self.assertTrue({"cell_class", "neuropil"}.issubset(overview_facet_groups))
+            overview_filters = {
+                item["filter_id"]: item
+                for item in overview_payload["overview_graph"]["metadata_facet_filter_catalog"]
+            }
+            self.assertTrue(
+                set(plan["selection"]["selected_root_ids"]).issubset(
+                    set(overview_filters["facet_filter:neuropil:lop_r"]["visible_root_ids"])
+                )
+            )
+            pathway_mode = pathway_payload["focused_subgraph"]["pathway_explanation_catalog"][0]
+            self.assertEqual(
+                pathway_mode["explanation_mode_id"],
+                "active_to_context_pathwalk",
+            )
+            self.assertGreater(pathway_mode["card_count"], 0)
+            self.assertIn(
+                "context-only",
+                pathway_mode["cards"][0]["caption"],
+            )
 
     def test_planning_fails_clearly_for_missing_synapse_registry_unsupported_combo_and_subset_mismatch(
         self,

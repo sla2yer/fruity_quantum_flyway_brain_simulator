@@ -136,6 +136,103 @@ class WholeBrainContextQueryTest(unittest.TestCase):
         self.assertTrue({101, 707, 909}.issubset(focused_root_ids))
         self.assertTrue({101, 707, 909}.issubset(highlight_root_ids))
 
+    def test_bidirectional_query_packages_overlay_facet_and_pathway_explanation_metadata(
+        self,
+    ) -> None:
+        fixture = _context_query_fixture()
+        plan = _build_query_plan(
+            query_profile_id="bidirectional_connectivity_context",
+            reduction_profile_id="balanced_neighborhood",
+        )
+
+        result = execute_whole_brain_context_query(
+            plan,
+            synapse_registry=fixture["synapse_df"],
+            node_metadata_registry=fixture["node_metadata_df"],
+            reduction_controls={
+                "max_hops": 2,
+                "max_context_node_count": 8,
+                "max_edge_count": 16,
+            },
+        )
+
+        overview = result["overview_graph"]
+        overlay_workflows = {
+            item["overlay_id"]: item for item in overview["overlay_workflow_catalog"]
+        }
+        self.assertEqual(
+            [item["overlay_id"] for item in overview["overlay_workflow_catalog"]],
+            [
+                "active_boundary",
+                "upstream_graph",
+                "downstream_graph",
+                "bidirectional_context_graph",
+                "pathway_highlight",
+                "downstream_module",
+                "metadata_facet_badges",
+            ],
+        )
+        self.assertEqual(
+            overlay_workflows["bidirectional_context_graph"]["availability"],
+            "available",
+        )
+        self.assertTrue(
+            {101, 202}.issubset(
+                set(overlay_workflows["bidirectional_context_graph"]["visible_root_ids"])
+            )
+        )
+
+        facet_groups = {
+            item["metadata_facet_id"]: item
+            for item in overview["metadata_facet_group_catalog"]
+        }
+        self.assertIn("cell_class", facet_groups)
+        self.assertIn("neuropil", facet_groups)
+        facet_filters = {
+            item["filter_id"]: item for item in overview["metadata_facet_filter_catalog"]
+        }
+        optic_filter = facet_filters["facet_filter:cell_class:optic"]
+        self.assertIn(303, optic_filter["matching_root_ids"])
+        self.assertTrue({101, 202}.issubset(set(optic_filter["visible_root_ids"])))
+        lop_filter = facet_filters["facet_filter:neuropil:lop_r"]
+        self.assertTrue({101, 202}.issubset(set(lop_filter["visible_root_ids"])))
+        self.assertGreater(lop_filter["matching_context_root_count"], 0)
+
+        explanation_mode = overview["pathway_explanation_catalog"][0]
+        self.assertEqual(
+            explanation_mode["explanation_mode_id"],
+            "active_to_context_pathwalk",
+        )
+        self.assertEqual(explanation_mode["availability"], "available")
+        first_card = explanation_mode["cards"][0]
+        self.assertEqual(first_card["review_direction"], "active_to_context")
+        self.assertTrue(first_card["active_root_ids"])
+        self.assertTrue(first_card["context_root_ids"])
+        self.assertIn("context-only", first_card["caption"])
+        self.assertTrue(
+            any(
+                item["metadata_facet_id"] in {"cell_class", "neuropil"}
+                for item in first_card["facet_groupings"]
+            )
+        )
+
+        self.assertEqual(
+            [item["interaction_flow_id"] for item in overview["interaction_flow_catalog"]],
+            [
+                "interaction_flow:overlay:upstream_emphasis",
+                "interaction_flow:overlay:downstream_emphasis",
+                "interaction_flow:overlay:bidirectional_context",
+                "interaction_flow:facet:cell_class",
+                "interaction_flow:facet:neuropil",
+                "interaction_flow:pathway:active_to_context",
+            ],
+        )
+        self.assertEqual(overview["summary"]["interaction_flow_count"], 6)
+        self.assertEqual(
+            overview["reviewer_summary_cards"][0]["card_id"],
+            "reviewer_card:boundary_summary",
+        )
+
     def test_query_fails_clearly_for_missing_required_inputs_and_unreachable_targets(self) -> None:
         fixture = _context_query_fixture()
         plan = _build_query_plan(

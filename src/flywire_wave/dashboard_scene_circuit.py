@@ -793,6 +793,24 @@ def _build_dashboard_context_representation(
     pathway_catalog = _normalize_pathway_catalog(
         preset_payload.get("pathway_highlights", [])
     )
+    overlay_workflow_catalog = _normalize_context_overlay_workflow_catalog(
+        graph_view.get("overlay_workflow_catalog", [])
+    )
+    metadata_facet_group_catalog = _normalize_context_metadata_facet_group_catalog(
+        graph_view.get("metadata_facet_group_catalog", [])
+    )
+    metadata_facet_filter_catalog = _normalize_context_metadata_facet_filter_catalog(
+        graph_view.get("metadata_facet_filter_catalog", [])
+    )
+    pathway_explanation_catalog = _normalize_context_pathway_explanation_catalog(
+        graph_view.get("pathway_explanation_catalog", [])
+    )
+    interaction_flow_catalog = _normalize_context_interaction_flow_catalog(
+        graph_view.get("interaction_flow_catalog", [])
+    )
+    reviewer_summary_cards = _normalize_context_reviewer_summary_cards(
+        graph_view.get("reviewer_summary_cards", [])
+    )
     summary = {
         "distinct_root_count": len(collapsed_nodes),
         "node_count": len(collapsed_nodes),
@@ -813,6 +831,11 @@ def _build_dashboard_context_representation(
         "edge_style_counts": dict(
             sorted(Counter(str(item["style_variant"]) for item in collapsed_edges).items())
         ),
+        "overlay_workflow_count": len(overlay_workflow_catalog),
+        "metadata_facet_group_count": len(metadata_facet_group_catalog),
+        "metadata_facet_filter_count": len(metadata_facet_filter_catalog),
+        "pathway_explanation_mode_count": len(pathway_explanation_catalog),
+        "interaction_flow_count": len(interaction_flow_catalog),
     }
     record = {
         "representation_id": str(representation_id),
@@ -830,6 +853,13 @@ def _build_dashboard_context_representation(
         "edge_catalog": collapsed_edges,
         "pathway_catalog": pathway_catalog,
         "downstream_module_catalog": downstream_module_catalog,
+        "reviewer_caption": str(graph_view.get("reviewer_caption") or description),
+        "overlay_workflow_catalog": overlay_workflow_catalog,
+        "metadata_facet_group_catalog": metadata_facet_group_catalog,
+        "metadata_facet_filter_catalog": metadata_facet_filter_catalog,
+        "pathway_explanation_catalog": pathway_explanation_catalog,
+        "interaction_flow_catalog": interaction_flow_catalog,
+        "reviewer_summary_cards": reviewer_summary_cards,
     }
     if len(collapsed_nodes) == 0:
         record["availability"] = "unavailable"
@@ -1131,6 +1161,262 @@ def _normalize_pathway_catalog(payload: Any) -> list[dict[str, Any]]:
                 "node_root_ids": [int(root_id) for root_id in record.get("node_root_ids", [])],
                 "hop_count": int(record.get("hop_count", 0) or 0),
                 "path_synapse_count": int(record.get("path_synapse_count", 0) or 0),
+            }
+        )
+    return result
+
+
+def _normalize_context_overlay_workflow_catalog(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        result.append(
+            {
+                "overlay_workflow_id": str(item.get("overlay_workflow_id") or ""),
+                "overlay_id": str(item.get("overlay_id") or ""),
+                "display_name": str(item.get("display_name") or item.get("overlay_id") or ""),
+                "availability": str(item.get("availability") or "unavailable"),
+                "query_family": str(item.get("query_family") or ""),
+                "matching_root_ids": [
+                    int(root_id) for root_id in item.get("matching_root_ids", [])
+                ],
+                "visible_root_ids": [
+                    int(root_id) for root_id in item.get("visible_root_ids", [])
+                ],
+                "matching_edge_pairs": [
+                    [int(pair[0]), int(pair[1])]
+                    for pair in item.get("matching_edge_pairs", [])
+                    if isinstance(pair, Sequence) and len(pair) == 2
+                ],
+                "matching_module_ids": [
+                    str(module_id) for module_id in item.get("matching_module_ids", [])
+                ],
+                "matching_active_root_count": int(
+                    item.get("matching_active_root_count", 0) or 0
+                ),
+                "matching_context_root_count": int(
+                    item.get("matching_context_root_count", 0) or 0
+                ),
+                "caption": str(item.get("caption") or ""),
+                "boundary_note": str(item.get("boundary_note") or ""),
+            }
+        )
+    return result
+
+
+def _normalize_context_metadata_facet_group_catalog(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        result.append(
+            {
+                "metadata_facet_id": (
+                    None
+                    if item.get("metadata_facet_id") is None
+                    else str(item.get("metadata_facet_id"))
+                ),
+                "display_name": str(item.get("display_name") or ""),
+                "availability": str(item.get("availability") or "unavailable"),
+                "default_filter_id": (
+                    None
+                    if item.get("default_filter_id") is None
+                    else str(item.get("default_filter_id"))
+                ),
+                "available_filter_ids": [
+                    str(filter_id) for filter_id in item.get("available_filter_ids", [])
+                ],
+                "facet_value_count": int(item.get("facet_value_count", 0) or 0),
+                "caption": str(item.get("caption") or ""),
+            }
+        )
+    return result
+
+
+def _normalize_context_metadata_facet_filter_catalog(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        result.append(
+            {
+                "filter_id": str(item.get("filter_id") or ""),
+                "display_name": str(item.get("display_name") or ""),
+                "metadata_facet_id": (
+                    None
+                    if item.get("metadata_facet_id") is None
+                    else str(item.get("metadata_facet_id"))
+                ),
+                "facet_value": (
+                    None if item.get("facet_value") is None else str(item.get("facet_value"))
+                ),
+                "availability": str(item.get("availability") or "unavailable"),
+                "matching_root_ids": [
+                    int(root_id) for root_id in item.get("matching_root_ids", [])
+                ],
+                "visible_root_ids": [
+                    int(root_id) for root_id in item.get("visible_root_ids", [])
+                ],
+                "visible_edge_pairs": [
+                    [int(pair[0]), int(pair[1])]
+                    for pair in item.get("visible_edge_pairs", [])
+                    if isinstance(pair, Sequence) and len(pair) == 2
+                ],
+                "visible_module_ids": [
+                    str(module_id) for module_id in item.get("visible_module_ids", [])
+                ],
+                "matching_active_root_count": int(
+                    item.get("matching_active_root_count", 0) or 0
+                ),
+                "matching_context_root_count": int(
+                    item.get("matching_context_root_count", 0) or 0
+                ),
+                "caption": str(item.get("caption") or ""),
+                "boundary_note": str(item.get("boundary_note") or ""),
+            }
+        )
+    return result
+
+
+def _normalize_context_pathway_explanation_catalog(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        cards: list[dict[str, Any]] = []
+        for card in item.get("cards", []):
+            if not isinstance(card, Mapping):
+                continue
+            cards.append(
+                {
+                    "explanation_id": str(card.get("explanation_id") or ""),
+                    "pathway_id": str(card.get("pathway_id") or ""),
+                    "display_name": str(card.get("display_name") or ""),
+                    "biological_direction": str(card.get("biological_direction") or ""),
+                    "review_direction": str(card.get("review_direction") or ""),
+                    "anchor_root_id": int(card.get("anchor_root_id", 0) or 0),
+                    "target_root_id": int(card.get("target_root_id", 0) or 0),
+                    "review_node_root_ids": [
+                        int(root_id) for root_id in card.get("review_node_root_ids", [])
+                    ],
+                    "node_root_ids": [
+                        int(root_id) for root_id in card.get("node_root_ids", [])
+                    ],
+                    "edge_key_pairs": [
+                        [int(pair[0]), int(pair[1])]
+                        for pair in card.get("edge_key_pairs", [])
+                        if isinstance(pair, Sequence) and len(pair) == 2
+                    ],
+                    "hop_count": int(card.get("hop_count", 0) or 0),
+                    "path_synapse_count": int(card.get("path_synapse_count", 0) or 0),
+                    "path_weight": float(card.get("path_weight", 0.0) or 0.0),
+                    "active_root_ids": [
+                        int(root_id) for root_id in card.get("active_root_ids", [])
+                    ],
+                    "context_root_ids": [
+                        int(root_id) for root_id in card.get("context_root_ids", [])
+                    ],
+                    "facet_groupings": [
+                        {
+                            "metadata_facet_id": str(group.get("metadata_facet_id") or ""),
+                            "display_name": str(group.get("display_name") or ""),
+                            "facet_value": str(group.get("facet_value") or ""),
+                        }
+                        for group in card.get("facet_groupings", [])
+                        if isinstance(group, Mapping)
+                    ],
+                    "facet_caption": str(card.get("facet_caption") or ""),
+                    "caption": str(card.get("caption") or ""),
+                    "why_included": str(card.get("why_included") or ""),
+                    "boundary_note": str(card.get("boundary_note") or ""),
+                }
+            )
+        result.append(
+            {
+                "explanation_mode_id": str(item.get("explanation_mode_id") or ""),
+                "display_name": str(item.get("display_name") or ""),
+                "description": str(item.get("description") or ""),
+                "availability": str(item.get("availability") or "unavailable"),
+                "default_explanation_id": (
+                    None
+                    if item.get("default_explanation_id") is None
+                    else str(item.get("default_explanation_id"))
+                ),
+                "card_count": int(item.get("card_count", 0) or 0),
+                "caption": str(item.get("caption") or ""),
+                "boundary_note": str(item.get("boundary_note") or ""),
+                "cards": cards,
+            }
+        )
+    return result
+
+
+def _normalize_context_interaction_flow_catalog(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        result.append(
+            {
+                "interaction_flow_id": str(item.get("interaction_flow_id") or ""),
+                "display_name": str(item.get("display_name") or ""),
+                "flow_kind": str(item.get("flow_kind") or ""),
+                "graph_view_id": str(item.get("graph_view_id") or ""),
+                "query_profile_id": str(item.get("query_profile_id") or ""),
+                "overlay_id": (
+                    None if item.get("overlay_id") is None else str(item.get("overlay_id"))
+                ),
+                "metadata_facet_id": (
+                    None
+                    if item.get("metadata_facet_id") is None
+                    else str(item.get("metadata_facet_id"))
+                ),
+                "pathway_explanation_mode_id": (
+                    None
+                    if item.get("pathway_explanation_mode_id") is None
+                    else str(item.get("pathway_explanation_mode_id"))
+                ),
+                "availability": str(item.get("availability") or "unavailable"),
+                "default_target_id": (
+                    None
+                    if item.get("default_target_id") is None
+                    else str(item.get("default_target_id"))
+                ),
+                "caption": str(item.get("caption") or ""),
+            }
+        )
+    return result
+
+
+def _normalize_context_reviewer_summary_cards(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        facts = item.get("facts", {})
+        result.append(
+            {
+                "card_id": str(item.get("card_id") or ""),
+                "display_name": str(item.get("display_name") or ""),
+                "caption": str(item.get("caption") or ""),
+                "facts": (
+                    copy.deepcopy(dict(facts))
+                    if isinstance(facts, Mapping)
+                    else {}
+                ),
             }
         )
     return result

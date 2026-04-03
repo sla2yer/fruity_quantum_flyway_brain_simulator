@@ -136,12 +136,23 @@ The stable overlay ids are:
 - `active_boundary`
 - `upstream_graph`
 - `downstream_graph`
+- `bidirectional_context_graph`
 - `pathway_highlight`
 - `downstream_module`
 - `metadata_facet_badges`
 
 `active_boundary` is the non-negotiable baseline overlay. Later Milestone 17
 UI work may add polish, but it may not remove or blur the active/context split.
+
+Milestone 17 explanation packaging also ships deterministic reviewer-facing
+metadata on top of those graph records:
+
+- overlay workflow ids for upstream emphasis, downstream emphasis, and mixed
+  bidirectional context review
+- metadata-facet group and filter catalogs, with cell-class and neuropil
+  coverage when the local registry provides them
+- pathway explanation cards that trace one active-to-context bridge without
+  relabeling context-only nodes as active simulator state
 
 ## Graph Budgets
 

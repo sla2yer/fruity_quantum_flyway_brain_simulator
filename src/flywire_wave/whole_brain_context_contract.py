@@ -201,6 +201,7 @@ SUPPORTED_OVERLAY_CATEGORIES = (
 ACTIVE_BOUNDARY_OVERLAY_ID = "active_boundary"
 UPSTREAM_GRAPH_OVERLAY_ID = "upstream_graph"
 DOWNSTREAM_GRAPH_OVERLAY_ID = "downstream_graph"
+BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID = "bidirectional_context_graph"
 PATHWAY_HIGHLIGHT_OVERLAY_ID = "pathway_highlight"
 DOWNSTREAM_MODULE_OVERLAY_ID = "downstream_module"
 METADATA_FACET_BADGES_OVERLAY_ID = "metadata_facet_badges"
@@ -209,6 +210,7 @@ SUPPORTED_OVERLAY_IDS = (
     ACTIVE_BOUNDARY_OVERLAY_ID,
     UPSTREAM_GRAPH_OVERLAY_ID,
     DOWNSTREAM_GRAPH_OVERLAY_ID,
+    BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID,
     PATHWAY_HIGHLIGHT_OVERLAY_ID,
     DOWNSTREAM_MODULE_OVERLAY_ID,
     METADATA_FACET_BADGES_OVERLAY_ID,
@@ -2463,7 +2465,7 @@ def _default_query_profile_catalog() -> list[dict[str, Any]]:
                 DOWNSTREAM_MODULE_CONTEXT_LAYER_ID,
             ],
             supported_overlay_ids=list(SUPPORTED_OVERLAY_IDS),
-            default_overlay_id=ACTIVE_BOUNDARY_OVERLAY_ID,
+            default_overlay_id=BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID,
             default_reduction_profile_id=DEFAULT_REDUCTION_PROFILE_ID,
             required_artifact_role_ids=[
                 SELECTED_ROOT_IDS_ROLE_ID,
@@ -2510,6 +2512,7 @@ def _default_query_profile_catalog() -> list[dict[str, Any]]:
             ],
             supported_overlay_ids=[
                 ACTIVE_BOUNDARY_OVERLAY_ID,
+                BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID,
                 DOWNSTREAM_GRAPH_OVERLAY_ID,
                 DOWNSTREAM_MODULE_OVERLAY_ID,
                 METADATA_FACET_BADGES_OVERLAY_ID,
@@ -2797,6 +2800,33 @@ def _default_overlay_catalog() -> list[dict[str, Any]]:
                 DOWNSTREAM_MODULE_SUMMARY_EDGE_ROLE_ID,
             ],
             fairness_note="Outgoing graph context should show bridges and branches without overstating them as validated downstream pathway claims.",
+        ),
+        build_whole_brain_context_overlay_definition(
+            overlay_id=BIDIRECTIONAL_CONTEXT_GRAPH_OVERLAY_ID,
+            display_name="Bidirectional Context Graph",
+            description="Highlights the mixed upstream-plus-downstream neighborhood around the active subset as one reviewable whole-brain context surface.",
+            overlay_category=DIRECTIONAL_CONTEXT_OVERLAY_CATEGORY,
+            supported_query_profile_ids=[
+                BIDIRECTIONAL_CONNECTIVITY_CONTEXT_QUERY_PROFILE_ID,
+                DOWNSTREAM_MODULE_REVIEW_QUERY_PROFILE_ID,
+            ],
+            supported_context_layer_ids=[
+                ACTIVE_SUBSET_CONTEXT_LAYER_ID,
+                UPSTREAM_CONTEXT_LAYER_ID,
+                DOWNSTREAM_CONTEXT_LAYER_ID,
+                PATHWAY_HIGHLIGHT_CONTEXT_LAYER_ID,
+                DOWNSTREAM_MODULE_CONTEXT_LAYER_ID,
+            ],
+            required_node_role_ids=list(SUPPORTED_NODE_ROLE_IDS),
+            required_edge_role_ids=[
+                ACTIVE_INTERNAL_EDGE_ROLE_ID,
+                ACTIVE_TO_CONTEXT_EDGE_ROLE_ID,
+                CONTEXT_TO_ACTIVE_EDGE_ROLE_ID,
+                CONTEXT_INTERNAL_EDGE_ROLE_ID,
+                PATHWAY_HIGHLIGHT_EDGE_ROLE_ID,
+                DOWNSTREAM_MODULE_SUMMARY_EDGE_ROLE_ID,
+            ],
+            fairness_note="Mixed context overlays widen structural review scope, but they still preserve the contract-owned active-versus-context boundary on every included object.",
         ),
         build_whole_brain_context_overlay_definition(
             overlay_id=PATHWAY_HIGHLIGHT_OVERLAY_ID,

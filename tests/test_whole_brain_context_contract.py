@@ -150,7 +150,7 @@ class WholeBrainContextContractTest(unittest.TestCase):
         )
         self.assertEqual(
             [item["overlay_id"] for item in discover_whole_brain_context_overlays(default_metadata, overlay_category="Directional Context")],
-            ["upstream_graph", "downstream_graph"],
+            ["upstream_graph", "downstream_graph", "bidirectional_context_graph"],
         )
         self.assertEqual(
             get_whole_brain_context_query_profile_definition(
@@ -307,10 +307,12 @@ class WholeBrainContextContractTest(unittest.TestCase):
 
             query_state_a = build_whole_brain_context_query_state(
                 query_profile_id="Bidirectional Connectivity Context",
+                default_overlay_id="Active Boundary",
                 enabled_overlay_ids=[
                     "Metadata Facet Badges",
                     "Downstream Module",
                     "Pathway Highlight",
+                    "Bidirectional Context Graph",
                     "Downstream Graph",
                     "Upstream Graph",
                     "Active Boundary",
