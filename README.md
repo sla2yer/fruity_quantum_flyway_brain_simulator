@@ -111,6 +111,39 @@ Most wrapper targets accept extra CLI flags through `*_ARGS`, for example
 `SIMULATE_ARGS`, `COUPLING_INSPECT_ARGS`, `DASHBOARD_ARGS`, `SHOWCASE_ARGS`,
 and `WHOLE_BRAIN_CONTEXT_ARGS`.
 
+## Agentic Review Tickets
+
+The repo now includes reusable review prompt sets under
+`agent_tickets/review_prompt_sets/`. Each set contains:
+
+- a generic review prompt for one code-quality lens
+- a specializer prompt that rewrites that generic prompt for this repo
+
+Run the full workflow with:
+
+```bash
+make review-tickets
+```
+
+The runner does two phases, both in parallel:
+
+1. Specialize each generic review prompt for this repository.
+2. Run each specialized prompt to generate a senior-dev ticket pack.
+
+By default artifacts land under `agent_tickets/review_runs/<timestamp>/`,
+including:
+
+- `specialization/<prompt-set>/specialized_prompt.md`
+- `reviews/<prompt-set>/tickets.md`
+- `combined_tickets.md`
+- `summary.json`
+
+Useful options:
+
+- `make review-tickets REVIEW_TICKETS_ARGS='--dry-run'`
+- `make review-tickets REVIEW_TICKETS_ARGS='--prompt-set efficiency_and_modularity'`
+- `make review-tickets REVIEW_TICKETS_ARGS='--specializer-model <model> --review-model <model>'`
+
 ## User Interfaces
 
 All review surfaces are local and file-backed. Once the required artifacts

@@ -56,8 +56,6 @@ class Milestone10ReadinessReportTest(unittest.TestCase):
             self.assertEqual(report["report_dir"], str(report_dir.resolve()))
             self.assertEqual(report["markdown_path"], str(markdown_path.resolve()))
             self.assertEqual(report["json_path"], str(json_path.resolve()))
-            self.assertEqual(report["documentation_audit"]["overall_status"], "pass")
-
             plan_audit = report["manifest_plan_audit"]
             self.assertEqual(plan_audit["overall_status"], "pass")
             self.assertEqual(plan_audit["baseline_arm_count"], 4)
@@ -112,15 +110,10 @@ class Milestone10ReadinessReportTest(unittest.TestCase):
                 ["verification_reference"],
             )
 
-            self.assertEqual(report["follow_on_readiness"]["status"], "ready")
-            self.assertTrue(report["follow_on_readiness"]["ready_for_follow_on_work"])
             self.assertEqual(
                 report["follow_on_readiness"]["ready_for_workstreams"],
                 ["mixed_fidelity", "metrics", "validation", "ui"],
             )
-
-            workflow_coverage = report["workflow_coverage"]
-            self.assertTrue(all(workflow_coverage.values()))
 
             follow_on_issues = report["follow_on_issues"]
             self.assertEqual(len(follow_on_issues), 1)

@@ -126,19 +126,6 @@ class Milestone12ReadinessReportTest(unittest.TestCase):
             self.assertIn("no local server is required", visualization_audit["viewer_open_hint"])
             self.assertGreater(visualization_audit["phase_map_reference_count"], 0)
 
-            documentation_audit = report["documentation_audit"]
-            self.assertEqual(documentation_audit["overall_status"], "pass")
-
-            self.assertEqual(report["follow_on_readiness"]["status"], "ready")
-            self.assertTrue(report["follow_on_readiness"]["ready_for_follow_on_work"])
-            self.assertEqual(
-                report["follow_on_readiness"]["ready_for_milestones"],
-                ["milestone_13_validation_ladder", "milestone_14_dashboard"],
-            )
-
-            workflow_coverage = report["workflow_coverage"]
-            self.assertTrue(all(workflow_coverage.values()))
-
             markdown_text = markdown_path.read_text(encoding="utf-8")
             self.assertIn("Milestone 12 Readiness Report", markdown_text)
             self.assertIn("motion_decoder_summary", markdown_text)

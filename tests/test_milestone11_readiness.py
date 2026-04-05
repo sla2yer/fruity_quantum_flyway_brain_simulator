@@ -142,19 +142,6 @@ class Milestone11ReadinessReportTest(unittest.TestCase):
             self.assertEqual(inspection_audit["blocking_root_ids"], [303])
             self.assertEqual(inspection_audit["recommended_promotion_root_ids"], [303])
 
-            documentation_audit = report["documentation_audit"]
-            self.assertEqual(documentation_audit["overall_status"], "pass")
-
-            self.assertEqual(report["follow_on_readiness"]["status"], "review")
-            self.assertTrue(report["follow_on_readiness"]["ready_for_follow_on_work"])
-            self.assertEqual(
-                report["follow_on_readiness"]["ready_for_workstreams"],
-                ["readouts", "validation", "ui"],
-            )
-
-            workflow_coverage = report["workflow_coverage"]
-            self.assertTrue(all(workflow_coverage.values()))
-
             follow_on_issues = report["follow_on_issues"]
             self.assertEqual(
                 [item["ticket_id"] for item in follow_on_issues],

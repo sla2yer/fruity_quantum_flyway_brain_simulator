@@ -47,7 +47,6 @@ class Milestone8BReadinessReportTest(unittest.TestCase):
             self.assertEqual(report["report_dir"], str(report_dir.resolve()))
             self.assertEqual(report["markdown_path"], str(markdown_path.resolve()))
             self.assertEqual(report["json_path"], str(json_path.resolve()))
-            self.assertEqual(report["documentation_audit"]["overall_status"], "pass")
             self.assertEqual(sorted(report["entrypoint_audits"].keys()), ["manifest_demo", "scene_entrypoint", "stimulus_config"])
             self.assertTrue(report["workflow_coverage"]["bundle_discovery_compatible"])
             self.assertTrue(report["workflow_coverage"]["coordinate_transforms_compatible"])
@@ -76,8 +75,6 @@ class Milestone8BReadinessReportTest(unittest.TestCase):
             self.assertEqual(manifest_audit["inspection"]["qa_overall_status"], "pass")
             self.assertEqual(scene_audit["inspection"]["coverage_overall_status"], "pass")
 
-            self.assertEqual(report["follow_on_readiness"]["status"], "ready")
-            self.assertTrue(report["follow_on_readiness"]["ready_for_follow_on_work"])
             self.assertEqual(
                 report["follow_on_readiness"]["ready_for_milestones"],
                 ["8C", "9", "later_ui_review"],

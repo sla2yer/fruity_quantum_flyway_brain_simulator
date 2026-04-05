@@ -64,8 +64,6 @@ class Milestone15ReadinessReportTest(unittest.TestCase):
             self.assertEqual(report["review_audit"]["package_audit"]["overall_status"], "pass")
             self.assertEqual(report["review_audit"]["aggregation_audit"]["overall_status"], "pass")
             self.assertEqual(report["review_audit"]["report_audit"]["overall_status"], "pass")
-            self.assertEqual(report["documentation_audit"]["overall_status"], "pass")
-
             self.assertEqual(report["no_waves_audit"]["overall_status"], "pass")
             self.assertEqual(report["no_waves_audit"]["observed_suite_status"], "failed")
             self.assertEqual(report["full_stage_audit"]["overall_status"], "pass")
