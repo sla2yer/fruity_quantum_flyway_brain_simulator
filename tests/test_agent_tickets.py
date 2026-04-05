@@ -4,6 +4,8 @@ import shutil
 import sys
 import tempfile
 import unittest
+import os
+import subprocess
 from pathlib import Path
 from unittest import mock
 
@@ -221,6 +223,44 @@ class AgentTicketParsingTest(unittest.TestCase):
             self.assertEqual((ticket_dir / "stdout.jsonl").read_text(encoding="utf-8"), '{"type":"turn.started"}\n')
             self.assertEqual((ticket_dir / "stderr.log").read_text(encoding="utf-8"), "")
             self.assertEqual((ticket_dir / "last_message.md").read_text(encoding="utf-8"), "All set.\n")
+
+    def test_run_ticket_launches_runner_in_separate_process_group(self) -> None:
+        ticket = AgentTicket(
+            ticket_id="FW-TEST-002",
+            title="Isolate runner signals",
+            metadata={"status": "open"},
+            sections={"problem": "Ctrl+C should not interrupt the active child runner immediately."},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            repo_root = tmp_dir / "repo"
+            repo_root.mkdir()
+            output_dir = repo_root / "agent_tickets" / "runs" / "fixture"
+            output_dir.mkdir(parents=True)
+            popen_kwargs: dict[str, object] = {}
+
+            def fake_popen(cmd: list[str], **kwargs: object) -> AgentTicketParsingTest._FakeProcess:
+                popen_kwargs.update(kwargs)
+                return AgentTicketParsingTest._FakeProcess(cmd)
+
+            with mock.patch("flywire_wave.agent_tickets.subprocess.Popen", side_effect=fake_popen):
+                with mock.patch("flywire_wave.agent_tickets._stream_ticket_process", return_value=0):
+                    run_ticket(
+                        ticket,
+                        repo_root=repo_root,
+                        runner="/tmp/fake-runner",
+                        output_dir=output_dir,
+                        sandbox="workspace-write",
+                    )
+
+            if os.name == "nt":
+                self.assertEqual(
+                    popen_kwargs.get("creationflags"),
+                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+                )
+            else:
+                self.assertTrue(popen_kwargs.get("start_new_session"))
 
     def test_write_run_summary_recreates_missing_output_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_str:

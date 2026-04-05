@@ -180,6 +180,13 @@ def _safe_ticket_name(ticket: AgentTicket) -> str:
     return f"{head}_{digest}"
 
 
+def _ticket_runner_popen_kwargs() -> dict[str, Any]:
+    if os.name == "nt":
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        return {"creationflags": creationflags} if creationflags else {}
+    return {"start_new_session": True}
+
+
 def _compact_text(text: str, *, max_len: int = 240) -> str:
     normalized = " ".join(text.split())
     if len(normalized) <= max_len:
@@ -341,6 +348,7 @@ def run_ticket(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            **_ticket_runner_popen_kwargs(),
         )
         assert process.stdin is not None
         process.stdin.write(prompt)
