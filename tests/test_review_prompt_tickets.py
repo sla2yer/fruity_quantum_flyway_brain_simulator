@@ -12,12 +12,16 @@ sys.path.insert(0, str(SRC))
 
 from flywire_wave.review_prompt_tickets import (
     COMBINED_TICKETS_FILENAME,
+    SpecializedReviewPrompt,
     ReviewPromptSet,
     SUMMARY_FILENAME,
     build_specialization_prompt,
+    build_review_refresh_prompt,
     execute_review_prompt_workflow,
+    execute_specialized_review_refresh,
     filter_review_prompt_sets,
     load_review_prompt_sets,
+    load_specialized_review_prompts,
 )
 
 
@@ -70,6 +74,62 @@ class ReviewPromptTicketsTest(unittest.TestCase):
         self.assertIn("Prompt set slug: alpha", prompt)
         self.assertIn("Repository root:", prompt)
         self.assertIn("Efficiency And Modularity Review Prompt", prompt)
+
+    def test_load_specialized_review_prompts_discovers_saved_specializations(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            review_run_dir = Path(tmp_dir_str)
+            specialization_dir = review_run_dir / "specialization" / "alpha"
+            review_dir = review_run_dir / "reviews" / "alpha"
+            specialization_dir.mkdir(parents=True)
+            review_dir.mkdir(parents=True)
+            (specialization_dir / "specialized_prompt.md").write_text(
+                "# Alpha specialized prompt\n",
+                encoding="utf-8",
+            )
+            (review_dir / "tickets.md").write_text(
+                "# Alpha tickets\n",
+                encoding="utf-8",
+            )
+            (review_run_dir / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "specialization_results": [
+                            {
+                                "prompt_set": "alpha",
+                                "title": "Alpha Prompt",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            prompts = load_specialized_review_prompts(review_run_dir)
+
+            self.assertEqual(len(prompts), 1)
+            self.assertEqual(prompts[0].slug, "alpha")
+            self.assertEqual(prompts[0].title, "Alpha Prompt")
+            self.assertEqual(prompts[0].previous_tickets_path, review_dir / "tickets.md")
+
+    def test_build_review_refresh_prompt_includes_previous_ticket_pack(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            specialized_prompt_path = tmp_dir / "specialized_prompt.md"
+            previous_tickets_path = tmp_dir / "tickets.md"
+            specialized_prompt_path.write_text("# Specialized prompt\n\nReview it.\n", encoding="utf-8")
+            previous_tickets_path.write_text("## APICPL-001 - Existing issue\n", encoding="utf-8")
+            prompt = SpecializedReviewPrompt(
+                slug="alpha",
+                title="Alpha Prompt",
+                specialized_prompt_path=specialized_prompt_path,
+                previous_tickets_path=previous_tickets_path,
+            )
+
+            refresh_prompt = build_review_refresh_prompt(prompt, repo_root=ROOT)
+
+            self.assertIn("If a previously reported issue is still valid, keep its existing ticket ID", refresh_prompt)
+            self.assertIn("## Previous Ticket Pack", refresh_prompt)
+            self.assertIn("APICPL-001", refresh_prompt)
 
     def test_execute_review_prompt_workflow_writes_specialized_prompts_tickets_and_summary(self) -> None:
         prompt_sets = [
@@ -189,6 +249,76 @@ class ReviewPromptTicketsTest(unittest.TestCase):
             combined_text = combined_tickets_path.read_text(encoding="utf-8")
             self.assertIn("## alpha", combined_text)
             self.assertIn("## beta", combined_text)
+
+    def test_execute_specialized_review_refresh_writes_refreshed_ticket_pack(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            specialized_prompt_path = tmp_dir / "specialized_prompt.md"
+            previous_tickets_path = tmp_dir / "previous_tickets.md"
+            specialized_prompt_path.write_text("# Specialized prompt\n\nReview it.\n", encoding="utf-8")
+            previous_tickets_path.write_text(
+                "# Previous tickets\n\n## ALPHA-001 - Existing issue\n",
+                encoding="utf-8",
+            )
+            prompts = [
+                SpecializedReviewPrompt(
+                    slug="alpha",
+                    title="Alpha Prompt",
+                    specialized_prompt_path=specialized_prompt_path,
+                    previous_tickets_path=previous_tickets_path,
+                )
+            ]
+
+            def fake_job_runner(
+                job_name: str,
+                *,
+                prompt_text: str,
+                repo_root: str | Path,
+                runner: str,
+                output_dir: str | Path,
+                sandbox: str,
+                model: str | None = None,
+                extra_args: list[str] | None = None,
+                progress_callback=None,
+                heartbeat_seconds: float = 20.0,
+            ) -> dict[str, object]:
+                del job_name, repo_root, runner, sandbox, model, extra_args, progress_callback, heartbeat_seconds
+                output_path = Path(output_dir)
+                output_path.mkdir(parents=True, exist_ok=True)
+                (output_path / "prompt.md").write_text(prompt_text, encoding="utf-8")
+                (output_path / "stdout.jsonl").write_text("", encoding="utf-8")
+                (output_path / "stderr.log").write_text("", encoding="utf-8")
+                last_message_path = output_path / "last_message.md"
+                last_message_path.write_text(
+                    "# Refreshed tickets\n\n## ALPHA-001 - Existing issue\n",
+                    encoding="utf-8",
+                )
+                return {
+                    "job_name": "refresh_alpha",
+                    "command": ["fake-runner", "exec"],
+                    "returncode": 0,
+                    "output_dir": str(output_path),
+                    "prompt_path": str(output_path / "prompt.md"),
+                    "stdout_path": str(output_path / "stdout.jsonl"),
+                    "stderr_path": str(output_path / "stderr.log"),
+                    "last_message_path": str(last_message_path),
+                }
+
+            summary = execute_specialized_review_refresh(
+                prompts,
+                repo_root=ROOT,
+                runner="/tmp/fake-runner",
+                output_dir=tmp_dir / "refresh_run",
+                sandbox="workspace-write",
+                job_runner=fake_job_runner,
+            )
+
+            self.assertTrue(summary["success"])
+            self.assertEqual(summary["successful_review_count"], 1)
+            refresh_tickets = Path(summary["review_results"][0]["tickets_path"]).read_text(encoding="utf-8")
+            self.assertIn("ALPHA-001", refresh_tickets)
+            refresh_prompt_text = Path(summary["review_results"][0]["prompt_path"]).read_text(encoding="utf-8")
+            self.assertIn("## Previous Ticket Pack", refresh_prompt_text)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,14 @@ class ReviewPromptSet:
     specializer_prompt_path: Path
 
 
+@dataclass(frozen=True)
+class SpecializedReviewPrompt:
+    slug: str
+    title: str
+    specialized_prompt_path: Path
+    previous_tickets_path: Path | None = None
+
+
 PromptJobRunner = Callable[..., dict[str, Any]]
 
 
@@ -99,6 +107,48 @@ def filter_review_prompt_sets(
     return selected
 
 
+def load_specialized_review_prompts(review_run_dir: str | Path) -> list[SpecializedReviewPrompt]:
+    review_run_dir = Path(review_run_dir)
+    specialization_dir = review_run_dir / "specialization"
+    if not specialization_dir.exists():
+        raise FileNotFoundError(f"Specialization directory does not exist: {specialization_dir}")
+
+    titles_by_slug: dict[str, str] = {}
+    summary_path = review_run_dir / SUMMARY_FILENAME
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            summary = {}
+        for result in summary.get("specialization_results", []):
+            slug = str(result.get("prompt_set", "")).strip()
+            title = str(result.get("title", "")).strip()
+            if slug and title:
+                titles_by_slug[slug] = title
+
+    prompts: list[SpecializedReviewPrompt] = []
+    for entry in sorted(specialization_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        specialized_prompt_path = entry / SPECIALIZED_PROMPT_FILENAME
+        if not specialized_prompt_path.exists():
+            continue
+
+        slug = entry.name
+        title = titles_by_slug.get(slug, _slug_to_title(slug))
+        previous_tickets_path = review_run_dir / "reviews" / slug / TICKETS_FILENAME
+        prompts.append(
+            SpecializedReviewPrompt(
+                slug=slug,
+                title=title,
+                specialized_prompt_path=specialized_prompt_path,
+                previous_tickets_path=previous_tickets_path if previous_tickets_path.exists() else None,
+            )
+        )
+
+    return prompts
+
+
 def build_specialization_prompt(prompt_set: ReviewPromptSet, *, repo_root: str | Path) -> str:
     specializer_prompt = prompt_set.specializer_prompt_path.read_text(encoding="utf-8").strip()
     generic_prompt = prompt_set.generic_prompt_path.read_text(encoding="utf-8").strip()
@@ -136,6 +186,46 @@ def build_review_execution_prompt(
         "",
         specialized_prompt_text.strip(),
     ]
+    return "\n".join(parts).strip() + "\n"
+
+
+def build_review_refresh_prompt(
+    prompt: SpecializedReviewPrompt,
+    *,
+    repo_root: str | Path,
+) -> str:
+    repo_root = Path(repo_root).resolve()
+    specialized_prompt_text = prompt.specialized_prompt_path.read_text(encoding="utf-8").strip()
+    previous_tickets_text = ""
+    if prompt.previous_tickets_path is not None and prompt.previous_tickets_path.exists():
+        previous_tickets_text = prompt.previous_tickets_path.read_text(encoding="utf-8").strip()
+
+    parts = [
+        f"Repository root: {repo_root}",
+        f"Prompt set slug: {prompt.slug}",
+        "",
+        "Refresh the ticket pack for this review lens against the repository's current state.",
+        "Use the repo-specific specialized prompt below as the review contract.",
+        "If a previously reported issue is still valid, keep its existing ticket ID whenever practical.",
+        "Remove tickets that no longer apply, update surviving tickets to match the current code, and add new IDs only for newly discovered issues.",
+    ]
+    if previous_tickets_text:
+        parts.extend(
+            [
+                "",
+                "## Previous Ticket Pack",
+                previous_tickets_text,
+            ]
+        )
+    parts.extend(
+        [
+            "",
+            "## Repo-Specific Review Prompt",
+            specialized_prompt_text,
+            "",
+            "Return only the current ticket markdown.",
+        ]
+    )
     return "\n".join(parts).strip() + "\n"
 
 
@@ -330,6 +420,107 @@ def write_review_run_summary(summary: dict[str, Any], output_dir: str | Path) ->
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return output_path
+
+
+def execute_specialized_review_refresh(
+    prompts: Sequence[SpecializedReviewPrompt],
+    *,
+    repo_root: str | Path,
+    runner: str,
+    output_dir: str | Path,
+    sandbox: str,
+    model: str | None = None,
+    extra_args: list[str] | None = None,
+    max_workers: int | None = None,
+    heartbeat_seconds: float = 20.0,
+    progress_callback: Callable[[str], None] | None = None,
+    job_runner: PromptJobRunner | None = None,
+) -> dict[str, Any]:
+    selected_prompts = list(prompts)
+    if not selected_prompts:
+        raise RuntimeError("No specialized review prompts selected.")
+
+    repo_root = Path(repo_root).resolve()
+    output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    job_runner = job_runner or run_prompt_job
+    worker_count = _worker_count(len(selected_prompts), max_workers)
+
+    def run_review(prompt: SpecializedReviewPrompt) -> dict[str, Any]:
+        stage_output_dir = output_dir / "reviews" / prompt.slug
+        if progress_callback is not None:
+            progress_callback(f"[refresh:{prompt.slug}] starting")
+
+        result = job_runner(
+            f"refresh_{prompt.slug}",
+            prompt_text=build_review_refresh_prompt(prompt, repo_root=repo_root),
+            repo_root=repo_root,
+            runner=runner,
+            output_dir=stage_output_dir,
+            sandbox=sandbox,
+            model=model,
+            extra_args=extra_args,
+            progress_callback=(
+                None
+                if progress_callback is None
+                else lambda message, slug=prompt.slug: progress_callback(f"[refresh:{slug}] {message}")
+            ),
+            heartbeat_seconds=heartbeat_seconds,
+        )
+        result.update(
+            {
+                "stage": "refresh",
+                "prompt_set": prompt.slug,
+                "title": prompt.title,
+                "specialized_prompt_path": str(prompt.specialized_prompt_path),
+                "previous_tickets_path": (
+                    str(prompt.previous_tickets_path) if prompt.previous_tickets_path is not None else None
+                ),
+            }
+        )
+        if result["returncode"] == 0:
+            tickets_path = _write_stage_output_copy(
+                Path(result["last_message_path"]),
+                stage_output_dir / TICKETS_FILENAME,
+            )
+            result["tickets_path"] = str(tickets_path)
+        if progress_callback is not None:
+            status_text = "ok" if result["returncode"] == 0 else f"failed ({result['returncode']})"
+            progress_callback(f"[refresh:{prompt.slug}] finished: {status_text}")
+        return result
+
+    review_results = _run_parallel_stage(
+        selected_prompts,
+        stage="refresh",
+        max_workers=worker_count,
+        worker=run_review,
+        progress_callback=progress_callback,
+    )
+    combined_tickets_path = write_combined_ticket_report(review_results, output_dir)
+    summary: dict[str, Any] = {
+        "repo_root": str(repo_root),
+        "output_dir": str(output_dir),
+        "runner": runner,
+        "sandbox": sandbox,
+        "model": model,
+        "extra_args": list(extra_args or []),
+        "max_workers": worker_count,
+        "prompt_set_slugs": [prompt.slug for prompt in selected_prompts],
+        "review_results": review_results,
+        "combined_tickets_path": str(combined_tickets_path) if combined_tickets_path else None,
+    }
+    summary["successful_review_count"] = sum(
+        1 for result in review_results if result.get("returncode") == 0
+    )
+    summary["success"] = (
+        len(review_results) == len(selected_prompts)
+        and all(result.get("returncode") == 0 for result in review_results)
+    )
+
+    summary_path = output_dir / SUMMARY_FILENAME
+    summary["summary_path"] = str(summary_path)
+    write_review_run_summary(summary, output_dir)
+    return summary
 
 
 def execute_review_prompt_workflow(

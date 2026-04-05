@@ -144,6 +144,23 @@ Useful options:
 - `make review-tickets REVIEW_TICKETS_ARGS='--prompt-set efficiency_and_modularity'`
 - `make review-tickets REVIEW_TICKETS_ARGS='--specializer-model <model> --review-model <model>'`
 
+To implement the resulting tickets as a refresh-aware backlog, run:
+
+```bash
+make review-backlog REVIEW_BACKLOG_ARGS='--review-run-dir agent_tickets/review_runs/<timestamp>'
+```
+
+That runner executes one ticket, then re-runs the saved specialized review
+prompts to refresh the remaining backlog before starting the next ticket. The
+refreshed ticket packs land under `agent_tickets/review_ticket_runs/<timestamp>/`.
+
+If you want a static one-shot execution of the generated markdown without
+backlog refresh, you can still use:
+
+```bash
+python3 scripts/run_agent_tickets.py --tickets-file agent_tickets/review_runs/<timestamp>/combined_tickets.md
+```
+
 ## User Interfaces
 
 All review surfaces are local and file-backed. Once the required artifacts

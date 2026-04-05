@@ -32,8 +32,9 @@ SHOWCASE_SESSION_METADATA ?=
 SHOWCASE_PLAYER_COMMAND ?= status
 WHOLE_BRAIN_CONTEXT_ARGS ?=
 REVIEW_TICKETS_ARGS ?=
+REVIEW_BACKLOG_ARGS ?=
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate review-tickets suite-run suite-aggregate suite-report compare-analysis dashboard dashboard-open dashboard-export showcase-session showcase-player whole-brain-context wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness milestone15-readiness milestone17-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate review-tickets review-backlog suite-run suite-aggregate suite-report compare-analysis dashboard dashboard-open dashboard-export showcase-session showcase-player whole-brain-context wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness milestone15-readiness milestone17-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
@@ -65,6 +66,7 @@ help:
 		'operator-qa        Build static offline operator QA report(s)' \
 		'simulate           Execute manifest-driven simulator runs and write result bundles' \
 		'review-tickets    Specialize repo-review prompts and generate ticket packs with Codex/Codel' \
+		'review-backlog    Execute review tickets and refresh the remaining backlog after each success' \
 		'suite-run          Execute or preview a deterministic Milestone 15 experiment suite' \
 		'suite-aggregate    Compute deterministic Milestone 15 suite rollups and CSV exports from a packaged suite inventory' \
 		'suite-report       Generate deterministic Milestone 15 review tables, plots, and static HTML from a packaged suite inventory' \
@@ -132,6 +134,9 @@ simulate:
 
 review-tickets:
 	$(PYTHON) scripts/run_review_prompt_tickets.py $(REVIEW_TICKETS_ARGS)
+
+review-backlog:
+	$(PYTHON) scripts/run_review_ticket_backlog.py $(REVIEW_BACKLOG_ARGS)
 
 suite-run:
 	$(PYTHON) scripts/31_run_experiment_suite.py --config $(CONFIG) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(SUITE_RUN_ARGS)
