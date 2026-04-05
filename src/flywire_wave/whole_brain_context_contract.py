@@ -264,6 +264,23 @@ SUPPORTED_DOWNSTREAM_MODULE_ROLE_IDS = (
     COLLAPSED_PROJECTION_MODULE_ROLE_ID,
 )
 
+CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE = "context_summary_only"
+SUPPORTED_DOWNSTREAM_MODULE_CLAIM_SCOPES = (
+    CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE,
+)
+
+CONTEXT_QUERY_PRESET_HANDOFF_TARGET_KIND = "context_query_preset"
+SUPPORTED_DOWNSTREAM_MODULE_HANDOFF_TARGET_KINDS = (
+    CONTEXT_QUERY_PRESET_HANDOFF_TARGET_KIND,
+)
+
+DASHBOARD_DOWNSTREAM_MODULE_HANDOFF_SESSION_KIND = "dashboard"
+SHOWCASE_DOWNSTREAM_MODULE_HANDOFF_SESSION_KIND = "showcase"
+SUPPORTED_DOWNSTREAM_MODULE_HANDOFF_SESSION_KINDS = (
+    DASHBOARD_DOWNSTREAM_MODULE_HANDOFF_SESSION_KIND,
+    SHOWCASE_DOWNSTREAM_MODULE_HANDOFF_SESSION_KIND,
+)
+
 SELECTED_ROOT_IDS_ROLE_ID = "selected_root_ids"
 SUBSET_MANIFEST_ROLE_ID = "subset_manifest"
 SUBSET_STATS_ROLE_ID = "subset_stats"
@@ -779,6 +796,9 @@ def build_whole_brain_context_downstream_module_record(
     represented_root_ids: Sequence[str | int],
     overlay_ids: Sequence[str] | None = None,
     metadata_facet_values: Mapping[str, Any] | None = None,
+    summary_labels: Mapping[str, Any] | None = None,
+    lineage: Mapping[str, Any] | None = None,
+    handoff_targets: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return parse_whole_brain_context_downstream_module_record(
         {
@@ -790,6 +810,11 @@ def build_whole_brain_context_downstream_module_record(
             "overlay_ids": [] if overlay_ids is None else list(overlay_ids),
             "metadata_facet_values": (
                 {} if metadata_facet_values is None else dict(metadata_facet_values)
+            ),
+            "summary_labels": {} if summary_labels is None else dict(summary_labels),
+            "lineage": {} if lineage is None else dict(lineage),
+            "handoff_targets": (
+                [] if handoff_targets is None else [dict(item) for item in handoff_targets]
             ),
         }
     )
@@ -1900,6 +1925,18 @@ def parse_whole_brain_context_downstream_module_record(
     normalized["metadata_facet_values"] = _normalize_metadata_facet_values(
         normalized["metadata_facet_values"],
         field_name="downstream_module_record.metadata_facet_values",
+    )
+    normalized["summary_labels"] = _normalize_downstream_module_summary_labels(
+        normalized.get("summary_labels", {}),
+        field_name="downstream_module_record.summary_labels",
+    )
+    normalized["lineage"] = _normalize_downstream_module_lineage(
+        normalized.get("lineage", {}),
+        field_name="downstream_module_record.lineage",
+    )
+    normalized["handoff_targets"] = _normalize_downstream_module_handoff_targets(
+        normalized.get("handoff_targets", []),
+        field_name="downstream_module_record.handoff_targets",
     )
     return normalized
 
@@ -3484,6 +3521,19 @@ def _validate_representative_context_against_contract(
                 raise ValueError(
                     f"{field_name}.downstream_module_records[{index}] references represented roots missing from node_records."
                 )
+        for active_anchor_root_id in item["lineage"]["active_anchor_root_ids"]:
+            if active_anchor_root_id not in node_root_ids:
+                raise ValueError(
+                    f"{field_name}.downstream_module_records[{index}] references active anchors missing from node_records."
+                )
+        primary_pathway_id = item["lineage"]["primary_supporting_pathway_id"]
+        if (
+            primary_pathway_id is not None
+            and primary_pathway_id not in item["lineage"]["supporting_pathway_ids"]
+        ):
+            raise ValueError(
+                f"{field_name}.downstream_module_records[{index}] primary_supporting_pathway_id must be listed in supporting_pathway_ids."
+            )
 
 
 def _normalize_identifier_list(
@@ -3550,10 +3600,164 @@ def _normalize_metadata_facet_values(payload: Any, *, field_name: str) -> dict[s
     return _normalize_json_mapping(normalized_keys, field_name=field_name)
 
 
+def _normalize_downstream_module_summary_labels(
+    payload: Any,
+    *,
+    field_name: str,
+) -> dict[str, Any]:
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{field_name} must be a mapping.")
+    record = dict(payload)
+    return {
+        "is_optional": _normalize_boolean(
+            record.get("is_optional", True),
+            field_name=f"{field_name}.is_optional",
+        ),
+        "is_simplified": _normalize_boolean(
+            record.get("is_simplified", True),
+            field_name=f"{field_name}.is_simplified",
+        ),
+        "is_context_oriented": _normalize_boolean(
+            record.get("is_context_oriented", True),
+            field_name=f"{field_name}.is_context_oriented",
+        ),
+        "scientific_curation_required": _normalize_boolean(
+            record.get("scientific_curation_required", True),
+            field_name=f"{field_name}.scientific_curation_required",
+        ),
+        "claim_scope": _normalize_downstream_module_claim_scope(
+            record.get("claim_scope", CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE)
+        ),
+        "truthfulness_note": _normalize_nonempty_string(
+            record.get(
+                "truthfulness_note",
+                "Optional simplified downstream summary for Milestone 17 context review only.",
+            ),
+            field_name=f"{field_name}.truthfulness_note",
+        ),
+    }
+
+
+def _normalize_downstream_module_lineage(
+    payload: Any,
+    *,
+    field_name: str,
+) -> dict[str, Any]:
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{field_name} must be a mapping.")
+    record = dict(payload)
+    supporting_pathway_ids = _normalize_nonempty_string_list(
+        record.get("supporting_pathway_ids", []),
+        field_name=f"{field_name}.supporting_pathway_ids",
+    )
+    return {
+        "active_anchor_root_ids": _normalize_identifier_list(
+            record.get("active_anchor_root_ids", []),
+            field_name=f"{field_name}.active_anchor_root_ids",
+            allow_empty=True,
+        ),
+        "source_query_profile_id": _normalize_optional_query_profile_id(
+            record.get("source_query_profile_id")
+        ),
+        "source_query_family": _normalize_optional_query_family(
+            record.get("source_query_family")
+        ),
+        "supporting_pathway_ids": supporting_pathway_ids,
+        "primary_supporting_pathway_id": _normalize_optional_string(
+            record.get("primary_supporting_pathway_id"),
+            field_name=f"{field_name}.primary_supporting_pathway_id",
+        ),
+    }
+
+
+def _normalize_downstream_module_handoff_targets(
+    payload: Any,
+    *,
+    field_name: str,
+) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
+        raise ValueError(f"{field_name} must be a sequence of mappings.")
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{field_name}[{index}] must be a mapping.")
+        record = dict(item)
+        normalized.append(
+            {
+                "target_kind": _normalize_downstream_module_handoff_target_kind(
+                    record.get("target_kind")
+                ),
+                "linked_session_kind": _normalize_downstream_module_handoff_session_kind(
+                    record.get("linked_session_kind")
+                ),
+                "source_bundle_id": _normalize_nonempty_string(
+                    record.get("source_bundle_id"),
+                    field_name=f"{field_name}[{index}].source_bundle_id",
+                ),
+                "source_metadata_path": str(
+                    Path(
+                        _normalize_nonempty_string(
+                            record.get("source_metadata_path"),
+                            field_name=f"{field_name}[{index}].source_metadata_path",
+                        )
+                    ).resolve()
+                ),
+                "source_preset_id": _normalize_optional_identifier(
+                    record.get("source_preset_id"),
+                    field_name=f"{field_name}[{index}].source_preset_id",
+                ),
+                "source_link_id": _normalize_optional_identifier(
+                    record.get("source_link_id"),
+                    field_name=f"{field_name}[{index}].source_link_id",
+                ),
+                "artifact_role_id": _normalize_artifact_role_id(
+                    record.get("artifact_role_id")
+                ),
+                "target_preset_id": _normalize_identifier(
+                    record.get("target_preset_id"),
+                    field_name=f"{field_name}[{index}].target_preset_id",
+                ),
+                "target_graph_view_id": _normalize_identifier(
+                    record.get("target_graph_view_id"),
+                    field_name=f"{field_name}[{index}].target_graph_view_id",
+                ),
+                "target_payload_path": _normalize_nonempty_string(
+                    record.get("target_payload_path"),
+                    field_name=f"{field_name}[{index}].target_payload_path",
+                ),
+                "target_query_profile_id": _normalize_optional_query_profile_id(
+                    record.get("target_query_profile_id")
+                ),
+                "discovery_note": _normalize_optional_string(
+                    record.get("discovery_note"),
+                    field_name=f"{field_name}[{index}].discovery_note",
+                ),
+            }
+        )
+    return sorted(
+        normalized,
+        key=lambda item: (
+            item["linked_session_kind"],
+            "" if item["source_preset_id"] is None else item["source_preset_id"],
+            item["target_preset_id"],
+        ),
+    )
+
+
 def _normalize_optional_string(value: Any, *, field_name: str) -> str | None:
     if value is None:
         return None
     return _normalize_nonempty_string(value, field_name=field_name)
+
+
+def _normalize_optional_identifier(value: Any, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _normalize_identifier(value, field_name=field_name)
 
 
 def _normalize_optional_float(value: Any, *, field_name: str) -> float | None:
@@ -3606,11 +3810,23 @@ def _normalize_query_family(value: Any) -> str:
     return normalized
 
 
+def _normalize_optional_query_family(value: Any) -> str | None:
+    if value is None:
+        return None
+    return _normalize_query_family(value)
+
+
 def _normalize_query_profile_id(value: Any) -> str:
     normalized = _normalize_identifier(value, field_name="query_profile_id")
     if normalized not in SUPPORTED_QUERY_PROFILE_IDS:
         raise ValueError(f"query_profile_id must be one of {SUPPORTED_QUERY_PROFILE_IDS!r}.")
     return normalized
+
+
+def _normalize_optional_query_profile_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    return _normalize_query_profile_id(value)
 
 
 def _normalize_node_boundary_status(value: Any) -> str:
@@ -3706,6 +3922,42 @@ def _normalize_downstream_module_role_id(value: Any) -> str:
         raise ValueError(
             "downstream_module_role_id must be one of "
             f"{SUPPORTED_DOWNSTREAM_MODULE_ROLE_IDS!r}."
+        )
+    return normalized
+
+
+def _normalize_downstream_module_claim_scope(value: Any) -> str:
+    normalized = _normalize_identifier(value, field_name="downstream_module.claim_scope")
+    if normalized not in SUPPORTED_DOWNSTREAM_MODULE_CLAIM_SCOPES:
+        raise ValueError(
+            "downstream module claim_scope must be one of "
+            f"{SUPPORTED_DOWNSTREAM_MODULE_CLAIM_SCOPES!r}."
+        )
+    return normalized
+
+
+def _normalize_downstream_module_handoff_target_kind(value: Any) -> str:
+    normalized = _normalize_identifier(
+        value,
+        field_name="downstream_module.handoff_target.target_kind",
+    )
+    if normalized not in SUPPORTED_DOWNSTREAM_MODULE_HANDOFF_TARGET_KINDS:
+        raise ValueError(
+            "downstream module handoff target_kind must be one of "
+            f"{SUPPORTED_DOWNSTREAM_MODULE_HANDOFF_TARGET_KINDS!r}."
+        )
+    return normalized
+
+
+def _normalize_downstream_module_handoff_session_kind(value: Any) -> str:
+    normalized = _normalize_identifier(
+        value,
+        field_name="downstream_module.handoff_target.linked_session_kind",
+    )
+    if normalized not in SUPPORTED_DOWNSTREAM_MODULE_HANDOFF_SESSION_KINDS:
+        raise ValueError(
+            "downstream module linked_session_kind must be one of "
+            f"{SUPPORTED_DOWNSTREAM_MODULE_HANDOFF_SESSION_KINDS!r}."
         )
     return normalized
 

@@ -16,11 +16,13 @@ M12_CONFIG ?= config/milestone_12_verification.yaml
 M13_CONFIG ?= config/milestone_13_verification.yaml
 M14_CONFIG ?= config/milestone_14_verification.yaml
 M15_CONFIG ?= config/milestone_15_verification.yaml
+M17_CONFIG ?= config/milestone_17_verification.yaml
 M11_READINESS_ARGS ?=
 M12_READINESS_ARGS ?=
 M13_READINESS_ARGS ?=
 M14_READINESS_ARGS ?=
 M15_READINESS_ARGS ?=
+M17_READINESS_ARGS ?=
 DASHBOARD_ARGS ?=
 DASHBOARD_SESSION_METADATA ?=
 DASHBOARD_EXPORT_ARGS ?=
@@ -28,8 +30,9 @@ SHOWCASE_ARGS ?=
 SHOWCASE_PLAYER_ARGS ?=
 SHOWCASE_SESSION_METADATA ?=
 SHOWCASE_PLAYER_COMMAND ?= status
+WHOLE_BRAIN_CONTEXT_ARGS ?=
 
-.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate suite-run suite-aggregate suite-report compare-analysis dashboard dashboard-open dashboard-export showcase-session showcase-player wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness milestone15-readiness validate-manifest test smoke all
+.PHONY: help bootstrap verify registry select meshes assets preview coupling-inspect operator-qa simulate suite-run suite-aggregate suite-report compare-analysis dashboard dashboard-open dashboard-export showcase-session showcase-player whole-brain-context wave-inspect mixed-fidelity-inspect numerical-validate morphology-validate circuit-validate task-validate validation-ladder-package validation-ladder-smoke milestone6-readiness milestone7-readiness milestone8a-readiness milestone8b-readiness milestone9-readiness milestone10-readiness milestone11-readiness milestone12-readiness milestone13-readiness milestone14-readiness milestone15-readiness milestone17-readiness validate-manifest test smoke all
 
 COUPLING_INSPECT_ARGS ?=
 SIMULATE_ARGS ?=
@@ -69,6 +72,7 @@ help:
 		'dashboard-export   Export deterministic dashboard review artifacts from one packaged session' \
 		'showcase-session  Package the deterministic Milestone 16 showcase rehearsal surface from packaged local artifacts' \
 		'showcase-player   Drive a packaged Milestone 16 showcase session through the scripted player controls' \
+		'whole-brain-context Package the deterministic Milestone 17 whole-brain context bundle from packaged local artifacts' \
 		'wave-inspect       Run local surface-wave sweep and offline inspection report(s)' \
 		'mixed-fidelity-inspect Run offline surrogate-versus-reference mixed-fidelity inspection' \
 		'numerical-validate Run the Milestone 13 numerical-sanity validation suite' \
@@ -88,6 +92,7 @@ help:
 		'milestone13-readiness Run the Milestone 13 validation-ladder integration verification pass and publish a readiness report' \
 		'milestone14-readiness Run the Milestone 14 dashboard integration verification pass and publish a readiness report' \
 		'milestone15-readiness Run the Milestone 15 experiment-orchestration integration verification pass and publish a readiness report' \
+		'milestone17-readiness Run the Milestone 17 whole-brain-context integration verification pass and publish a readiness report' \
 		'validate-manifest  Validate the example manifest against schema/design lock' \
 		'all                Run verify -> registry -> select -> meshes -> assets'
 
@@ -152,6 +157,9 @@ showcase-player:
 	test -n "$(SHOWCASE_SESSION_METADATA)"
 	$(PYTHON) scripts/35_showcase_session.py $(SHOWCASE_PLAYER_COMMAND) --showcase-session-metadata $(SHOWCASE_SESSION_METADATA) $(SHOWCASE_PLAYER_ARGS)
 
+whole-brain-context:
+	$(PYTHON) scripts/36_whole_brain_context_session.py build --config $(CONFIG) $(WHOLE_BRAIN_CONTEXT_ARGS)
+
 wave-inspect:
 	$(PYTHON) scripts/15_surface_wave_inspection.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK) $(WAVE_INSPECT_ARGS)
 
@@ -208,6 +216,9 @@ milestone14-readiness:
 
 milestone15-readiness:
 	$(PYTHON) scripts/34_milestone15_readiness.py --config $(M15_CONFIG) $(M15_READINESS_ARGS)
+
+milestone17-readiness:
+	$(PYTHON) scripts/37_milestone17_readiness.py --config $(M17_CONFIG) $(M17_READINESS_ARGS)
 
 validate-manifest:
 	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)

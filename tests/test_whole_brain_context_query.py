@@ -15,6 +15,7 @@ sys.path.insert(0, str(SRC))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from flywire_wave.whole_brain_context_contract import (
+    CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE,
     build_whole_brain_context_contract_metadata,
     build_whole_brain_context_query_state,
 )
@@ -232,6 +233,52 @@ class WholeBrainContextQueryTest(unittest.TestCase):
             overview["reviewer_summary_cards"][0]["card_id"],
             "reviewer_card:boundary_summary",
         )
+
+    def test_downstream_module_review_packages_simplified_module_labels_and_lineage(
+        self,
+    ) -> None:
+        fixture = _context_query_fixture()
+        plan = _build_query_plan(
+            query_profile_id="downstream_module_review",
+            reduction_profile_id="downstream_module_collapsed",
+        )
+
+        result = execute_whole_brain_context_query(
+            plan,
+            synapse_registry=fixture["synapse_df"],
+            node_metadata_registry=fixture["node_metadata_df"],
+            reduction_controls={
+                "max_hops": 2,
+                "max_context_node_count": 8,
+                "max_edge_count": 16,
+                "max_downstream_module_count": 2,
+            },
+        )
+
+        self.assertTrue(result["overview_graph"]["downstream_module_records"])
+        module = result["overview_graph"]["downstream_module_records"][0]
+
+        self.assertEqual(
+            module["summary_labels"]["claim_scope"],
+            CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE,
+        )
+        self.assertTrue(module["summary_labels"]["is_optional"])
+        self.assertTrue(module["summary_labels"]["is_simplified"])
+        self.assertTrue(module["summary_labels"]["is_context_oriented"])
+        self.assertTrue(module["summary_labels"]["scientific_curation_required"])
+        self.assertEqual(
+            module["lineage"]["source_query_profile_id"],
+            "downstream_module_review",
+        )
+        self.assertEqual(
+            module["lineage"]["source_query_family"],
+            "downstream_module_review",
+        )
+        self.assertTrue(module["lineage"]["active_anchor_root_ids"])
+        self.assertTrue(
+            set(module["lineage"]["active_anchor_root_ids"]).issubset({"101", "202"})
+        )
+        self.assertEqual(module["handoff_targets"], [])
 
     def test_query_fails_clearly_for_missing_required_inputs_and_unreachable_targets(self) -> None:
         fixture = _context_query_fixture()

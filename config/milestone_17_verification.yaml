@@ -1,0 +1,4 @@
+paths:
+  processed_stimulus_dir: data/processed/milestone_17_verification/stimuli
+  processed_retinal_dir: data/processed/milestone_17_verification/retinal
+  processed_simulator_results_dir: data/processed/milestone_17_verification/simulator_results

@@ -436,6 +436,45 @@ class ShowcaseSessionPlanningTest(unittest.TestCase):
                 "ready",
             )
 
+    def test_analysis_summary_preset_records_whole_brain_context_handoff(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+
+            plan = resolve_showcase_session_plan(
+                config_path=fixture["config_path"],
+                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                suite_review_summary_path=fixture["suite_review_summary_path"],
+                table_dimension_ids=["motion_direction"],
+                fixture_mode=SHOWCASE_FIXTURE_MODE_REHEARSAL,
+            )
+            packaged = package_showcase_session(plan)
+            catalog = json.loads(
+                Path(packaged["narrative_preset_catalog_path"]).read_text(encoding="utf-8")
+            )
+            analysis_summary_preset = next(
+                item
+                for item in catalog["saved_presets"]
+                if item["preset_id"] == ANALYSIS_SUMMARY_PRESET_ID
+            )
+            handoff_links = [
+                item
+                for item in analysis_summary_preset["presentation_state_patch"][
+                    "rehearsal_metadata"
+                ]["presentation_links"]
+                if item["link_kind"] == "whole_brain_context_handoff"
+            ]
+
+            self.assertEqual(len(handoff_links), 1)
+            self.assertEqual(
+                handoff_links[0]["shared_context"]["target_contract_version"],
+                "whole_brain_context_session.v1",
+            )
+            self.assertEqual(
+                handoff_links[0]["shared_context"]["target_context_preset_id"],
+                "showcase_handoff",
+            )
+
     def test_unapproved_highlight_demotes_to_caveated_fallback_story_state(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))

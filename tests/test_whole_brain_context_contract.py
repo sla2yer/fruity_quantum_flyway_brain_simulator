@@ -377,6 +377,17 @@ class WholeBrainContextContractTest(unittest.TestCase):
                 metadata_a["representative_context"]["node_records"][0]["node_role_id"],
                 ACTIVE_SELECTED_NODE_ROLE_ID,
             )
+            self.assertTrue(
+                metadata_a["representative_context"]["downstream_module_records"][0][
+                    "summary_labels"
+                ]["is_simplified"]
+            )
+            self.assertEqual(
+                metadata_a["representative_context"]["downstream_module_records"][0][
+                    "handoff_targets"
+                ],
+                [],
+            )
 
             with tempfile.TemporaryDirectory(dir=ROOT) as output_dir_str:
                 metadata_path = Path(output_dir_str) / "whole_brain_context_session.json"

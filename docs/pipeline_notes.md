@@ -929,6 +929,32 @@ decision note; later tickets should cite it instead of re-litigating the
 query taxonomy, active-versus-context semantics, graph-budget meanings, or the
 Jack-versus-Grant ownership boundary.
 
+### Whole-brain context workflow
+
+Milestone 17 keeps the compact Milestone 14 and Milestone 16 packages as the
+fast gate and adds one richer packaged context-review layer on top.
+
+The canonical local wrapper is:
+
+- `make whole-brain-context`
+- the wrapper runs `scripts/36_whole_brain_context_session.py build --config <config> ...`
+
+Readiness notes:
+
+- `make milestone17-readiness` runs `scripts/37_milestone17_readiness.py`
+  against `config/milestone_17_verification.yaml`
+- the readiness pass materializes a packaged showcase fixture, packages one
+  richer Milestone 17 whole-brain context bundle, verifies a dashboard bridge
+  session, and writes `milestone_17_readiness.md` plus
+  `milestone_17_readiness.json`
+- the current readiness fixture is an engineering integration gate for
+  deterministic local packaging, truthful active-versus-context labeling,
+  stable preset and handoff semantics, and honest summary-only fallback
+  behavior
+- the richer review fixture remains deliberately compact and local; later
+  scientific curation may widen the broader-brain coverage without changing
+  the shipped contract or command surface
+
 ### Showcase rehearsal workflow
 
 Milestone 14 and Milestone 15 readiness fixtures stay intentionally compact so

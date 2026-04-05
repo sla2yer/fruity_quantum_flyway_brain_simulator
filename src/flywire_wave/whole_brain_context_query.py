@@ -17,6 +17,7 @@ from .whole_brain_context_contract import (
     ACTIVE_SELECTED_NODE_ROLE_ID,
     ACTIVE_SUBSET_CONTEXT_LAYER_ID,
     BOTH_METADATA_FACET_SCOPE,
+    CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE,
     CONTEXT_INTERNAL_EDGE_ROLE_ID,
     CONTEXT_ONLY_NODE_ROLE_ID,
     CONTEXT_PATHWAY_HIGHLIGHT_NODE_ROLE_ID,
@@ -438,10 +439,13 @@ def execute_whole_brain_context_query(
         metadata_by_root=metadata_by_root,
         selected_context_root_ids=selected_context_root_ids,
         directional_membership=directional_membership,
+        path_registry=path_registry,
         reduction_controls=resolved_reduction_controls,
+        query_profile_id=query_profile_id,
         query_family=query_family,
         enabled_overlays=enabled_overlays,
         enabled_facets=enabled_facets,
+        highlight_path_records=highlight_path_records,
     )
 
     overview_node_records = _sort_node_records(base_node_records + highlight_node_records)
@@ -1680,10 +1684,13 @@ def _build_downstream_module_records(
     metadata_by_root: Mapping[int, Mapping[str, Any]],
     selected_context_root_ids: set[int],
     directional_membership: Mapping[int, set[str]],
+    path_registry: Mapping[tuple[str, int], Mapping[str, Any]],
     reduction_controls: Mapping[str, Any],
+    query_profile_id: str,
     query_family: str,
     enabled_overlays: set[str],
     enabled_facets: set[str],
+    highlight_path_records: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     requests = plan.get("downstream_module_requests")
     if not isinstance(requests, Sequence) or isinstance(requests, (str, bytes)):
@@ -1711,6 +1718,27 @@ def _build_downstream_module_records(
             field_name="downstream_module_request.downstream_module_role_id",
         )
         represented_root_ids = downstream_context_roots[: min(12, len(downstream_context_roots))]
+        active_anchor_root_ids = sorted(
+            {
+                int(path["active_anchor_root_id"])
+                for root_id in represented_root_ids
+                for direction in directional_membership.get(int(root_id), set())
+                for path in [path_registry.get((str(direction), int(root_id)))]
+                if isinstance(path, Mapping)
+            }
+        )
+        supporting_pathway_ids = sorted(
+            {
+                str(record["pathway_id"])
+                for record in highlight_path_records
+                if isinstance(record, Mapping)
+                and {
+                    int(root_id)
+                    for root_id in record.get("node_root_ids", [])
+                }
+                & set(represented_root_ids)
+            }
+        )
         dominant_cell_class = _dominant_counter_value(
             Counter(
                 _string_or_none(metadata_by_root.get(root_id, {}).get("super_class"))
@@ -1738,8 +1766,8 @@ def _build_downstream_module_records(
                 "downstream_module_role_id": role_id,
                 "display_name": str(request.get("display_name") or role_id.replace("_", " ").title()),
                 "description": (
-                    f"Collapsed downstream review group representing {len(represented_root_ids)} "
-                    "context roots."
+                    "Optional simplified downstream context summary representing "
+                    f"{len(represented_root_ids)} context roots."
                 ),
                 "represented_root_ids": [str(root_id) for root_id in represented_root_ids],
                 "overlay_ids": (
@@ -1757,6 +1785,31 @@ def _build_downstream_module_records(
                     else [DOWNSTREAM_MODULE_OVERLAY_ID]
                 ),
                 "metadata_facet_values": metadata_values,
+                "summary_labels": {
+                    "is_optional": True,
+                    "is_simplified": True,
+                    "is_context_oriented": True,
+                    "scientific_curation_required": bool(
+                        request.get("requires_scientific_curation", True)
+                    ),
+                    "claim_scope": CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE,
+                    "truthfulness_note": (
+                        "Optional simplified downstream summary for context review; "
+                        "not a new simulated biological claim."
+                    ),
+                },
+                "lineage": {
+                    "active_anchor_root_ids": [
+                        str(root_id) for root_id in active_anchor_root_ids
+                    ],
+                    "source_query_profile_id": str(query_profile_id),
+                    "source_query_family": str(query_family),
+                    "supporting_pathway_ids": list(supporting_pathway_ids),
+                    "primary_supporting_pathway_id": (
+                        None if not supporting_pathway_ids else supporting_pathway_ids[0]
+                    ),
+                },
+                "handoff_targets": [],
                 "context_layer_id": DOWNSTREAM_MODULE_CONTEXT_LAYER_ID,
                 "module_kind": "collapsed_context_summary",
             }

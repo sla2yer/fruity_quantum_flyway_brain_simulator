@@ -34,6 +34,7 @@ from .selection import build_subset_artifact_paths
 from .showcase_session_contract import (
     DASHBOARD_SESSION_METADATA_ROLE_ID as SHOWCASE_DASHBOARD_SESSION_METADATA_ROLE_ID,
     METADATA_JSON_KEY as SHOWCASE_METADATA_JSON_KEY,
+    NARRATIVE_PRESET_CATALOG_ARTIFACT_ID,
     SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID,
     SHOWCASE_SESSION_CONTRACT_VERSION,
     discover_showcase_session_artifact_references,
@@ -134,6 +135,8 @@ DOWNSTREAM_HALO_PRESET_ID = "downstream_halo"
 PATHWAY_FOCUS_PRESET_ID = "pathway_focus"
 DASHBOARD_HANDOFF_PRESET_ID = "dashboard_handoff"
 SHOWCASE_HANDOFF_PRESET_ID = "showcase_handoff"
+
+WHOLE_BRAIN_CONTEXT_HANDOFF_LINK_KIND = "whole_brain_context_handoff"
 
 SUPPORTED_CONTEXT_QUERY_PRESET_IDS = (
     OVERVIEW_CONTEXT_PRESET_ID,
@@ -311,6 +314,16 @@ def resolve_whole_brain_context_session_plan(
         selected_query_profile_ids=query_profile_resolution["selected_query_profile_ids"],
         active_query_profile_id=query_profile_resolution["active_query_profile_id"],
     )
+    linked_sessions = _build_linked_sessions(
+        source_context=source_context,
+        artifact_references_by_role=artifact_references_by_role,
+        planned_artifact_paths=planned_artifact_paths,
+    )
+    fixture_profile = _build_fixture_profile(
+        source_mode=source_mode,
+        requested_fixture_mode=fixture_mode,
+        linked_sessions=linked_sessions,
+    )
     labeling_rules = _build_labeling_rules(
         selected_root_ids=resolved_selection_context["selected_root_ids"],
     )
@@ -326,29 +339,6 @@ def resolve_whole_brain_context_session_plan(
             downstream_module_requests=downstream_module_requests,
         )
     )
-    representative_context = copy.deepcopy(dict(query_execution["representative_context"]))
-    whole_brain_context_session = build_whole_brain_context_session_metadata(
-        experiment_id=source_context["experiment_id"],
-        artifact_references=merged_artifact_references,
-        representative_context=representative_context,
-        query_state=query_state,
-        processed_simulator_results_dir=cfg["paths"]["processed_simulator_results_dir"],
-        delivery_model=DEFAULT_DELIVERY_MODEL,
-        context_view_payload_status=CONTEXT_ASSET_STATUS_READY,
-        context_query_catalog_status=CONTEXT_ASSET_STATUS_READY,
-        context_view_state_status=CONTEXT_ASSET_STATUS_READY,
-        contract_metadata=normalized_contract,
-    )
-    linked_sessions = _build_linked_sessions(
-        source_context=source_context,
-        artifact_references_by_role=artifact_references_by_role,
-        planned_artifact_paths=planned_artifact_paths,
-    )
-    fixture_profile = _build_fixture_profile(
-        source_mode=source_mode,
-        requested_fixture_mode=fixture_mode,
-        linked_sessions=linked_sessions,
-    )
     query_preset_library = _build_query_preset_library(
         config_path=str(config_file.resolve()),
         contract_metadata=normalized_contract,
@@ -361,6 +351,28 @@ def resolve_whole_brain_context_session_plan(
         downstream_module_requests=downstream_module_requests,
         linked_sessions=linked_sessions,
         fixture_profile=fixture_profile,
+    )
+    query_preset_library = _apply_downstream_module_handoffs_to_query_preset_library(
+        query_preset_library=query_preset_library,
+        linked_sessions=linked_sessions,
+    )
+    query_execution = _apply_downstream_module_handoffs_to_query_execution(
+        query_execution=query_execution,
+        query_preset_library=query_preset_library,
+        linked_sessions=linked_sessions,
+    )
+    representative_context = copy.deepcopy(dict(query_execution["representative_context"]))
+    whole_brain_context_session = build_whole_brain_context_session_metadata(
+        experiment_id=source_context["experiment_id"],
+        artifact_references=merged_artifact_references,
+        representative_context=representative_context,
+        query_state=query_state,
+        processed_simulator_results_dir=cfg["paths"]["processed_simulator_results_dir"],
+        delivery_model=DEFAULT_DELIVERY_MODEL,
+        context_view_payload_status=CONTEXT_ASSET_STATUS_READY,
+        context_query_catalog_status=CONTEXT_ASSET_STATUS_READY,
+        context_view_state_status=CONTEXT_ASSET_STATUS_READY,
+        contract_metadata=normalized_contract,
     )
     output_locations = _build_output_locations(whole_brain_context_session)
     context_query_catalog = _build_context_query_catalog(
@@ -1155,10 +1167,18 @@ def _packaged_showcase_context(metadata: Mapping[str, Any]) -> dict[str, Any]:
     )
     if str(normalized_metadata["bundle_id"]) != str(state["bundle_reference"]["bundle_id"]):
         raise ValueError("showcase_session metadata and state must reference the same bundle_id.")
+    narrative_preset_catalog = _load_json_mapping(
+        bundle_paths[NARRATIVE_PRESET_CATALOG_ARTIFACT_ID],
+        field_name="showcase_narrative_preset_catalog",
+    )
     return {
         "origin": "packaged",
         "metadata": normalized_metadata,
         "state": state,
+        "narrative_preset_catalog": narrative_preset_catalog,
+        "narrative_preset_catalog_path": str(
+            bundle_paths[NARRATIVE_PRESET_CATALOG_ARTIFACT_ID].resolve()
+        ),
     }
 
 
@@ -2414,7 +2434,311 @@ def _build_linked_session_target(
         "artifact_role_id": artifact_role_id,
         "bundle_id": str(linked_session["bundle_id"]),
         "metadata_path": str(linked_session["metadata_path"]),
+        "source_preset_ids": sorted(
+            {
+                str(item["source_preset_id"])
+                for item in linked_session.get("handoff_links", [])
+                if isinstance(item, Mapping)
+                and str(item.get("target_context_preset_id"))
+                == str(blueprint.get("preset_id"))
+                and item.get("source_preset_id") is not None
+            }
+        ),
     }
+
+
+def _discover_showcase_handoff_links(
+    narrative_preset_catalog: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not isinstance(narrative_preset_catalog, Mapping):
+        return []
+    result: list[dict[str, Any]] = []
+    saved_presets = narrative_preset_catalog.get("saved_presets", [])
+    if not isinstance(saved_presets, Sequence) or isinstance(saved_presets, (str, bytes)):
+        return result
+    for preset in saved_presets:
+        if not isinstance(preset, Mapping):
+            continue
+        preset_id = _normalize_optional_identifier(
+            preset.get("preset_id"),
+            field_name="showcase_handoff.preset_id",
+        )
+        patch = preset.get("presentation_state_patch", {})
+        if not isinstance(patch, Mapping):
+            continue
+        rehearsal_metadata = patch.get("rehearsal_metadata", {})
+        if not isinstance(rehearsal_metadata, Mapping):
+            continue
+        presentation_links = rehearsal_metadata.get("presentation_links", [])
+        if not isinstance(presentation_links, Sequence) or isinstance(
+            presentation_links,
+            (str, bytes),
+        ):
+            continue
+        for item in presentation_links:
+            if not isinstance(item, Mapping):
+                continue
+            if str(item.get("link_kind")) != WHOLE_BRAIN_CONTEXT_HANDOFF_LINK_KIND:
+                continue
+            shared_context = item.get("shared_context", {})
+            if not isinstance(shared_context, Mapping):
+                continue
+            target_contract_version = _normalize_optional_string(
+                shared_context.get("target_contract_version"),
+                field_name="showcase_handoff.target_contract_version",
+            )
+            if (
+                target_contract_version is not None
+                and target_contract_version
+                != WHOLE_BRAIN_CONTEXT_SESSION_CONTRACT_VERSION
+            ):
+                raise ValueError(
+                    "Showcase whole-brain handoff links must target "
+                    f"{WHOLE_BRAIN_CONTEXT_SESSION_CONTRACT_VERSION!r}."
+                )
+            target_context_preset_id = _normalize_optional_identifier(
+                shared_context.get("target_context_preset_id"),
+                field_name="showcase_handoff.target_context_preset_id",
+            )
+            if preset_id is None or target_context_preset_id is None:
+                continue
+            result.append(
+                {
+                    "source_preset_id": preset_id,
+                    "source_link_id": _normalize_optional_identifier(
+                        item.get("link_id"),
+                        field_name="showcase_handoff.link_id",
+                    ),
+                    "target_context_preset_id": target_context_preset_id,
+                    "discovery_note": _normalize_optional_string(
+                        shared_context.get("discovery_note"),
+                        field_name="showcase_handoff.discovery_note",
+                    ),
+                }
+            )
+    return sorted(
+        result,
+        key=lambda item: (
+            item["source_preset_id"],
+            "" if item["source_link_id"] is None else item["source_link_id"],
+            item["target_context_preset_id"],
+        ),
+    )
+
+
+def _apply_downstream_module_handoffs_to_query_preset_library(
+    *,
+    query_preset_library: Mapping[str, Any],
+    linked_sessions: Mapping[str, Any],
+) -> dict[str, Any]:
+    result = copy.deepcopy(dict(query_preset_library))
+    handoff_targets = _build_downstream_module_handoff_targets(
+        query_preset_library=result,
+        linked_sessions=linked_sessions,
+    )
+    payloads = _require_mapping(
+        result.get("preset_payloads_by_id", {}),
+        field_name="query_preset_library.preset_payloads_by_id",
+    )
+    result["preset_payloads_by_id"] = {
+        str(preset_id): _apply_downstream_module_handoffs_to_preset_payload(
+            payload=payload,
+            handoff_targets=handoff_targets,
+        )
+        for preset_id, payload in payloads.items()
+        if isinstance(payload, Mapping)
+    }
+    return result
+
+
+def _apply_downstream_module_handoffs_to_query_execution(
+    *,
+    query_execution: Mapping[str, Any],
+    query_preset_library: Mapping[str, Any],
+    linked_sessions: Mapping[str, Any],
+) -> dict[str, Any]:
+    result = copy.deepcopy(dict(query_execution))
+    handoff_targets = _build_downstream_module_handoff_targets(
+        query_preset_library=query_preset_library,
+        linked_sessions=linked_sessions,
+    )
+    result["representative_context"] = _apply_downstream_module_handoffs_to_context_record(
+        result.get("representative_context", {}),
+        handoff_targets=handoff_targets,
+    )
+    for graph_key in ("overview_graph", "focused_subgraph"):
+        if isinstance(result.get(graph_key), Mapping):
+            result[graph_key] = _apply_downstream_module_handoffs_to_graph_view(
+                result[graph_key],
+                handoff_targets=handoff_targets,
+            )
+    return result
+
+
+def _build_downstream_module_handoff_targets(
+    *,
+    query_preset_library: Mapping[str, Any],
+    linked_sessions: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    available_presets = {
+        str(item["preset_id"]): dict(item)
+        for item in query_preset_library.get("available_query_presets", [])
+        if isinstance(item, Mapping)
+    }
+    handoff_targets: list[dict[str, Any]] = []
+    handoff_preset_ids = _require_mapping(
+        query_preset_library.get("handoff_preset_ids", {}),
+        field_name="query_preset_library.handoff_preset_ids",
+    )
+
+    dashboard_preset_id = _normalize_optional_identifier(
+        handoff_preset_ids.get("dashboard"),
+        field_name="handoff_preset_ids.dashboard",
+    )
+    dashboard_session = linked_sessions.get("dashboard")
+    if dashboard_preset_id is not None and isinstance(dashboard_session, Mapping):
+        preset_record = available_presets.get(dashboard_preset_id)
+        if preset_record is not None:
+            handoff_targets.append(
+                _build_downstream_module_handoff_target_record(
+                    linked_session=dashboard_session,
+                    linked_session_kind="dashboard",
+                    preset_record=preset_record,
+                    source_preset_id=None,
+                    source_link_id=None,
+                    discovery_note="Compact dashboard gate can hand off into the broader Milestone 17 context preset.",
+                )
+            )
+
+    showcase_preset_id = _normalize_optional_identifier(
+        handoff_preset_ids.get("showcase"),
+        field_name="handoff_preset_ids.showcase",
+    )
+    showcase_session = linked_sessions.get("showcase")
+    if showcase_preset_id is not None and isinstance(showcase_session, Mapping):
+        preset_record = available_presets.get(showcase_preset_id)
+        if preset_record is not None:
+            matching_links = [
+                dict(item)
+                for item in showcase_session.get("handoff_links", [])
+                if isinstance(item, Mapping)
+                and str(item.get("target_context_preset_id")) == showcase_preset_id
+            ]
+            if not matching_links:
+                matching_links = [
+                    {
+                        "source_preset_id": None,
+                        "source_link_id": None,
+                        "discovery_note": (
+                            "Linked showcase surface may hand off into the packaged "
+                            "Milestone 17 showcase_handoff preset."
+                        ),
+                    }
+                ]
+            for link in matching_links:
+                handoff_targets.append(
+                    _build_downstream_module_handoff_target_record(
+                        linked_session=showcase_session,
+                        linked_session_kind="showcase",
+                        preset_record=preset_record,
+                        source_preset_id=link.get("source_preset_id"),
+                        source_link_id=link.get("source_link_id"),
+                        discovery_note=link.get("discovery_note"),
+                    )
+                )
+    return handoff_targets
+
+
+def _build_downstream_module_handoff_target_record(
+    *,
+    linked_session: Mapping[str, Any],
+    linked_session_kind: str,
+    preset_record: Mapping[str, Any],
+    source_preset_id: str | None,
+    source_link_id: str | None,
+    discovery_note: str | None,
+) -> dict[str, Any]:
+    graph_payload_references = _require_mapping(
+        preset_record.get("graph_payload_references", {}),
+        field_name="query_preset.graph_payload_references",
+    )
+    primary_graph = _require_mapping(
+        graph_payload_references.get("primary_graph", {}),
+        field_name="query_preset.graph_payload_references.primary_graph",
+    )
+    return {
+        "target_kind": "context_query_preset",
+        "linked_session_kind": str(linked_session_kind),
+        "source_bundle_id": str(linked_session["bundle_id"]),
+        "source_metadata_path": str(linked_session["metadata_path"]),
+        "source_preset_id": None if source_preset_id is None else str(source_preset_id),
+        "source_link_id": None if source_link_id is None else str(source_link_id),
+        "artifact_role_id": CONTEXT_VIEW_PAYLOAD_ROLE_ID,
+        "target_preset_id": str(preset_record["preset_id"]),
+        "target_graph_view_id": str(preset_record["primary_graph_view_id"]),
+        "target_payload_path": str(primary_graph["payload_path"]),
+        "target_query_profile_id": str(preset_record["query_profile_id"]),
+        "discovery_note": None if discovery_note is None else str(discovery_note),
+    }
+
+
+def _apply_downstream_module_handoffs_to_preset_payload(
+    *,
+    payload: Mapping[str, Any],
+    handoff_targets: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    result = copy.deepcopy(dict(payload))
+    for graph_key in ("overview_graph", "focused_subgraph"):
+        if isinstance(result.get(graph_key), Mapping):
+            result[graph_key] = _apply_downstream_module_handoffs_to_graph_view(
+                result[graph_key],
+                handoff_targets=handoff_targets,
+            )
+    return result
+
+
+def _apply_downstream_module_handoffs_to_context_record(
+    record: Mapping[str, Any],
+    *,
+    handoff_targets: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    result = copy.deepcopy(dict(record))
+    result["downstream_module_records"] = _apply_handoff_targets_to_module_records(
+        result.get("downstream_module_records", []),
+        handoff_targets=handoff_targets,
+    )
+    return result
+
+
+def _apply_downstream_module_handoffs_to_graph_view(
+    graph_view: Mapping[str, Any],
+    *,
+    handoff_targets: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    result = copy.deepcopy(dict(graph_view))
+    result["downstream_module_records"] = _apply_handoff_targets_to_module_records(
+        result.get("downstream_module_records", []),
+        handoff_targets=handoff_targets,
+    )
+    return result
+
+
+def _apply_handoff_targets_to_module_records(
+    payload: Any,
+    *,
+    handoff_targets: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
+        return []
+    normalized_handoffs = [copy.deepcopy(dict(item)) for item in handoff_targets]
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        record = copy.deepcopy(dict(item))
+        record["handoff_targets"] = normalized_handoffs
+        result.append(record)
+    return result
 
 
 def _build_context_query_catalog(
@@ -2655,6 +2979,22 @@ def _build_linked_sessions(
                 else str(Path(state_ref["path"]).resolve())
             ),
             "focus_root_ids": [] if state is None else _showcase_focus_root_ids(state),
+            "narrative_preset_catalog_path": (
+                None
+                if source_context.get("showcase_context") is None
+                else str(
+                    source_context["showcase_context"].get("narrative_preset_catalog_path")
+                )
+            ),
+            "handoff_links": (
+                []
+                if source_context.get("showcase_context") is None
+                else _discover_showcase_handoff_links(
+                    source_context["showcase_context"].get(
+                        "narrative_preset_catalog", {}
+                    )
+                )
+            ),
         }
     return linked
 
@@ -3306,6 +3646,12 @@ def _normalize_optional_path_string(value: Any) -> str | None:
     if value is None:
         return None
     return str(Path(_normalize_nonempty_string(value, field_name="path")).resolve())
+
+
+def _normalize_optional_string(value: Any, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _normalize_nonempty_string(value, field_name=field_name)
 
 
 def _require_mapping(payload: Any, *, field_name: str) -> dict[str, Any]:

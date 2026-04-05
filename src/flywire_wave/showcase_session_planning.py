@@ -196,6 +196,9 @@ SUPPORTED_SHOWCASE_FIXTURE_MODES = (SHOWCASE_FIXTURE_MODE_REHEARSAL,)
 DEFAULT_SHOWCASE_FIXTURE_MODE = SHOWCASE_FIXTURE_MODE_REHEARSAL
 DEFAULT_NARRATIVE_PRESET_LIBRARY_ID = "milestone16_rehearsal_preset_library.v1"
 
+WHOLE_BRAIN_CONTEXT_HANDOFF_LINK_KIND = "whole_brain_context_handoff"
+WHOLE_BRAIN_CONTEXT_SHOWCASE_HANDOFF_PRESET_ID = "showcase_handoff"
+
 DEFAULT_ACTIVE_PANE_BY_STEP = {
     SCENE_SELECTION_STEP_ID: SCENE_PANE_ID,
     FLY_VIEW_INPUT_STEP_ID: SCENE_PANE_ID,
@@ -3214,7 +3217,22 @@ def _build_saved_presets(
                                     ]
                                 ),
                             },
-                        )
+                        ),
+                        _build_presentation_link(
+                            link_id="analysis_summary_to_whole_brain_context",
+                            link_kind=WHOLE_BRAIN_CONTEXT_HANDOFF_LINK_KIND,
+                            source_pane_id=ANALYSIS_PANE_ID,
+                            target_pane_ids=[ANALYSIS_PANE_ID, CIRCUIT_PANE_ID],
+                            shared_context={
+                                "target_contract_version": "whole_brain_context_session.v1",
+                                "target_context_preset_id": WHOLE_BRAIN_CONTEXT_SHOWCASE_HANDOFF_PRESET_ID,
+                                "discovery_note": (
+                                    "Resolve the linked Milestone 17 context package and "
+                                    "open its showcase_handoff preset instead of rebuilding "
+                                    "context-query logic inside the showcase layer."
+                                ),
+                            },
+                        ),
                     ],
                     "emphasis_state": _build_emphasis_state(
                         emphasis_id="analysis_summary_focus",

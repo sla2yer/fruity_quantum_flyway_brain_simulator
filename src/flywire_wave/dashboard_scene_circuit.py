@@ -1139,6 +1139,19 @@ def _normalize_downstream_module_catalog(payload: Any) -> list[dict[str, Any]]:
                 )
                 if isinstance(record.get("metadata_facet_values", {}), Mapping)
                 else {},
+                "summary_labels": copy.deepcopy(
+                    dict(record.get("summary_labels", {}))
+                )
+                if isinstance(record.get("summary_labels", {}), Mapping)
+                else {},
+                "lineage": copy.deepcopy(dict(record.get("lineage", {})))
+                if isinstance(record.get("lineage", {}), Mapping)
+                else {},
+                "handoff_targets": [
+                    copy.deepcopy(dict(item))
+                    for item in record.get("handoff_targets", [])
+                    if isinstance(item, Mapping)
+                ],
             }
         )
     return result
