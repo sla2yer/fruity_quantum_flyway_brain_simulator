@@ -224,6 +224,8 @@ class ReviewPromptTicketsTest(unittest.TestCase):
             self.assertTrue(summary["success"])
             self.assertEqual(summary["successful_specialization_count"], 2)
             self.assertEqual(summary["successful_review_count"], 2)
+            self.assertEqual(summary["failed_result_count"], 0)
+            self.assertEqual(summary["failed_results"], [])
             self.assertEqual(len(job_calls), 4)
             self.assertEqual(
                 sorted(model for _, model, _ in job_calls),

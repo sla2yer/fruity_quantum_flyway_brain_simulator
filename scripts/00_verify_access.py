@@ -9,14 +9,20 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from dotenv import load_dotenv
+from _startup import bootstrap_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from flywire_wave.auth import ensure_flywire_secret
-from flywire_wave.config import get_config_path, load_config
+
+def _bootstrap_dependencies():
+    from dotenv import load_dotenv
+
+    import flywire_wave.auth as auth_module
+    import flywire_wave.config as config_module
+
+    return load_dotenv, auth_module, config_module
 
 
 def _http_status(exc: BaseException) -> int | None:
@@ -84,8 +90,13 @@ def _print_next_step(message: str) -> None:
     print(f"Next step: {message}")
 
 
-def _resolved_config_path(cfg: dict[str, Any], fallback: str) -> Path:
-    config_path = get_config_path(cfg)
+def _resolved_config_path(
+    cfg: dict[str, Any],
+    fallback: str,
+    *,
+    config_module: Any,
+) -> Path:
+    config_path = config_module.get_config_path(cfg)
     if config_path is not None:
         return config_path.resolve()
     return Path(fallback).expanduser().resolve()
@@ -180,10 +191,11 @@ def _check_mesh_prerequisites(
     fetch_skeletons: bool,
     token: str,
     config_path: Path,
+    auth_module: Any,
 ) -> int:
     if token:
         try:
-            token_sync = ensure_flywire_secret(token)
+            token_sync = auth_module.ensure_flywire_secret(token)
         except Exception as exc:
             detail = _format_exception(exc)
             print(f"FlyWire token sync failed for `.env` `FLYWIRE_TOKEN`: {detail}")
@@ -259,15 +271,20 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    dependencies = bootstrap_runtime("verify", _bootstrap_dependencies)
+    if dependencies is None:
+        return 1
+    load_dotenv, auth_module, config_module = dependencies
+
     load_dotenv(ROOT / ".env")
     try:
-        cfg = load_config(args.config)
+        cfg = config_module.load_config(args.config)
     except Exception as exc:
         print(f"Could not load config '{args.config}': {_format_exception(exc)}")
         _print_next_step("fix the config file and rerun `make verify`.")
         return 1
 
-    config_path = _resolved_config_path(cfg, args.config)
+    config_path = _resolved_config_path(cfg, args.config, config_module=config_module)
     try:
         dataset_cfg = cfg["dataset"]
         meshing_cfg = dict(cfg.get("meshing", {}))
@@ -372,6 +389,7 @@ def main() -> int:
         fetch_skeletons=fetch_skeletons,
         token=token,
         config_path=config_path,
+        auth_module=auth_module,
     )
     if prerequisite_status != 0:
         return prerequisite_status

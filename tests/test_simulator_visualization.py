@@ -26,7 +26,7 @@ try:
         _remove_selected_edges_for_roots,
         _rewrite_descriptor_fixture,
     )
-    from test_simulation_planning import (
+    from simulation_planning_test_support import (
         _write_manifest_fixture,
         _write_simulation_fixture,
     )
@@ -35,7 +35,7 @@ except ModuleNotFoundError:
         _remove_selected_edges_for_roots,
         _rewrite_descriptor_fixture,
     )
-    from tests.test_simulation_planning import (
+    from tests.simulation_planning_test_support import (
         _write_manifest_fixture,
         _write_simulation_fixture,
     )

@@ -6,12 +6,18 @@ import json
 import sys
 from pathlib import Path
 
+from _startup import bootstrap_runtime
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from flywire_wave.config import get_config_path, load_config
-from flywire_wave.selection import generate_subsets_from_config
+
+def _bootstrap_dependencies():
+    import flywire_wave.config as config_module
+    import flywire_wave.selection as selection_module
+
+    return config_module, selection_module
 
 
 def main() -> int:
@@ -29,10 +35,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
-    summary = generate_subsets_from_config(
+    dependencies = bootstrap_runtime("select", _bootstrap_dependencies)
+    if dependencies is None:
+        return 1
+    config_module, selection_module = dependencies
+
+    cfg = config_module.load_config(args.config)
+    summary = selection_module.generate_subsets_from_config(
         cfg,
-        config_path=get_config_path(cfg),
+        config_path=config_module.get_config_path(cfg),
         preset_name=args.preset,
         generate_all=args.all_presets,
     )

@@ -8,11 +8,26 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from .cli_startup_test_utils import run_script_with_blocked_imports
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class VerifyAccessScriptTest(unittest.TestCase):
+    def test_verify_startup_missing_dotenv_is_shaped(self) -> None:
+        result = run_script_with_blocked_imports(
+            "00_verify_access.py",
+            blocked_imports=["dotenv"],
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        combined_output = result.stdout + result.stderr
+        self.assertNotIn("Traceback", combined_output)
+        self.assertIn("python-dotenv", combined_output)
+        self.assertIn("make bootstrap", combined_output)
+        self.assertIn("make verify", combined_output)
+
     def test_verify_shapes_info_lookup_failures(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)

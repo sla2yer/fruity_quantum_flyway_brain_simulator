@@ -54,7 +54,7 @@ from flywire_wave.stimulus_contract import (
     load_stimulus_bundle_metadata,
     write_stimulus_bundle_metadata,
 )
-from test_simulation_planning import (
+from simulation_planning_test_support import (
     _record_fixture_stimulus_bundle,
     _write_manifest_fixture,
     _write_simulation_fixture,

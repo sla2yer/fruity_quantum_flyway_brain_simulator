@@ -33,13 +33,13 @@ from flywire_wave.experiment_suite_planning import (
 from flywire_wave.selection import build_subset_artifact_paths
 from flywire_wave.simulation_planning import SIMULATION_PLAN_VERSION
 try:
-    from tests.test_simulation_planning import (
+    from tests.simulation_planning_test_support import (
         _record_fixture_stimulus_bundle,
         _write_manifest_fixture,
         _write_simulation_fixture,
     )
 except ModuleNotFoundError:
-    from test_simulation_planning import (  # type: ignore[no-redef]
+    from simulation_planning_test_support import (  # type: ignore[no-redef]
         _record_fixture_stimulus_bundle,
         _write_manifest_fixture,
         _write_simulation_fixture,

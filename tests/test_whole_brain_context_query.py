@@ -324,9 +324,9 @@ class WholeBrainContextQueryTest(unittest.TestCase):
 
     def test_resolved_plan_and_packaged_payload_embed_query_execution(self) -> None:
         try:
-            from tests.test_simulation_planning import _write_simulation_fixture
+            from tests.simulation_planning_test_support import _write_simulation_fixture
         except ModuleNotFoundError:
-            from test_simulation_planning import _write_simulation_fixture  # type: ignore[no-redef]
+            from simulation_planning_test_support import _write_simulation_fixture  # type: ignore[no-redef]
 
         try:
             from tests.test_whole_brain_context_planning import (

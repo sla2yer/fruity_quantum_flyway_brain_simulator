@@ -16,6 +16,7 @@ sys.path.insert(0, str(SRC))
 
 from flywire_wave.agent_tickets import select_cli_runner
 from flywire_wave.review_prompt_tickets import (
+    collect_failed_prompt_job_summaries,
     execute_review_prompt_workflow,
     filter_review_prompt_sets,
     load_review_prompt_sets,
@@ -176,6 +177,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Summary written to {summary['summary_path']}", flush=True)
     if summary["combined_tickets_path"]:
         print(f"Combined tickets written to {summary['combined_tickets_path']}", flush=True)
+    failed_results = collect_failed_prompt_job_summaries(summary)
+    if failed_results:
+        print("Failed prompt jobs:", flush=True)
+        for failure in failed_results:
+            artifact_text = ", ".join(failure["diagnostic_paths"])
+            if not artifact_text:
+                artifact_text = "(no prompt-job diagnostics were written)"
+            print(
+                (
+                    f"- prompt_set={failure['prompt_set']} "
+                    f"stage={failure['stage']} "
+                    f"returncode={failure['returncode']} "
+                    f"artifacts={artifact_text}"
+                ),
+                flush=True,
+            )
 
     return 0 if summary["success"] else 1
 

@@ -1,0 +1,11 @@
+**Changed**
+- Added a shared stdlib-only startup guard in [scripts/_startup.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/_startup.py) that turns startup `ModuleNotFoundError` into one operator-facing message naming the missing package and pointing to `make bootstrap`.
+- Refactored [scripts/00_verify_access.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py), [scripts/01_select_subset.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/01_select_subset.py), [scripts/02_fetch_meshes.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py), and [scripts/03_build_wave_assets.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/03_build_wave_assets.py) so non-stdlib imports happen inside guarded bootstrap functions instead of at module load. `verify`, `select`, `meshes`, and `assets` now fail cleanly for missing `python-dotenv`, `networkx`, `tqdm`, or `trimesh` without emitting a traceback.
+- Added coverage in [tests/test_verify_access.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py), [tests/test_cli_startup.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_cli_startup.py), and [tests/cli_startup_test_utils.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/cli_startup_test_utils.py) to simulate missing imports in subprocesses.
+
+**Verified**
+- `./.venv/bin/python -m py_compile scripts/_startup.py scripts/00_verify_access.py scripts/01_select_subset.py scripts/02_fetch_meshes.py scripts/03_build_wave_assets.py tests/cli_startup_test_utils.py tests/test_cli_startup.py tests/test_verify_access.py`
+- `./.venv/bin/python -m unittest tests.test_verify_access tests.test_cli_startup -v` passed, `13` tests total.
+- Direct blocked-import checks for `make verify`, `make select`, `make meshes`, and `make assets` all failed nonzero without `Traceback` and printed the expected missing-package plus `make bootstrap` guidance.
+
+I did not run the full repo `make test`; I ran the targeted CLI/verify suites relevant to OPS-002.

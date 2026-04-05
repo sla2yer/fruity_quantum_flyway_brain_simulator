@@ -42,13 +42,13 @@ except ModuleNotFoundError:
     )
 
 try:
-    from tests.test_simulation_planning import (
+    from tests.simulation_planning_test_support import (
         _record_fixture_stimulus_bundle,
         _write_manifest_fixture,
         _write_simulation_fixture,
     )
 except ModuleNotFoundError:
-    from test_simulation_planning import (  # type: ignore[no-redef]
+    from simulation_planning_test_support import (  # type: ignore[no-redef]
         _record_fixture_stimulus_bundle,
         _write_manifest_fixture,
         _write_simulation_fixture,

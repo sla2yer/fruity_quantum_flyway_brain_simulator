@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +18,7 @@ SPECIALIZED_PROMPT_FILENAME = "specialized_prompt.md"
 TICKETS_FILENAME = "tickets.md"
 SUMMARY_FILENAME = "summary.json"
 COMBINED_TICKETS_FILENAME = "combined_tickets.md"
+PROMPT_RUN_DIAGNOSTIC_FIELDS = ("stderr_path", "stdout_path", "last_message_path")
 
 
 @dataclass(frozen=True)
@@ -241,6 +242,67 @@ def _sync_prompt_artifacts(staging_dir: Path, target_dir: Path) -> None:
             target_path.unlink()
 
 
+def collect_prompt_job_diagnostic_paths(result: Mapping[str, Any]) -> list[str]:
+    non_empty_paths: list[str] = []
+    existing_paths: list[str] = []
+    for field_name in PROMPT_RUN_DIAGNOSTIC_FIELDS:
+        path_text = str(result.get(field_name, "") or "").strip()
+        if not path_text:
+            continue
+        path = Path(path_text)
+        if not path.exists():
+            continue
+        resolved_path = str(path.resolve())
+        existing_paths.append(resolved_path)
+        try:
+            if path.stat().st_size > 0:
+                non_empty_paths.append(resolved_path)
+        except OSError:
+            continue
+    return non_empty_paths or existing_paths
+
+
+def annotate_prompt_job_result(result: dict[str, Any]) -> dict[str, Any]:
+    result["diagnostic_paths"] = collect_prompt_job_diagnostic_paths(result)
+    return result
+
+
+def collect_failed_prompt_job_summaries(summary: Mapping[str, Any]) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for field_name in ("specialization_results", "review_results"):
+        results = summary.get(field_name, [])
+        if not isinstance(results, Sequence):
+            continue
+        for raw_result in results:
+            if not isinstance(raw_result, Mapping):
+                continue
+            try:
+                return_code = int(raw_result.get("returncode", -1))
+            except (TypeError, ValueError):
+                return_code = -1
+            if return_code == 0:
+                continue
+            diagnostic_paths = raw_result.get("diagnostic_paths")
+            if not isinstance(diagnostic_paths, Sequence) or isinstance(
+                diagnostic_paths, str
+            ):
+                diagnostic_paths = collect_prompt_job_diagnostic_paths(raw_result)
+            failures.append(
+                {
+                    "prompt_set": str(raw_result.get("prompt_set", "")).strip(),
+                    "title": str(raw_result.get("title", "")).strip(),
+                    "stage": str(raw_result.get("stage", "")).strip(),
+                    "returncode": return_code,
+                    "diagnostic_paths": [
+                        str(path).strip()
+                        for path in diagnostic_paths
+                        if str(path).strip()
+                    ],
+                }
+            )
+    return failures
+
+
 def run_prompt_job(
     job_name: str,
     *,
@@ -286,43 +348,48 @@ def run_prompt_job(
         if extra_args:
             cmd.extend(extra_args)
 
-        process = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            **_ticket_runner_popen_kwargs(),
-        )
-        assert process.stdin is not None
-        process.stdin.write(prompt_text)
-        process.stdin.close()
+        with staging_stderr_path.open("w", encoding="utf-8") as stderr_file:
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=stderr_file,
+                text=True,
+                **_ticket_runner_popen_kwargs(),
+            )
+            assert process.stdin is not None
+            process.stdin.write(prompt_text)
+            process.stdin.close()
 
-        return_code = _stream_ticket_process(
-            process,
-            raw_output_path=staging_stdout_path,
-            progress_callback=progress_callback,
-            heartbeat_seconds=heartbeat_seconds,
-            heartbeat_label=job_name,
-        )
+            try:
+                return_code = _stream_ticket_process(
+                    process,
+                    raw_output_path=staging_stdout_path,
+                    progress_callback=progress_callback,
+                    heartbeat_seconds=heartbeat_seconds,
+                    heartbeat_label=job_name,
+                )
+            finally:
+                if process.stdout is not None:
+                    process.stdout.close()
 
-        if not staging_stderr_path.exists():
-            staging_stderr_path.write_text("", encoding="utf-8")
         if not staging_last_message_path.exists():
             staging_last_message_path.write_text("", encoding="utf-8")
 
         _sync_prompt_artifacts(staging_dir, output_dir)
 
-    return {
-        "job_name": job_name,
-        "command": cmd,
-        "returncode": int(return_code),
-        "output_dir": str(output_dir),
-        "prompt_path": str(prompt_path),
-        "stdout_path": str(stdout_path),
-        "stderr_path": str(stderr_path),
-        "last_message_path": str(last_message_path),
-    }
+    return annotate_prompt_job_result(
+        {
+            "job_name": job_name,
+            "command": cmd,
+            "returncode": int(return_code),
+            "output_dir": str(output_dir),
+            "prompt_path": str(prompt_path),
+            "stdout_path": str(stdout_path),
+            "stderr_path": str(stderr_path),
+            "last_message_path": str(last_message_path),
+        }
+    )
 
 
 def _write_stage_output_copy(source_path: Path, target_path: Path) -> Path:
@@ -355,6 +422,7 @@ def _make_failure_result(
         "returncode": -1,
         "output_dir": str(output_dir),
         "error": error_text,
+        "diagnostic_paths": [],
     }
 
 
@@ -467,6 +535,7 @@ def execute_specialized_review_refresh(
             ),
             heartbeat_seconds=heartbeat_seconds,
         )
+        annotate_prompt_job_result(result)
         result.update(
             {
                 "stage": "refresh",
@@ -572,6 +641,7 @@ def execute_review_prompt_workflow(
             ),
             heartbeat_seconds=heartbeat_seconds,
         )
+        annotate_prompt_job_result(result)
         result.update(
             {
                 "stage": "specialization",
@@ -642,6 +712,7 @@ def execute_review_prompt_workflow(
                 ),
                 heartbeat_seconds=heartbeat_seconds,
             )
+            annotate_prompt_job_result(result)
             result.update(
                 {
                     "stage": "review",
@@ -695,6 +766,8 @@ def execute_review_prompt_workflow(
     summary["successful_review_count"] = sum(
         1 for result in review_results if result.get("returncode") == 0
     )
+    summary["failed_results"] = collect_failed_prompt_job_summaries(summary)
+    summary["failed_result_count"] = len(summary["failed_results"])
     summary["success"] = (
         len(specialization_failures) == 0
         and len(review_results) == len(successful_specializations)

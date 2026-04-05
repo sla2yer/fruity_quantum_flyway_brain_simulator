@@ -18,9 +18,9 @@ from flywire_wave.milestone9_readiness import (
 )
 from flywire_wave.selection import build_subset_artifact_paths
 try:
-    from tests.test_simulation_planning import _write_manifest_fixture
+    from tests.simulation_planning_test_support import _write_manifest_fixture
 except ModuleNotFoundError:
-    from test_simulation_planning import _write_manifest_fixture  # type: ignore[no-redef]
+    from simulation_planning_test_support import _write_manifest_fixture  # type: ignore[no-redef]
 
 
 class Milestone9ReadinessReportTest(unittest.TestCase):

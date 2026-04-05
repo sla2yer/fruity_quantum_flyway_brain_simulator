@@ -48,6 +48,12 @@ data/processed/previews/root-ids-101-102/root_ids.txt
 That makes the report path stable enough to reference from run logs, ticket
 notes, or review comments.
 
+If one or more required preview inputs are missing, the command still writes the
+deterministic preview directory and returns a structured blocked summary instead
+of aborting on the first `FileNotFoundError`. The summary records the blocked
+root IDs, missing asset keys, resolved paths, and whether the operator should
+rerun `make meshes`, `make assets`, or both.
+
 ## What the report shows
 
 Each root section keeps the following in one place:

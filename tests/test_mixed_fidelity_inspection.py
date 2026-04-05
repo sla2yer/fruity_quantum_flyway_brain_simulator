@@ -24,7 +24,7 @@ from flywire_wave.mixed_fidelity_inspection import (
 )
 from flywire_wave.simulation_planning import resolve_manifest_mixed_fidelity_plan
 from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
-from test_simulation_planning import (
+from simulation_planning_test_support import (
     _write_manifest_fixture,
     _write_simulation_fixture,
 )

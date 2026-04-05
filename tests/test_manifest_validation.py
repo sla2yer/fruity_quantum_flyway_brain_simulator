@@ -16,9 +16,9 @@ from flywire_wave.simulation_planning import resolve_manifest_simulation_plan
 from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
 
 try:
-    from test_simulation_planning import _write_simulation_fixture
+    from simulation_planning_test_support import _write_simulation_fixture
 except ModuleNotFoundError:
-    from tests.test_simulation_planning import _write_simulation_fixture
+    from tests.simulation_planning_test_support import _write_simulation_fixture
 
 
 class ManifestValidationTest(unittest.TestCase):

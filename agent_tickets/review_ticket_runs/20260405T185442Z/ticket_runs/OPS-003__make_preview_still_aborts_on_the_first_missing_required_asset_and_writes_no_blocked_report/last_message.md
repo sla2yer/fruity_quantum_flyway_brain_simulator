@@ -1,0 +1,13 @@
+Implemented OPS-003 in [geometry_preview.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L74), [test_geometry_preview.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_geometry_preview.py#L78), and [geometry_preview.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/geometry_preview.md#L51).
+
+- [geometry_preview.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L74): preview generation now collects missing required inputs per root, writes the deterministic bundle anyway, and returns a structured blocked summary instead of raising `FileNotFoundError`.
+- [geometry_preview.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L158): added blocked root entries with aggregated `missing_prerequisites`, resolved paths, and rerun guidance for `make meshes`, `make assets`, or `both`.
+- [geometry_preview.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L956): HTML now renders blocked roots and operator-action guidance while preserving the existing ready-path preview sections.
+- [test_geometry_preview.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_geometry_preview.py#L78): added the missing-prerequisite regression covering multiple blocked roots/assets and no-traceback behavior.
+- [geometry_preview.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/geometry_preview.md#L51): documented the new blocked-summary behavior.
+
+Verified with:
+- `./.venv/bin/python -m unittest tests.test_geometry_preview tests.test_operator_qa`
+- `make assets CONFIG=/tmp/ops003_preview_verify_1p0UiG/config.yaml`
+- `make preview CONFIG=/tmp/ops003_preview_verify_1p0UiG/config.yaml` on the fully built scratch set: wrote the preview bundle and returned `overall_status: "ready"`.
+- After removing `720575940603011808_patch_graph.npz`, `720575940603067360.ply`, and `720575940603067360_graph.npz` in that scratch config, reran `make preview CONFIG=/tmp/ops003_preview_verify_1p0UiG/config.yaml`: it still wrote `index.html`, `summary.json`, and `root_ids.txt`, returned `overall_status: "blocked"`, `blocked_root_count: 2`, `missing_prerequisite_count: 3`, and emitted no traceback.

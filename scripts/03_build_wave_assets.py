@@ -6,31 +6,36 @@ import json
 import sys
 from pathlib import Path
 
-import pandas as pd
-from tqdm import tqdm
+from _startup import bootstrap_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from flywire_wave.config import load_config
-from flywire_wave.coupling_contract import normalize_coupling_assembly_config
-from flywire_wave.geometry_contract import (
-    ASSET_STATUS_READY,
-    RAW_MESH_KEY,
-    RAW_SKELETON_KEY,
-    build_geometry_bundle_paths,
-    build_geometry_manifest_record,
-    default_asset_statuses,
-    load_geometry_manifest_records,
-    merge_geometry_manifest_record,
-    normalize_operator_assembly_config,
-    write_geometry_manifest,
-)
-from flywire_wave.io_utils import read_root_ids
-from flywire_wave.mesh_pipeline import process_mesh_into_wave_assets
-from flywire_wave.registry import load_neuron_registry, validate_selected_root_ids
-from flywire_wave.synapse_mapping import materialize_synapse_anchor_maps
+
+def _bootstrap_dependencies():
+    import pandas as pd
+    from tqdm import tqdm
+
+    import flywire_wave.coupling_contract as coupling_contract
+    import flywire_wave.geometry_contract as geometry_contract
+    import flywire_wave.io_utils as io_utils
+    import flywire_wave.mesh_pipeline as mesh_pipeline
+    import flywire_wave.registry as registry_module
+    import flywire_wave.synapse_mapping as synapse_mapping
+    from flywire_wave.config import load_config
+
+    return (
+        pd,
+        tqdm,
+        load_config,
+        coupling_contract,
+        geometry_contract,
+        io_utils,
+        mesh_pipeline,
+        registry_module,
+        synapse_mapping,
+    )
 
 
 def _json_safe(value: object) -> object:
@@ -44,14 +49,19 @@ def _json_safe(value: object) -> object:
     return str(value)
 
 
-def _asset_statuses_for_attempt(*, bundle_paths: object, fetch_skeletons: bool) -> dict[str, str]:
-    asset_statuses = default_asset_statuses(fetch_skeletons=fetch_skeletons)
+def _asset_statuses_for_attempt(
+    *,
+    bundle_paths: object,
+    fetch_skeletons: bool,
+    geometry_contract: object,
+) -> dict[str, str]:
+    asset_statuses = geometry_contract.default_asset_statuses(fetch_skeletons=fetch_skeletons)
     raw_mesh_path = getattr(bundle_paths, "raw_mesh_path")
     raw_skeleton_path = getattr(bundle_paths, "raw_skeleton_path")
     if Path(raw_mesh_path).exists():
-        asset_statuses[RAW_MESH_KEY] = ASSET_STATUS_READY
+        asset_statuses[geometry_contract.RAW_MESH_KEY] = geometry_contract.ASSET_STATUS_READY
     if Path(raw_skeleton_path).exists():
-        asset_statuses[RAW_SKELETON_KEY] = ASSET_STATUS_READY
+        asset_statuses[geometry_contract.RAW_SKELETON_KEY] = geometry_contract.ASSET_STATUS_READY
     return asset_statuses
 
 
@@ -64,25 +74,44 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    dependencies = bootstrap_runtime("assets", _bootstrap_dependencies)
+    if dependencies is None:
+        return 1
+    (
+        pd,
+        progress,
+        load_config,
+        coupling_contract,
+        geometry_contract,
+        io_utils,
+        mesh_pipeline,
+        registry_module,
+        synapse_mapping,
+    ) = dependencies
+
     cfg = load_config(args.config)
     paths = cfg["paths"]
     meshing = dict(cfg["meshing"])
-    meshing["operator_assembly"] = normalize_operator_assembly_config(meshing.get("operator_assembly"))
-    meshing["coupling_assembly"] = normalize_coupling_assembly_config(meshing.get("coupling_assembly"))
+    meshing["operator_assembly"] = geometry_contract.normalize_operator_assembly_config(
+        meshing.get("operator_assembly")
+    )
+    meshing["coupling_assembly"] = coupling_contract.normalize_coupling_assembly_config(
+        meshing.get("coupling_assembly")
+    )
     dataset = cfg["dataset"].get("flywire_dataset", "public")
     materialization_version = cfg["dataset"].get("materialization_version")
     registry_path = paths.get("neuron_registry_csv", "data/interim/registry/neuron_registry.csv")
     processed_coupling_dir = paths.get("processed_coupling_dir")
 
-    root_ids = read_root_ids(paths["selected_root_ids"])
+    root_ids = io_utils.read_root_ids(paths["selected_root_ids"])
     if not root_ids:
         raise RuntimeError("No root IDs found. Run scripts/01_select_subset.py first.")
 
-    registry_df = load_neuron_registry(registry_path)
-    validate_selected_root_ids(root_ids, registry_df, registry_path)
+    registry_df = registry_module.load_neuron_registry(registry_path)
+    registry_module.validate_selected_root_ids(root_ids, registry_df, registry_path)
 
     registry = registry_df.set_index("root_id", drop=False)
-    existing_records = load_geometry_manifest_records(paths["manifest_json"])
+    existing_records = geometry_contract.load_geometry_manifest_records(paths["manifest_json"])
     manifest_records: dict[int, dict[str, object]] = {}
     root_results: dict[int, dict[str, object]] = {}
     built_root_ids: list[int] = []
@@ -102,15 +131,19 @@ def main() -> int:
     }
     coupling_failed = False
     fetch_skeletons = bool(meshing.get("fetch_skeletons", True))
-    for root_id in tqdm(root_ids, desc="Building wave assets"):
-        bundle_paths = build_geometry_bundle_paths(
+    for root_id in progress(root_ids, desc="Building wave assets"):
+        bundle_paths = geometry_contract.build_geometry_bundle_paths(
             root_id,
             meshes_raw_dir=paths["meshes_raw_dir"],
             skeletons_raw_dir=paths["skeletons_raw_dir"],
             processed_mesh_dir=paths["processed_mesh_dir"],
             processed_graph_dir=paths["processed_graph_dir"],
         )
-        asset_statuses = _asset_statuses_for_attempt(bundle_paths=bundle_paths, fetch_skeletons=fetch_skeletons)
+        asset_statuses = _asset_statuses_for_attempt(
+            bundle_paths=bundle_paths,
+            fetch_skeletons=fetch_skeletons,
+            geometry_contract=geometry_contract,
+        )
         existing_record = existing_records.get(bundle_paths.root_label, {})
 
         registry_metadata: dict[str, object] = {}
@@ -133,15 +166,15 @@ def main() -> int:
                 "input_errors": [
                     {
                         "code": "missing_raw_mesh",
-                        "asset_key": RAW_MESH_KEY,
+                        "asset_key": geometry_contract.RAW_MESH_KEY,
                         "path": str(bundle_paths.raw_mesh_path),
                     }
                 ],
                 "errors": [],
             }
-            manifest_record = merge_geometry_manifest_record(
+            manifest_record = geometry_contract.merge_geometry_manifest_record(
                 existing_record,
-                build_geometry_manifest_record(
+                geometry_contract.build_geometry_manifest_record(
                     bundle_paths=bundle_paths,
                     asset_statuses=asset_statuses,
                     dataset_name=str(dataset),
@@ -167,7 +200,7 @@ def main() -> int:
             continue
 
         try:
-            outputs = process_mesh_into_wave_assets(
+            outputs = mesh_pipeline.process_mesh_into_wave_assets(
                 root_id=root_id,
                 bundle_paths=bundle_paths,
                 simplify_target_faces=int(meshing.get("simplify_target_faces", 15000)),
@@ -194,9 +227,9 @@ def main() -> int:
                     }
                 ],
             }
-            manifest_record = merge_geometry_manifest_record(
+            manifest_record = geometry_contract.merge_geometry_manifest_record(
                 existing_record,
-                build_geometry_manifest_record(
+                geometry_contract.build_geometry_manifest_record(
                     bundle_paths=bundle_paths,
                     asset_statuses=asset_statuses,
                     dataset_name=str(dataset),
@@ -255,9 +288,9 @@ def main() -> int:
             "errors": [],
             "qa_summary": dict(qa_summary),
         }
-        manifest_record = merge_geometry_manifest_record(
+        manifest_record = geometry_contract.merge_geometry_manifest_record(
             existing_record,
-            build_geometry_manifest_record(
+            geometry_contract.build_geometry_manifest_record(
                 bundle_paths=bundle_paths,
                 asset_statuses=asset_statuses,
                 dataset_name=str(dataset),
@@ -276,7 +309,7 @@ def main() -> int:
         built_root_ids.append(int(root_id))
 
     try:
-        mapping_summary = materialize_synapse_anchor_maps(
+        mapping_summary = synapse_mapping.materialize_synapse_anchor_maps(
             root_ids=root_ids,
             processed_coupling_dir=processed_coupling_dir,
             meshes_raw_dir=paths["meshes_raw_dir"],
@@ -321,7 +354,7 @@ def main() -> int:
             "root_summaries": {},
         }
 
-    write_geometry_manifest(
+    geometry_contract.write_geometry_manifest(
         manifest_path=paths["manifest_json"],
         bundle_records=manifest_records,
         dataset_name=str(dataset),

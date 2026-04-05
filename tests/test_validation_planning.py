@@ -48,12 +48,12 @@ from flywire_wave.validation_planning import (
 )
 
 try:
-    from test_simulation_planning import (
+    from simulation_planning_test_support import (
         _record_fixture_stimulus_bundle,
         _write_simulation_fixture,
     )
 except ModuleNotFoundError:
-    from tests.test_simulation_planning import (
+    from tests.simulation_planning_test_support import (
         _record_fixture_stimulus_bundle,
         _write_simulation_fixture,
     )

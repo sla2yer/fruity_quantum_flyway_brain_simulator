@@ -5,18 +5,24 @@ import html
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 import numpy as np
 import scipy.sparse as sp
 import trimesh
 
-from .geometry_contract import build_geometry_bundle_paths
+from .geometry_contract import (
+    PATCH_GRAPH_KEY,
+    RAW_MESH_KEY,
+    SIMPLIFIED_MESH_KEY,
+    SURFACE_GRAPH_KEY,
+    build_geometry_bundle_paths,
+)
 from .geometry_qa import describe_skeleton
 from .io_utils import ensure_dir, write_json
 
 
-PREVIEW_REPORT_VERSION = "geometry_preview.v1"
+PREVIEW_REPORT_VERSION = "geometry_preview.v2"
 SVG_WIDTH = 320
 SVG_HEIGHT = 260
 SVG_PADDING = 18.0
@@ -38,6 +44,23 @@ PATCH_PALETTE = (
     "#854d0e",
     "#166534",
 )
+PREVIEW_STATUS_READY = "ready"
+PREVIEW_STATUS_BLOCKED = "blocked"
+_MAKE_MESHES_TARGET = "make meshes"
+_MAKE_ASSETS_TARGET = "make assets"
+_REQUIRED_PREVIEW_INPUTS = (
+    (RAW_MESH_KEY, "raw_mesh_path"),
+    (SIMPLIFIED_MESH_KEY, "simplified_mesh_path"),
+    (SURFACE_GRAPH_KEY, "surface_graph_path"),
+    (PATCH_GRAPH_KEY, "patch_graph_path"),
+)
+_REMEDIATION_TARGETS_BY_ASSET_KEY = {
+    RAW_MESH_KEY: (_MAKE_MESHES_TARGET, _MAKE_ASSETS_TARGET),
+    SIMPLIFIED_MESH_KEY: (_MAKE_ASSETS_TARGET,),
+    SURFACE_GRAPH_KEY: (_MAKE_ASSETS_TARGET,),
+    PATCH_GRAPH_KEY: (_MAKE_ASSETS_TARGET,),
+}
+_MAKE_TARGET_ORDER = (_MAKE_MESHES_TARGET, _MAKE_ASSETS_TARGET)
 
 
 @dataclass(frozen=True)
@@ -68,6 +91,7 @@ def generate_geometry_preview_report(
             skeletons_raw_dir=skeletons_raw_dir,
             processed_mesh_dir=processed_mesh_dir,
             processed_graph_dir=processed_graph_dir,
+            output_dir=output_dir,
         )
         for root_id in normalized_root_ids
     ]
@@ -75,6 +99,15 @@ def generate_geometry_preview_report(
     index_path = (output_dir / "index.html").resolve()
     summary_path = (output_dir / "summary.json").resolve()
     root_ids_path = (output_dir / "root_ids.txt").resolve()
+    blocked_root_entries = [
+        entry for entry in root_entries if str(entry["summary"]["preview_status"]) == PREVIEW_STATUS_BLOCKED
+    ]
+    missing_prerequisites = [
+        {"root_id": int(entry["root_id"]), **dict(item)}
+        for entry in root_entries
+        for item in entry.get("missing_prerequisites", [])
+    ]
+    recommended_make_targets = _aggregate_make_targets(missing_prerequisites)
 
     summary = {
         "report_version": PREVIEW_REPORT_VERSION,
@@ -84,17 +117,15 @@ def generate_geometry_preview_report(
         "summary_path": str(summary_path),
         "root_ids_path": str(root_ids_path),
         "root_count": len(normalized_root_ids),
-        "roots": {
-            str(entry["root_id"]): {
-                "qa_overall_status": entry["qa_summary"].get("overall_status", "unknown"),
-                "skeleton_available": bool(entry["stats"]["skeleton_available"]),
-                "patch_count": entry["stats"]["patch_count"],
-                "surface_graph_edge_count": entry["stats"]["surface_graph_edge_count"],
-                "patch_graph_edge_count": entry["stats"]["patch_graph_edge_count"],
-                "artifacts": entry["artifacts"],
-            }
-            for entry in root_entries
-        },
+        "overall_status": PREVIEW_STATUS_BLOCKED if blocked_root_entries else PREVIEW_STATUS_READY,
+        "ready_root_count": len(normalized_root_ids) - len(blocked_root_entries),
+        "blocked_root_count": len(blocked_root_entries),
+        "missing_prerequisite_count": len(missing_prerequisites),
+        "missing_prerequisite_root_ids": [int(entry["root_id"]) for entry in blocked_root_entries],
+        "missing_prerequisites": missing_prerequisites,
+        "recommended_make_targets": recommended_make_targets,
+        "recommended_make_target_scope": _summarize_make_targets(recommended_make_targets),
+        "roots": {str(entry["root_id"]): _root_summary_payload(entry) for entry in root_entries},
     }
 
     index_path.write_text(_render_report_html(root_entries, summary), encoding="utf-8")
@@ -131,6 +162,7 @@ def _build_root_preview_entry(
     skeletons_raw_dir: str | Path,
     processed_mesh_dir: str | Path,
     processed_graph_dir: str | Path,
+    output_dir: Path,
 ) -> dict[str, Any]:
     bundle_paths = build_geometry_bundle_paths(
         root_id,
@@ -139,10 +171,14 @@ def _build_root_preview_entry(
         processed_mesh_dir=processed_mesh_dir,
         processed_graph_dir=processed_graph_dir,
     )
-    _require_path(bundle_paths.raw_mesh_path)
-    _require_path(bundle_paths.simplified_mesh_path)
-    _require_path(bundle_paths.surface_graph_path)
-    _require_path(bundle_paths.patch_graph_path)
+    missing_prerequisites = _collect_missing_preview_inputs(bundle_paths)
+    if missing_prerequisites:
+        return _build_blocked_root_preview_entry(
+            root_id=root_id,
+            bundle_paths=bundle_paths,
+            output_dir=output_dir,
+            missing_prerequisites=missing_prerequisites,
+        )
 
     raw_mesh = _load_trimesh(bundle_paths.raw_mesh_path)
     simplified_mesh = _load_trimesh(bundle_paths.simplified_mesh_path)
@@ -276,12 +312,17 @@ def _build_root_preview_entry(
 
     return {
         "root_id": int(root_id),
+        "summary": {
+            "preview_status": PREVIEW_STATUS_READY,
+            "qa_overall_status": str(qa_summary.get("overall_status", "unknown")),
+        },
         "qa_summary": qa_summary,
         "qa_highlights": qa_highlights,
         "registry_metadata": registry_metadata,
         "summary_rows": summary_rows,
         "panels": panels,
         "stats": stats,
+        "missing_prerequisites": [],
         "artifacts": {
             "raw_mesh_path": str(bundle_paths.raw_mesh_path.resolve()),
             "raw_skeleton_path": str(bundle_paths.raw_skeleton_path.resolve()),
@@ -292,6 +333,124 @@ def _build_root_preview_entry(
             "qa_sidecar_path": str(bundle_paths.qa_sidecar_path.resolve()),
         },
     }
+
+
+def _root_summary_payload(entry: Mapping[str, Any]) -> dict[str, Any]:
+    summary = {
+        "preview_status": str(entry["summary"]["preview_status"]),
+        "qa_overall_status": str(entry["summary"].get("qa_overall_status", "unknown")),
+        "artifacts": dict(entry["artifacts"]),
+    }
+    if summary["preview_status"] == PREVIEW_STATUS_BLOCKED:
+        summary["missing_prerequisite_count"] = int(entry["summary"].get("missing_prerequisite_count", 0))
+        summary["missing_prerequisites"] = list(entry.get("missing_prerequisites", []))
+        summary["recommended_make_targets"] = list(entry["summary"].get("recommended_make_targets", []))
+        summary["recommended_make_target_scope"] = str(entry["summary"].get("recommended_make_target_scope", "none"))
+        return summary
+
+    summary.update(
+        {
+            "skeleton_available": bool(entry["stats"]["skeleton_available"]),
+            "patch_count": int(entry["stats"]["patch_count"]),
+            "surface_graph_edge_count": int(entry["stats"]["surface_graph_edge_count"]),
+            "patch_graph_edge_count": int(entry["stats"]["patch_graph_edge_count"]),
+        }
+    )
+    return summary
+
+
+def _collect_missing_preview_inputs(bundle_paths: Any) -> list[dict[str, Any]]:
+    missing_prerequisites: list[dict[str, Any]] = []
+    for asset_key, attribute_name in _REQUIRED_PREVIEW_INPUTS:
+        path = Path(getattr(bundle_paths, attribute_name))
+        if path.exists():
+            continue
+        recommended_make_targets = list(_REMEDIATION_TARGETS_BY_ASSET_KEY.get(str(asset_key), (_MAKE_ASSETS_TARGET,)))
+        missing_prerequisites.append(
+            {
+                "asset_key": str(asset_key),
+                "path": str(path.resolve()),
+                "reason": "missing_required_preview_input",
+                "recommended_make_targets": recommended_make_targets,
+                "recommended_make_target_scope": _summarize_make_targets(recommended_make_targets),
+            }
+        )
+    return missing_prerequisites
+
+
+def _build_blocked_root_preview_entry(
+    *,
+    root_id: int,
+    bundle_paths: Any,
+    output_dir: Path,
+    missing_prerequisites: list[dict[str, Any]],
+) -> dict[str, Any]:
+    recommended_make_targets = _aggregate_make_targets(missing_prerequisites)
+    return {
+        "root_id": int(root_id),
+        "summary": {
+            "preview_status": PREVIEW_STATUS_BLOCKED,
+            "qa_overall_status": "not_available",
+            "missing_prerequisite_count": len(missing_prerequisites),
+            "recommended_make_targets": recommended_make_targets,
+            "recommended_make_target_scope": _summarize_make_targets(recommended_make_targets),
+        },
+        "qa_summary": {"overall_status": "not_available"},
+        "qa_highlights": [],
+        "registry_metadata": {},
+        "summary_rows": [
+            ("Preview status", PREVIEW_STATUS_BLOCKED),
+            ("Missing prerequisites", str(len(missing_prerequisites))),
+            ("Operator action", _format_make_target_guidance(recommended_make_targets)),
+        ],
+        "panels": [],
+        "stats": {},
+        "missing_prerequisites": list(missing_prerequisites),
+        "artifacts": {
+            "output_dir": str(output_dir.resolve()),
+            "raw_mesh_path": str(bundle_paths.raw_mesh_path.resolve()),
+            "raw_skeleton_path": str(bundle_paths.raw_skeleton_path.resolve()),
+            "simplified_mesh_path": str(bundle_paths.simplified_mesh_path.resolve()),
+            "surface_graph_path": str(bundle_paths.surface_graph_path.resolve()),
+            "patch_graph_path": str(bundle_paths.patch_graph_path.resolve()),
+            "descriptor_sidecar_path": str(bundle_paths.descriptor_sidecar_path.resolve()),
+            "qa_sidecar_path": str(bundle_paths.qa_sidecar_path.resolve()),
+        },
+    }
+
+
+def _aggregate_make_targets(records: Iterable[Mapping[str, Any]]) -> list[str]:
+    requested_targets = {
+        str(target)
+        for record in records
+        for target in record.get("recommended_make_targets", [])
+        if str(target).strip()
+    }
+    return [target for target in _MAKE_TARGET_ORDER if target in requested_targets]
+
+
+def _summarize_make_targets(targets: Iterable[str]) -> str:
+    normalized_targets = [str(target) for target in targets if str(target).strip()]
+    has_make_meshes = _MAKE_MESHES_TARGET in normalized_targets
+    has_make_assets = _MAKE_ASSETS_TARGET in normalized_targets
+    if has_make_meshes and has_make_assets:
+        return "both"
+    if has_make_meshes:
+        return _MAKE_MESHES_TARGET
+    if has_make_assets:
+        return _MAKE_ASSETS_TARGET
+    return "none"
+
+
+def _format_make_target_guidance(targets: Iterable[str]) -> str:
+    target_summary = _summarize_make_targets(targets)
+    if target_summary == "both":
+        return "rerun make meshes, then make assets"
+    if target_summary == _MAKE_MESHES_TARGET:
+        return "rerun make meshes"
+    if target_summary == _MAKE_ASSETS_TARGET:
+        return "rerun make assets"
+    return "none"
 
 
 def _extract_summary(descriptor_payload: dict[str, Any] | None, key: str) -> dict[str, Any] | None:
@@ -794,9 +953,10 @@ def _format_ratio(value: float | None) -> str:
     return f"{value:.3f}"
 
 
-def _require_path(path: Path) -> None:
-    if not path.exists():
-        raise FileNotFoundError(f"Missing preview input asset: {path}")
+def _display_root_status(entry: Mapping[str, Any]) -> str:
+    if str(entry["summary"]["preview_status"]) == PREVIEW_STATUS_BLOCKED:
+        return PREVIEW_STATUS_BLOCKED
+    return str(entry["summary"].get("qa_overall_status", "unknown"))
 
 
 def _render_report_html(root_entries: list[dict[str, Any]], summary: dict[str, Any]) -> str:
@@ -804,12 +964,21 @@ def _render_report_html(root_entries: list[dict[str, Any]], summary: dict[str, A
         (
             f'<a class="toc-link" href="#root-{entry["root_id"]}">'
             f'root {entry["root_id"]}'
-            f'<span class="toc-status status-{html.escape(entry["qa_summary"].get("overall_status", "unknown"))}">'
-            f'{html.escape(entry["qa_summary"].get("overall_status", "unknown"))}</span></a>'
+            f'<span class="toc-status status-{html.escape(_display_root_status(entry))}">'
+            f'{html.escape(_display_root_status(entry))}</span></a>'
         )
         for entry in root_entries
     )
     sections = "".join(_render_root_section(entry) for entry in root_entries)
+    overall_status = html.escape(str(summary["overall_status"]))
+    operator_action_card = ""
+    if int(summary.get("blocked_root_count", 0)) > 0:
+        operator_action_card = (
+            '<div class="hero-card">'
+            "<strong>Operator action</strong>"
+            f"<span>{html.escape(_format_make_target_guidance(summary.get('recommended_make_targets', [])))}</span>"
+            "</div>"
+        )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -917,6 +1086,8 @@ def _render_report_html(root_entries: list[dict[str, Any]], summary: dict[str, A
     .status-pass {{ background: rgba(22, 101, 52, 0.12); color: var(--pass); }}
     .status-warn {{ background: rgba(180, 83, 9, 0.12); color: var(--warn); }}
     .status-fail {{ background: rgba(185, 28, 28, 0.12); color: var(--fail); }}
+    .status-ready {{ background: rgba(15, 118, 110, 0.12); color: var(--accent); }}
+    .status-blocked {{ background: rgba(185, 28, 28, 0.12); color: var(--fail); }}
     .status-unknown {{ background: rgba(71, 85, 105, 0.12); color: #475569; }}
     .root-section {{
       padding: 24px;
@@ -1036,9 +1207,18 @@ def _render_report_html(root_entries: list[dict[str, Any]], summary: dict[str, A
           <span class="mono">{html.escape(str(summary["report_version"]))}</span>
         </div>
         <div class="hero-card">
+          <strong>Preview status</strong>
+          <span class="status-pill status-{overall_status}">{overall_status}</span>
+        </div>
+        <div class="hero-card">
+          <strong>Blocked roots</strong>
+          <span class="mono">{int(summary["blocked_root_count"])}</span>
+        </div>
+        <div class="hero-card">
           <strong>Deterministic output</strong>
           <span class="mono">{html.escape(str(summary["output_dir"]))}</span>
         </div>
+        {operator_action_card}
       </div>
       <div class="toc">{toc_items}</div>
     </section>
@@ -1050,6 +1230,9 @@ def _render_report_html(root_entries: list[dict[str, Any]], summary: dict[str, A
 
 
 def _render_root_section(entry: dict[str, Any]) -> str:
+    if str(entry["summary"]["preview_status"]) == PREVIEW_STATUS_BLOCKED:
+        return _render_blocked_root_section(entry)
+
     summary_rows = "".join(
         (
             "<tr>"
@@ -1095,7 +1278,7 @@ def _render_root_section(entry: dict[str, Any]) -> str:
         if qa_highlights
         else '<p class="qa-empty">No warning or failure checks for this root ID.</p>'
     )
-    qa_status = html.escape(entry["qa_summary"].get("overall_status", "unknown"))
+    qa_status = html.escape(_display_root_status(entry))
     face_ratio_card = (
         '<div class="summary-card"><strong>Face ratio</strong>'
         f'<span>{html.escape(_format_ratio(entry["stats"]["simplified_to_raw_face_ratio"]))}</span></div>'
@@ -1124,5 +1307,62 @@ def _render_root_section(entry: dict[str, Any]) -> str:
         "</div>"
         '<section class="qa-card" style="margin-top: 14px;"><h3>QA Highlights</h3>'
         f'<div class="qa-list">{qa_markup}</div></section>'
+        "</section>"
+    )
+
+
+def _render_blocked_root_section(entry: Mapping[str, Any]) -> str:
+    summary_rows = "".join(
+        (
+            "<tr>"
+            f"<td>{html.escape(str(label))}</td>"
+            f"<td>{html.escape(str(value))}</td>"
+            "</tr>"
+        )
+        for label, value in entry["summary_rows"]
+    )
+    artifact_rows = "".join(
+        (
+            "<tr>"
+            f"<td>{html.escape(str(key).replace('_', ' '))}</td>"
+            f"<td class=\"mono\">{html.escape(str(value))}</td>"
+            "</tr>"
+        )
+        for key, value in entry["artifacts"].items()
+    )
+    missing_markup = "".join(
+        (
+            '<div class="qa-item">'
+            f"<strong>{html.escape(str(item['asset_key']))}</strong>"
+            '<span class="status-pill status-blocked">blocked</span>'
+            f'<p class="mono">{html.escape(str(item["path"]))}</p>'
+            f'<p>Rerun target: {html.escape(str(item["recommended_make_target_scope"]))}</p>'
+            f'<p>Operator action: {html.escape(_format_make_target_guidance(item["recommended_make_targets"]))}</p>'
+            "</div>"
+        )
+        for item in entry["missing_prerequisites"]
+    )
+    operator_action = _format_make_target_guidance(entry["summary"].get("recommended_make_targets", []))
+    return (
+        f'<section class="root-section" id="root-{entry["root_id"]}">'
+        '<div class="root-header">'
+        f'<div><h2>Root {entry["root_id"]}</h2><p>Blocked before preview rendering because required local inputs are missing.</p></div>'
+        '<span class="status-pill status-blocked">blocked</span>'
+        "</div>"
+        '<div class="summary-grid">'
+        f'<div class="summary-card"><strong>Missing prerequisites</strong><span>{int(entry["summary"]["missing_prerequisite_count"])}</span></div>'
+        f'<div class="summary-card"><strong>Rerun target</strong><span>{html.escape(str(entry["summary"]["recommended_make_target_scope"]))}</span></div>'
+        f'<div class="summary-card"><strong>Operator action</strong><span>{html.escape(operator_action)}</span></div>'
+        '<div class="summary-card"><strong>QA status</strong><span>not available</span></div>'
+        "</div>"
+        '<section class="qa-card" style="margin-bottom: 14px;"><h3>Blocked Preview Inputs</h3>'
+        '<p>This root is incomplete. The preview bundle was still written so you can inspect every missing prerequisite together.</p>'
+        f'<div class="qa-list">{missing_markup}</div></section>'
+        '<div class="detail-grid">'
+        '<section class="artifact-card"><h3>Summary</h3><table class="detail-table">'
+        f"{summary_rows}</table></section>"
+        '<section class="artifact-card"><h3>Expected Artifacts</h3><table class="detail-table">'
+        f"{artifact_rows}</table></section>"
+        "</div>"
         "</section>"
     )

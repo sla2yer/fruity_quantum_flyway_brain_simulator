@@ -241,113 +241,131 @@ Make `verify` authoritative for the active `make meshes` preflight instead of a 
 - Run `make verify` against a config copy with `meshing.fetch_skeletons: false` in the same missing-`navis` environment; it should still succeed if the remaining mesh prerequisites are valid.
 - Run `make verify CONFIG=config/local.yaml` in a fully provisioned environment; it should exit `0`.
 
-## OPS-002 - Missing Python dependencies fail as raw import tracebacks across pipeline entrypoints
+## OPS-002 - Core CLI entrypoints still raise raw startup `ModuleNotFoundError` instead of bootstrap guidance
 - Status: open
 - Priority: high
 - Source: error_handling_and_operability review
-- Area: pipeline CLI imports
+- Area: CLI startup dependency handling
 
 ### Problem
-Several operator entrypoints import heavy runtime dependencies at module import time, so a partially provisioned environment dies with raw `ModuleNotFoundError` tracebacks before any CLI guidance can be shown. The repo already has a canonical recovery path in `make bootstrap`, but these failures never point operators back to it.
+The repo now has partial dependency shaping inside `verify`, but the core preflight and pipeline scripts still import declared packages before any operator-facing error handling runs. When the active interpreter has not been bootstrapped into the repo environment, operators still get raw `ModuleNotFoundError` tracebacks instead of a concise message naming the missing package and pointing back to `make bootstrap`. Because the Makefile prefers `.venv/bin/python` when it exists, this is now mainly a first-run or bypassed-interpreter failure mode, but it still affects the documented recovery path.
 
 ### Evidence
-- [src/flywire_wave/selection.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L12) imports `networkx` at module load.
-- [src/flywire_wave/mesh_pipeline.py:11](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/mesh_pipeline.py#L11) imports `trimesh` at module load.
-- [scripts/02_fetch_meshes.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L12) and [scripts/03_build_wave_assets.py:10](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/03_build_wave_assets.py#L10) import `tqdm` before any error shaping.
-- [Makefile:101](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L101) already defines the intended recovery path as `make bootstrap`.
-- Observed locally by running `python3 -m unittest tests.test_config_paths tests.test_manifest_validation tests.test_mesh_pipeline_fetch tests.test_simulator_execution tests.test_experiment_comparison_analysis tests.test_review_prompt_tickets tests.test_run_review_prompt_tickets tests.test_geometry_preview tests.test_operator_qa tests.test_coupling_inspection -v`: the run surfaced raw `ModuleNotFoundError` tracebacks for `networkx`, `trimesh`, and `tqdm` from pipeline/report entrypoints instead of actionable operator messages.
+- [Makefile:1](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L1) prefers `.venv/bin/python` when available, and [Makefile:103](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L103), [Makefile:108](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L108), [Makefile:114](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L114), [Makefile:117](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L117), and [Makefile:120](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L120) still dispatch directly to the vulnerable entrypoints.
+- [scripts/00_verify_access.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L12) imports `dotenv` at module load even though the same script later defines `_fail_missing_dependency`, so missing `python-dotenv` bypasses the shaped error path.
+- [scripts/01_select_subset.py:14](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/01_select_subset.py#L14) imports [src/flywire_wave/selection.py:14](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L14), which imports `networkx` at module load.
+- [scripts/02_fetch_meshes.py:11](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L11), [scripts/02_fetch_meshes.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L12), and [scripts/02_fetch_meshes.py:32](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L32) import `dotenv`, `tqdm`, and [src/flywire_wave/mesh_pipeline.py:11](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/mesh_pipeline.py#L11) before any CLI guidance can run.
+- [scripts/03_build_wave_assets.py:10](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/03_build_wave_assets.py#L10) and [scripts/03_build_wave_assets.py:31](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/03_build_wave_assets.py#L31) make `tqdm` and `trimesh` startup dependencies before any shaped failure path.
+- Observed locally on 2026-04-05 with the repo's unbootstrapped `python3`: `python3 scripts/00_verify_access.py --config config/local.yaml` exits with raw `ModuleNotFoundError: No module named 'dotenv'`.
+- Observed locally on 2026-04-05 with the repo's unbootstrapped `python3`: `python3 scripts/01_select_subset.py --config config/local.yaml` exits with raw `ModuleNotFoundError: No module named 'networkx'`.
+- Observed locally on 2026-04-05 with the repo's unbootstrapped `python3`: `python3 scripts/02_fetch_meshes.py --config config/local.yaml` exits with raw `ModuleNotFoundError: No module named 'dotenv'`.
+- Observed locally on 2026-04-05 with the repo's unbootstrapped `python3`: `python3 scripts/03_build_wave_assets.py --config config/local.yaml` exits with raw `ModuleNotFoundError: No module named 'tqdm'`.
+- [tests/test_verify_access.py:15](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L15) covers shaped failures after `verify` is already importable, but there is no automated coverage for the startup missing-import path on `verify`, `select`, `meshes`, or `assets`.
 
 ### Requested Change
-Move these imports behind shaped dependency checks or wrap them in consistent operator-facing errors that name the missing package and point to `make bootstrap` (or the equivalent install command). Add a lightweight automated check so missing dependency behavior does not regress back to raw tracebacks.
+Add a shared startup dependency guard for the core operator entrypoints so missing declared packages are caught before module-level imports explode. At minimum, `verify`, `select`, `meshes`, and `assets` should fail with one concise operator-facing message that names the missing package and points to `make bootstrap`, regardless of whether the missing dependency is `python-dotenv`, `networkx`, `tqdm`, or `trimesh`.
 
 ### Acceptance Criteria
-`make select`, `make meshes`, `make assets`, and report commands that depend on extra packages fail with concise messages naming the missing dependency and the bootstrap/install fix.
-Those commands no longer emit a Python traceback for ordinary missing-package cases.
-At least one automated test covers the shaped error path for missing runtime dependencies.
+`make verify`, `make select`, `make meshes`, and `make assets` fail with concise operator messages when the active interpreter is missing required Python packages.
+
+Those ordinary missing-package cases exit nonzero without emitting a Python traceback.
+
+The shaped message names the missing package and points operators to `make bootstrap` or the equivalent install command.
+
+At least one automated test covers the startup missing-import path for `verify`, and at least one automated test covers the same behavior for a pipeline command such as `select`, `meshes`, or `assets`.
 
 ### Verification
-In an environment missing `networkx`, run `make select CONFIG=config/local.yaml`; the command should fail with an actionable dependency message.
-In an environment missing `trimesh` or `tqdm`, run `make meshes CONFIG=config/local.yaml` and `make assets CONFIG=config/local.yaml`; both should fail without a traceback and should point to `make bootstrap`.
-Re-run the targeted unittest subset above and confirm the dependency failures are now shaped operator errors instead of import tracebacks.
+In an interpreter without `python-dotenv`, run `PYTHON=python3 make verify CONFIG=config/local.yaml` or `python3 scripts/00_verify_access.py --config config/local.yaml`; the command should fail without a traceback and should point to `make bootstrap`.
 
-## OPS-003 - `make preview` aborts on the first missing asset instead of emitting a blocked report
+In an interpreter without `networkx`, run `PYTHON=python3 make select CONFIG=config/local.yaml`; the command should fail with an actionable dependency message instead of a raw import traceback.
+
+In an interpreter without `python-dotenv`, `tqdm`, or `trimesh`, run `PYTHON=python3 make meshes CONFIG=config/local.yaml` and `PYTHON=python3 make assets CONFIG=config/local.yaml`; both commands should fail without a traceback and should point to `make bootstrap`.
+
+Re-run `./.venv/bin/python -m unittest tests.test_verify_access -v` together with the new missing-dependency startup tests and confirm the shaped error path is covered.
+
+## OPS-003 - `make preview` still aborts on the first missing required asset and writes no blocked report
 - Status: open
 - Priority: medium
 - Source: error_handling_and_operability review
-- Area: `scripts/05_preview_geometry.py` / `src/flywire_wave/geometry_preview.py`
+- Area: `scripts/05_preview_geometry.py` / `src/flywire_wave/geometry_preview.py` / `tests/test_geometry_preview.py`
 
 ### Problem
-The geometry preview command is the odd operator-facing report surface out: it hard-fails on the first missing mesh/graph artifact instead of writing a blocked summary that tells the operator which roots are incomplete. After a partial `make assets` run, that makes preview failures harder to diagnose than the repo’s other offline inspection commands.
+`make preview` is still the outlier among the local inspection/report commands. If any requested root is missing a required preview input, the CLI raises a traceback before it writes the deterministic preview bundle, so operators get neither a blocked summary nor an aggregate view of which roots are incomplete after a partial `make assets` run.
 
 ### Evidence
-- [scripts/05_preview_geometry.py:59](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/05_preview_geometry.py#L59) delegates straight into report generation and has no prerequisite shaping beyond “no root IDs.”
-- [src/flywire_wave/geometry_preview.py:142](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L142) through [src/flywire_wave/geometry_preview.py:145](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L145) require all core assets up front, and [src/flywire_wave/geometry_preview.py:797](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L797) raises `FileNotFoundError` on the first miss.
-- The repo already has a blocked-report pattern elsewhere: [src/flywire_wave/operator_qa.py:404](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/operator_qa.py#L404) and [src/flywire_wave/coupling_inspection.py:493](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/coupling_inspection.py#L493) turn missing artifacts into structured blocked entries instead of crashing.
-- [tests/test_operator_qa.py:125](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_operator_qa.py#L125) explicitly locks in the blocked-report behavior for operator QA, while [tests/test_geometry_preview.py:19](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_geometry_preview.py#L19) only covers the happy path.
+- [Makefile:123](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L123) and [Makefile:124](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L124) wire `make preview` directly to the preview CLI with no wrapper-level missing-asset handling.
+- [scripts/05_preview_geometry.py:59](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/05_preview_geometry.py#L59) calls `generate_geometry_preview_report(...)` directly and only prints a summary after that returns.
+- [src/flywire_wave/geometry_preview.py:64](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L64) builds all per-root entries before output writing; [src/flywire_wave/geometry_preview.py:100](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L100) and [src/flywire_wave/geometry_preview.py:101](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L101) only write `index.html` and `summary.json` after all entries succeed.
+- [src/flywire_wave/geometry_preview.py:142](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L142), [src/flywire_wave/geometry_preview.py:143](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L143), [src/flywire_wave/geometry_preview.py:144](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L144), and [src/flywire_wave/geometry_preview.py:145](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L145) hard-require the raw mesh, simplified mesh, surface graph, and patch graph; [src/flywire_wave/geometry_preview.py:799](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_preview.py#L799) raises `FileNotFoundError` on the first missing path.
+- [tests/test_geometry_preview.py:20](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_geometry_preview.py#L20) covers only the deterministic happy path. There is no missing-prerequisite regression test for preview.
+- Current repro on 2026-04-05: after generating assets for root `101` and deleting `101_patch_graph.npz`, running `scripts/05_preview_geometry.py --config <tmp>/config.yaml --root-id 101` exited with status `1`, printed a traceback ending in `FileNotFoundError: Missing preview input asset: .../101_patch_graph.npz`, and wrote neither `summary.json` nor `index.html`.
+- The repo already has a blocked-report pattern for ordinary missing prerequisites in [src/flywire_wave/operator_qa.py:404](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/operator_qa.py#L404), [src/flywire_wave/coupling_inspection.py:493](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/coupling_inspection.py#L493), and [tests/test_operator_qa.py:125](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_operator_qa.py#L125).
 
 ### Requested Change
-Give preview the same blocked/missing-prerequisite behavior as the other local inspection commands. At minimum, aggregate all missing prerequisite paths before exiting; preferably write a summary/report bundle that marks blocked roots and points directly to the missing artifact paths.
+Align geometry preview with the repo’s existing blocked-report behavior for ordinary missing local prerequisites. The preview command should collect missing required preview inputs per root, write the deterministic output bundle anyway, and return a structured blocked summary instead of propagating `FileNotFoundError` to stderr.
 
 ### Acceptance Criteria
-`make preview` writes a summary artifact even when one or more requested roots are missing preview prerequisites.
-The summary identifies blocked roots, missing asset keys, and concrete file paths.
-The command exits without a traceback for ordinary missing-artifact cases and tells the operator whether to rerun `make meshes`, `make assets`, or both.
+`make preview CONFIG=...` writes `summary.json` and `root_ids.txt` even when one or more requested roots are missing required preview inputs.
+Ordinary missing-prerequisite cases do not emit a Python traceback; the command returns a structured blocked result instead of crashing.
+The summary identifies blocked roots, missing asset keys, and resolved file paths, and it aggregates all missing prerequisites across the requested root set rather than stopping at the first miss.
+The output tells the operator whether the missing prerequisite implies rerunning `make meshes`, `make assets`, or both.
+A fully built root still produces the current happy-path preview output, and `tests/test_geometry_preview.py` gains a missing-prerequisite regression case.
 
 ### Verification
-Run `make assets CONFIG=config/local.yaml`, remove one required preview input such as a patch graph, then run `make preview CONFIG=config/local.yaml`.
-Confirm that the command produces a structured blocked summary or report bundle naming the missing artifact path and affected root IDs.
-Confirm that a fully built asset set still produces the current happy-path preview output.
+Create a local preview bundle with `make assets CONFIG=config/local.yaml`, remove one required preview input such as `<root_id>_patch_graph.npz`, then run `make preview CONFIG=config/local.yaml`.
+Confirm that the command writes the deterministic preview output directory and a structured blocked summary naming the missing asset path and affected root IDs, without a traceback.
+Repeat with multiple incomplete roots or multiple missing required assets to confirm the report aggregates all blocked prerequisites instead of aborting on the first miss.
+Confirm that a fully built asset set still produces the existing happy-path preview HTML and summary.
 
-## OPS-004 - `make review-tickets` leaves failed prompt jobs without a trustworthy error artifact
+## OPS-004 - Failed `make review-tickets` jobs still leave misleading `stderr.log` artifacts and hide the real failure logs
 - Status: open
 - Priority: medium
 - Source: error_handling_and_operability review
-- Area: `scripts/run_review_prompt_tickets.py` / `src/flywire_wave/review_prompt_tickets.py`
+- Area: `scripts/run_review_prompt_tickets.py` / `src/flywire_wave/review_prompt_tickets.py` / review-ticket tests
 
 ### Problem
-The review-ticket runner advertises per-job artifacts including `stderr.log`, but the implementation merges child stderr into stdout and then writes an empty `stderr.log`. On failure, the top-level script only prints the summary path, so operators still have to dig through JSON to discover which prompt set failed and which log file actually has the diagnostics.
+The original ticket needs refinement, not closure. The README no longer promises per-job `stderr.log` artifacts, so this is no longer a docs-contract bug. The remaining issue is operational: `run_prompt_job()` still declares `stderr.log`, but it routes child stderr into stdout and then creates an empty `stderr.log`. When specialization or review fails, `make review-tickets` exits non-zero and prints stage progress plus `Summary written to ...`, but it still does not print a final per-failure artifact summary. Operators must open `summary.json` and then chase `stdout.jsonl` by hand to find the real diagnostics.
 
 ### Evidence
-- [README.md:133](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md#L133) documents the review-run artifact layout as an operator-facing surface.
-- [src/flywire_wave/review_prompt_tickets.py:16](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L16) declares `stderr.log` as a standard artifact.
-- [src/flywire_wave/review_prompt_tickets.py:199](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L199) launches child jobs with `stderr=subprocess.STDOUT`, and [src/flywire_wave/review_prompt_tickets.py:219](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L219) creates an empty `stderr.log` if none exists.
-- [scripts/run_review_prompt_tickets.py:176](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/run_review_prompt_tickets.py#L176) only prints the summary path and optional combined ticket path after the run, not the failing prompt-set log paths.
-- [tests/test_review_prompt_tickets.py:74](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_review_prompt_tickets.py#L74) and [tests/test_run_review_prompt_tickets.py:29](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_run_review_prompt_tickets.py#L29) only cover fake successful jobs and dry-run; the real failure-triage path is untested.
+- [README.md:133](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md#L133) now documents only top-level review-run outputs, so OPS-004 should no longer claim that the README advertises per-job `stderr.log`.
+- [src/flywire_wave/review_prompt_tickets.py:16](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L16) still lists `stderr.log` as a standard prompt-job artifact.
+- [src/flywire_wave/review_prompt_tickets.py:261](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L261), [src/flywire_wave/review_prompt_tickets.py:293](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L293), and [src/flywire_wave/review_prompt_tickets.py:309](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L309) show the runner creates `stderr.log`, launches child jobs with `stderr=subprocess.STDOUT`, and backfills an empty `stderr.log` when none exists.
+- [src/flywire_wave/review_prompt_tickets.py:688](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L688) and [src/flywire_wave/review_prompt_tickets.py:689](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L689) record stage results in `summary.json`, but the console surface does not expose those artifact paths directly.
+- [scripts/run_review_prompt_tickets.py:176](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/run_review_prompt_tickets.py#L176) and [scripts/run_review_prompt_tickets.py:177](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/run_review_prompt_tickets.py#L177) only print the summary path and optional combined ticket path after the run.
+- [tests/test_review_prompt_tickets.py:134](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_review_prompt_tickets.py#L134) and [tests/test_review_prompt_tickets.py:253](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_review_prompt_tickets.py#L253) cover successful workflow and refresh paths only, and [tests/test_run_review_prompt_tickets.py:29](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_run_review_prompt_tickets.py#L29) covers only `--dry-run`.
+- Observed on April 5, 2026: running `python3 scripts/run_review_prompt_tickets.py --prompt-set efficiency_and_modularity --runner <failing-stub> --output-dir /tmp/...` exited `1`, printed only `Summary written to ...`, and left empty `specialization/efficiency_and_modularity/stderr.log` and `last_message.md` while the only failure text lived in `stdout.jsonl`.
 
 ### Requested Change
-Make the failure artifacts honest and directly discoverable. Either capture real child stderr separately, or stop advertising `stderr.log` and point operators to the actual combined log. Also print a short end-of-run failure summary listing the failed prompt-set slugs and the exact artifact paths to inspect.
+Keep scope limited to `make review-tickets`. Make the failure artifacts truthful and directly discoverable for specialization and review jobs. Either capture real child stderr separately, or stop materializing `stderr.log` and clearly document and report the combined log that actually contains diagnostics. Add an end-of-run failure summary that prints each failed prompt-set slug, stage, return code, and the exact artifact path or paths to inspect.
 
 ### Acceptance Criteria
-A failed specialization or review job leaves at least one non-empty, clearly named error artifact for that prompt set.
-The end-of-run console output lists failed prompt sets and the relevant `stdout.jsonl`, `stderr.log`, or `last_message.md` paths.
-Automated coverage includes a failing runner path rather than only dry-run and fake-success cases.
+A failed specialization or review job leaves at least one clearly named, non-empty diagnostic artifact whose filename matches the stream it actually contains.
+The end-of-run console output lists every failed prompt set with its stage, return code, and the relevant artifact paths instead of only pointing to `summary.json`.
+Automated coverage includes at least one failing `review-tickets` path and asserts both the non-zero exit and the failure-summary and artifact behavior.
+Successful runs still write the documented review-run outputs under `agent_tickets/review_runs/<timestamp>/` without regressing combined ticket generation.
 
 ### Verification
-Run `make review-tickets REVIEW_TICKETS_ARGS='--prompt-set error_handling_and_operability --runner <failing-stub>'`.
-Confirm that the command exits non-zero, prints the failed prompt-set slug and artifact paths, and leaves a non-empty error artifact for that failed job.
-Confirm that a successful run still writes the documented review artifacts under `agent_tickets/review_runs/<timestamp>/`.
+Run `make review-tickets REVIEW_TICKETS_ARGS='--prompt-set efficiency_and_modularity --runner <failing-stub> --output-dir /tmp/review-tickets-fail'`.
+Confirm the command exits non-zero, prints the failing prompt set, stage, return code, and artifact path or paths to inspect, and that the named diagnostic artifact is non-empty and trustworthy.
+Confirm a successful run still writes `specialization/<prompt-set>/specialized_prompt.md`, `reviews/<prompt-set>/tickets.md`, `combined_tickets.md`, and `summary.json` under the chosen review-run directory.
 
-## file_length_and_cohesion
-
-# File Length And Cohesion Review Tickets
-
-## FILECOH-001 - Split simulation manifest planning from analysis and asset/runtime resolution
+## FILECOH-001 - Reduce `simulation_planning.py` to manifest orchestration by extracting analysis and asset/runtime planning
 - Status: open
 - Priority: high
 - Source: file_length_and_cohesion review
 - Area: simulation planning
 
 ### Problem
-`simulation_planning.py` has become the catch-all owner for manifest validation, runtime normalization, readout-analysis planning, circuit asset discovery, and surface-wave mixed-fidelity execution planning. That makes routine changes to one planning seam pull several unrelated subsystems into the same file and review surface.
+`simulation_planning.py` is still the single owner for manifest validation and normalization, readout-analysis planning, geometry/coupling asset readiness, surface-wave execution planning, and mixed-fidelity resolution. The module remains a central dependency for multiple planning and validation workflows, so routine changes to one seam still pull unrelated planning logic into the same file and review surface. The same cohesion problem shows up in tests: cross-suite fixture writers are still embedded in `test_simulation_planning.py` and imported by other test modules.
 
 ### Evidence
-[simulation_planning.py:482](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L482) resolves the manifest, validates it, normalizes runtime config, resolves inputs, and calls circuit asset discovery in the same top-level path. The file then shifts into readout-analysis planning at [simulation_planning.py:743](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L743), local geometry/coupling readiness checks at [simulation_planning.py:2950](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2950), surface-wave execution plan assembly at [simulation_planning.py:3406](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L3406), and mixed-fidelity/operator routing at [simulation_planning.py:3667](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L3667). The test surface mirrors that spillover: [test_simulator_execution.py:56](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L56) and [test_experiment_suite_aggregation.py:37](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_aggregation.py#L37) import fixture builders from [test_simulation_planning.py:931](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py#L931) and [test_simulation_planning.py:1070](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py#L1070).
+[simulation_planning.py:485](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L485) still loads config, validates the manifest, normalizes runtime config, resolves inputs, calls `_resolve_circuit_assets`, and assembles arm plans in one top-level path. Readout-analysis planning still begins at [simulation_planning.py:750](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L750), while circuit asset readiness and surface-wave execution or mixed-fidelity planning remain in [simulation_planning.py:2953](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2953), [simulation_planning.py:3409](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L3409), and [simulation_planning.py:3670](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L3670). Derived planning entrypoints also still live in the same module at [simulation_planning.py:729](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L729) and [simulation_planning.py:2318](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2318). Shared test helpers remain defined in [test_simulation_planning.py:979](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py#L979), [test_simulation_planning.py:1104](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py#L1104), [test_simulation_planning.py:1188](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py#L1188), and [test_simulation_planning.py:1479](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py#L1479), and are still imported by [test_simulator_execution.py:57](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L57), [test_experiment_suite_aggregation.py:37](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_aggregation.py#L37), [test_validation_circuit.py:76](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_validation_circuit.py#L76), and [test_experiment_comparison_analysis.py:57](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_comparison_analysis.py#L57).
 
 ### Requested Change
-Keep `resolve_manifest_simulation_plan` as the orchestration entrypoint, but move readout-analysis planning under an analysis-planning boundary, move geometry/coupling asset resolution under an asset-readiness boundary, and move surface-wave or mixed-fidelity execution-plan construction under an execution-runtime planning boundary.
+Keep `resolve_manifest_simulation_plan` as the manifest-orchestration entrypoint, but move readout-analysis planning into a dedicated analysis-planning module, move geometry/coupling readiness and asset resolution into a dedicated asset-resolution module, and move surface-wave execution plus mixed-fidelity planning into a dedicated runtime-planning module. `resolve_manifest_readout_analysis_plan` and `resolve_manifest_mixed_fidelity_plan` should remain available as thin entrypoints or compatibility wrappers so downstream callers do not need a flag-day import change.
 
 ### Acceptance Criteria
-`simulation_planning.py` is reduced to manifest-level orchestration and shared normalization, while readout-analysis helpers, circuit asset discovery or validation, and surface-wave mixed-fidelity planning live in narrower modules with explicit imports. Shared test fixture writers are moved out of `test_simulation_planning.py` into a dedicated test utility module instead of remaining trapped in the planner test file.
+`simulation_planning.py` is reduced to manifest-level orchestration, shared normalization, and thin public wrappers, while readout-analysis planning, circuit asset readiness, and surface-wave or mixed-fidelity planning live in narrower modules with explicit imports. The public planning entrypoints continue to return the same shapes expected by current callers. Shared fixture writers are moved out of `test_simulation_planning.py` into a dedicated test support module, and tests that currently import from another test file switch to that support module instead.
 
 ### Verification
 `make test`

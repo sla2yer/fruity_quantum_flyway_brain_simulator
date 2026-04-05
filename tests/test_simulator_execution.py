@@ -54,7 +54,7 @@ from flywire_wave.simulator_result_contract import (
 from flywire_wave.simulator_execution import execute_manifest_simulation
 from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
 from flywire_wave.synapse_mapping import materialize_synapse_anchor_maps
-from test_simulation_planning import (
+from simulation_planning_test_support import (
     _write_manifest_fixture,
     _write_simulation_fixture,
 )
