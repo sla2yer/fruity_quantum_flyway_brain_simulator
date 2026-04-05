@@ -66,7 +66,7 @@ help:
 		'operator-qa        Build static offline operator QA report(s)' \
 		'simulate           Execute manifest-driven simulator runs and write result bundles' \
 		'review-tickets    Specialize repo-review prompts and generate ticket packs with Codex/Codel' \
-		'review-backlog    Execute review tickets and refresh the remaining backlog after each success' \
+		'review-backlog    Execute review tickets and review each later ticket before it runs' \
 		'suite-run          Execute or preview a deterministic Milestone 15 experiment suite' \
 		'suite-aggregate    Compute deterministic Milestone 15 suite rollups and CSV exports from a packaged suite inventory' \
 		'suite-report       Generate deterministic Milestone 15 review tables, plots, and static HTML from a packaged suite inventory' \

@@ -31,8 +31,8 @@ def _resolve_repo_path(path_text: str) -> Path:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run tickets from a review run and refresh the remaining backlog "
-            "between successful tickets."
+            "Run tickets from a review run and revalidate each later ticket "
+            "before execution."
         )
     )
     parser.add_argument(
@@ -52,7 +52,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         default=f"agent_tickets/review_ticket_runs/{_now_utc_stamp()}",
-        help="Directory for ticket-run artifacts, refreshes, and the backlog summary.",
+        help="Directory for ticket-run artifacts, ticket-review artifacts, and the backlog summary.",
     )
     parser.add_argument(
         "--sandbox",
@@ -61,7 +61,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Sandbox mode passed to the CLI runner.",
     )
     parser.add_argument("--ticket-model", help="Optional model override for the ticket-implementation phase.")
-    parser.add_argument("--review-model", help="Optional model override for the backlog-refresh review phase.")
+    parser.add_argument("--review-model", help="Optional model override for the pre-ticket review phase.")
     parser.add_argument(
         "--status",
         action="append",
@@ -86,17 +86,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="append",
         dest="review_extra_args",
         default=[],
-        help="Additional raw argument passed through to the backlog-refresh review runner. Repeatable.",
+        help="Additional raw argument passed through to the pre-ticket review runner. Repeatable.",
     )
     parser.add_argument(
-        "--max-review-workers",
-        type=int,
-        help="Maximum parallel review refresh jobs per refresh cycle. Defaults to min(4, prompt set count).",
-    )
-    parser.add_argument(
-        "--no-refresh",
+        "--no-ticket-review",
         action="store_true",
-        help="Disable backlog refresh between successful tickets.",
+        help="Disable the review/update pass that runs before each ticket after the first one.",
     )
     parser.add_argument(
         "--heartbeat-seconds",
@@ -136,8 +131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "ticket_ids": args.ticket_ids or [],
             "extra_args": args.extra_args,
             "review_extra_args": args.review_extra_args,
-            "max_review_workers": args.max_review_workers,
-            "refresh_between_tickets": not args.no_refresh,
+            "review_before_tickets": not args.no_ticket_review,
         }
         print(json.dumps(plan, indent=2))
         return 0
@@ -163,9 +157,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ticket_ids=set(args.ticket_ids) if args.ticket_ids else None,
         extra_args=args.extra_args,
         review_extra_args=args.review_extra_args,
-        max_review_workers=args.max_review_workers,
         heartbeat_seconds=args.heartbeat_seconds,
-        refresh_between_tickets=not args.no_refresh,
+        review_before_tickets=not args.no_ticket_review,
         progress_callback=progress_callback,
     )
 

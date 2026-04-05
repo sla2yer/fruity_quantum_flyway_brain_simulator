@@ -51,7 +51,7 @@ class RunReviewTicketBacklogScriptTest(unittest.TestCase):
         plan = json.loads(stdout.getvalue())
         self.assertEqual(plan["review_run_dir"], str(review_run_dir.resolve()))
         self.assertTrue(plan["initial_tickets_file"].endswith("combined_tickets.md"))
-        self.assertTrue(plan["refresh_between_tickets"])
+        self.assertTrue(plan["review_before_tickets"])
 
 
 if __name__ == "__main__":
