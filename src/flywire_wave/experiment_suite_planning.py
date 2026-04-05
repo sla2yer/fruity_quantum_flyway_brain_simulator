@@ -75,6 +75,11 @@ from .experiment_suite_contract import (
     get_experiment_suite_dimension_definition,
     parse_experiment_suite_contract_metadata,
 )
+from .selection import (
+    build_subset_artifact_paths,
+    load_subset_manifest,
+    validate_subset_manifest_payload,
+)
 from .simulation_planning import SIMULATION_PLAN_VERSION, resolve_manifest_simulation_plan
 from .simulator_result_contract import (
     SIMULATOR_RESULT_BUNDLE_CONTRACT_VERSION,
@@ -1796,20 +1801,21 @@ def _validate_active_subset_prerequisites(
             subset_name = value["parameter_snapshot"].get("subset_name")
         if subset_name is None:
             subset_name = value["value_id"]
-        safe_subset_name = str(
-            _normalize_identifier(
-                subset_name,
-                field_name="active_subset.value_id",
-            )
+        subset_artifact_paths = build_subset_artifact_paths(
+            subset_output_dir,
+            str(subset_name),
         )
-        subset_manifest_path = (
-            subset_output_dir / safe_subset_name / "subset_manifest.json"
-        ).resolve()
+        subset_manifest_path = subset_artifact_paths.manifest_json.resolve()
         if not subset_manifest_path.exists():
             raise ValueError(
                 f"active_subset value {value['value_id']!r} requires a local subset manifest at "
                 f"{subset_manifest_path}, but it does not exist."
             )
+        validate_subset_manifest_payload(
+            load_subset_manifest(subset_manifest_path),
+            preset_name=str(subset_name),
+            field_name=f"Subset manifest at {subset_manifest_path}",
+        )
 
 
 def _validate_suite_ablation_declarations(

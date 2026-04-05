@@ -167,13 +167,18 @@ def execute_manifest_simulation(
     model_mode: str = BASELINE_MODEL_MODE,
     arm_id: str | None = None,
     use_manifest_seed_sweep: bool = False,
+    simulation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_model_mode = _normalize_model_mode(model_mode)
-    plan = resolve_manifest_simulation_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
+    plan = (
+        _require_mapping(simulation_plan, field_name="simulation_plan")
+        if simulation_plan is not None
+        else resolve_manifest_simulation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+        )
     )
     arm_plans = discover_simulation_run_plans(
         plan,

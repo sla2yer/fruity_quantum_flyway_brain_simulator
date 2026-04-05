@@ -11,10 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from flywire_wave.io_utils import read_root_ids
 from flywire_wave.milestone10_readiness import (
     DEFAULT_FIXTURE_TEST_TARGETS,
+    _materialize_verification_fixture,
     execute_milestone10_readiness_pass,
 )
+from flywire_wave.selection import build_subset_artifact_paths
+try:
+    from tests.test_simulation_planning import _write_manifest_fixture
+except ModuleNotFoundError:
+    from test_simulation_planning import _write_manifest_fixture  # type: ignore[no-redef]
 
 
 class Milestone10ReadinessReportTest(unittest.TestCase):
@@ -126,6 +133,35 @@ class Milestone10ReadinessReportTest(unittest.TestCase):
 
             persisted = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(persisted["markdown_path"], report["markdown_path"])
+
+    def test_verification_fixture_uses_selection_contract_for_mixed_case_subset_names(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            subset_name = "Motion Minimal! Beta"
+            manifest_path = _write_manifest_fixture(
+                tmp_dir,
+                manifest_overrides={"subset_name": subset_name},
+            )
+
+            fixture = _materialize_verification_fixture(
+                manifest_path=manifest_path,
+                verification_cfg={},
+                generated_fixture_dir=tmp_dir / "fixture",
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                processed_retinal_dir=tmp_dir / "out" / "retinal",
+                processed_simulator_results_dir=tmp_dir / "out" / "simulator_results",
+                surface_wave_inspection_dir=tmp_dir / "out" / "surface_wave_inspection",
+            )
+
+            expected_subset_paths = build_subset_artifact_paths(
+                tmp_dir / "fixture" / "subsets",
+                subset_name,
+            )
+            self.assertEqual(
+                fixture["subset_manifest_path"],
+                str(expected_subset_paths.manifest_json.resolve()),
+            )
+            self.assertEqual(read_root_ids(fixture["selected_root_ids_path"]), [101, 202])
 
 
 if __name__ == "__main__":

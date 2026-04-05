@@ -38,6 +38,7 @@ from .geometry_contract import (
     write_geometry_manifest,
 )
 from .io_utils import ensure_dir, write_deterministic_npz, write_json
+from .selection import write_selected_root_roster, write_subset_manifest
 from .readiness_contract import (
     FOLLOW_ON_READINESS_KEY,
     READINESS_GATE_HOLD,
@@ -831,24 +832,14 @@ def _write_simulation_fixture(
     validation_config: Mapping[str, Any],
 ) -> Path:
     output_dir = fixture_root / "out"
+    subset_name = str(validation_config.get("subset_name", "motion_minimal"))
     selected_root_ids_path = output_dir / "selected_root_ids.txt"
-    selected_root_ids_path.parent.mkdir(parents=True, exist_ok=True)
-    selected_root_ids_path.write_text("101\n202\n", encoding="utf-8")
+    write_selected_root_roster([101, 202], selected_root_ids_path)
 
-    subset_manifest_path = output_dir / "subsets" / "motion_minimal" / "subset_manifest.json"
-    subset_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    subset_manifest_path.write_text(
-        json.dumps(
-            {
-                "subset_manifest_version": "1",
-                "preset_name": "motion_minimal",
-                "root_ids": [101, 202],
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
+    write_subset_manifest(
+        subset_output_dir=output_dir / "subsets",
+        preset_name=subset_name,
+        root_ids=[101, 202],
     )
 
     _write_geometry_manifest(output_dir)
@@ -866,7 +857,7 @@ def _write_simulation_fixture(
             ),
         },
         "selection": {
-            "active_preset": "motion_minimal",
+            "active_preset": subset_name,
         },
         "simulation": {
             "input": {

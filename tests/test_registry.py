@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -13,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+import flywire_wave.registry as registry_module
 from flywire_wave.registry import (
     build_registry,
     load_connectivity_registry,
@@ -327,6 +329,61 @@ class RegistryBuildTest(unittest.TestCase):
             )
             self.assertEqual(synapse_provenance["scope"]["mode"], "all_rows")
             self.assertEqual(synapse_provenance["row_count"], 2)
+
+    def test_build_registry_reads_raw_synapse_snapshot_once_per_invocation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            raw_dir = tmp_dir / "raw"
+            out_dir = tmp_dir / "out"
+            raw_dir.mkdir()
+            out_dir.mkdir()
+
+            self._write_classification_csv(raw_dir / "classification.csv")
+            self._write_synapse_csv(
+                raw_dir / "synapses.csv",
+                [
+                    {
+                        "id": "syn-1",
+                        "pre_pt_root_id": 101,
+                        "post_pt_root_id": 102,
+                        "ctr_pt_x": 1.0,
+                        "ctr_pt_y": 2.0,
+                        "ctr_pt_z": 3.0,
+                    },
+                    {
+                        "id": "syn-2",
+                        "pre_pt_root_id": 102,
+                        "post_pt_root_id": 103,
+                        "ctr_pt_x": 4.0,
+                        "ctr_pt_y": 5.0,
+                        "ctr_pt_z": 6.0,
+                    },
+                ],
+            )
+
+            cfg = {
+                "dataset": {
+                    "materialization_version": 783,
+                },
+                "paths": {
+                    "codex_raw_dir": str(raw_dir),
+                    "classification_csv": str(raw_dir / "classification.csv"),
+                    "synapse_source_csv": str(raw_dir / "synapses.csv"),
+                    "neuron_registry_csv": str(out_dir / "neuron_registry.csv"),
+                    "connectivity_registry_csv": str(out_dir / "connectivity_registry.csv"),
+                    "registry_provenance_json": str(out_dir / "registry_provenance.json"),
+                    "processed_coupling_dir": str(out_dir / "processed_coupling"),
+                },
+            }
+
+            with patch(
+                "flywire_wave.registry._load_synapse_table",
+                wraps=registry_module._load_synapse_table,
+            ) as load_synapse_table:
+                summary = build_registry(cfg)
+
+            self.assertEqual(load_synapse_table.call_count, 1)
+            self.assertEqual(summary["synapse_count"], 2)
 
     def test_materialize_synapse_registry_rejects_missing_localization_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_str:

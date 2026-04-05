@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import json
 import re
 import sys
+from collections.abc import Iterable
 from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import networkx as nx
 import pandas as pd
 
-from .io_utils import ensure_dir, write_json, write_root_ids
+from .io_utils import ensure_dir, read_root_ids, write_json, write_root_ids
 from .registry import load_connectivity_registry, load_neuron_registry, materialize_synapse_registry
 
 
@@ -101,6 +103,7 @@ ROOT_IDS_FILENAME = "root_ids.txt"
 SELECTED_NEURONS_FILENAME = "selected_neurons.csv"
 SUBSET_STATS_FILENAME = "subset_stats.json"
 SUBSET_MANIFEST_FILENAME = "subset_manifest.json"
+SUBSET_MANIFEST_VERSION = "1"
 PREVIEW_FILENAME = "preview.md"
 MANIFEST_COLUMNS = [
     "root_id",
@@ -146,12 +149,168 @@ def build_subset_artifact_paths(
     return _artifact_paths_for_preset(Path(base_dir), preset_name)
 
 
+def write_selected_root_roster(
+    root_ids: Iterable[int],
+    out_path: str | Path,
+) -> Path:
+    return write_root_ids(
+        _normalize_root_id_sequence(root_ids, field_name="root_ids"),
+        out_path,
+    )
+
+
+def read_selected_root_roster(
+    path: str | Path,
+    *,
+    require_nonempty: bool = False,
+    require_unique: bool = False,
+    field_name: str = "Selected-root roster",
+) -> list[int]:
+    root_ids = [int(root_id) for root_id in read_root_ids(path)]
+    if require_nonempty and not root_ids:
+        raise ValueError(f"{field_name} is empty.")
+    if require_unique and len(set(root_ids)) != len(root_ids):
+        raise ValueError(f"{field_name} contains duplicate root IDs.")
+    return root_ids
+
+
+def build_subset_manifest_payload(
+    *,
+    preset_name: str,
+    root_ids: Iterable[int],
+    extra_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = deepcopy(extra_fields) if extra_fields is not None else {}
+    payload["subset_manifest_version"] = SUBSET_MANIFEST_VERSION
+    payload["preset_name"] = _normalize_subset_preset_name(
+        preset_name,
+        field_name="preset_name",
+    )
+    payload["root_ids"] = _normalize_root_id_sequence(
+        root_ids,
+        field_name="root_ids",
+    )
+    return payload
+
+
+def validate_subset_manifest_payload(
+    manifest_payload: Any,
+    *,
+    preset_name: str | None = None,
+    expected_root_ids: Iterable[int] | None = None,
+    field_name: str = "Subset manifest",
+) -> dict[str, Any]:
+    if not isinstance(manifest_payload, dict):
+        raise ValueError(f"{field_name} must decode to a JSON object.")
+    subset_manifest_version = manifest_payload.get("subset_manifest_version")
+    if subset_manifest_version is None:
+        raise ValueError(f"{field_name} is missing subset_manifest_version.")
+    manifest_preset_name = _normalize_subset_preset_name(
+        manifest_payload.get("preset_name"),
+        field_name=f"{field_name}.preset_name",
+    )
+    manifest_root_ids = _normalize_root_id_sequence(
+        manifest_payload.get("root_ids"),
+        field_name=f"{field_name}.root_ids",
+    )
+    if preset_name is not None:
+        expected_preset_name = _normalize_subset_preset_name(
+            preset_name,
+            field_name="preset_name",
+        )
+        if manifest_preset_name != expected_preset_name:
+            raise ValueError(
+                f"{field_name}.preset_name {manifest_preset_name!r} does not match "
+                f"expected preset_name {expected_preset_name!r}."
+            )
+    if expected_root_ids is not None:
+        normalized_expected_root_ids = sorted(
+            _normalize_root_id_sequence(
+                expected_root_ids,
+                field_name="expected_root_ids",
+            )
+        )
+        if sorted(manifest_root_ids) != normalized_expected_root_ids:
+            raise ValueError(
+                f"{field_name} root_ids do not match the selected-root roster."
+            )
+    return {
+        "subset_manifest_version": str(subset_manifest_version),
+        "preset_name": manifest_preset_name,
+        "root_ids": manifest_root_ids,
+        "root_id_count": len(manifest_root_ids),
+    }
+
+
+def load_subset_manifest(path: str | Path) -> dict[str, Any]:
+    manifest_path = Path(path)
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"Subset manifest at {manifest_path} must decode to a JSON object."
+        )
+    return dict(payload)
+
+
+def write_subset_manifest_payload(
+    *,
+    subset_output_dir: str | Path,
+    preset_name: str,
+    manifest_payload: dict[str, Any],
+) -> Path:
+    validate_subset_manifest_payload(
+        manifest_payload,
+        preset_name=preset_name,
+        field_name="Subset manifest payload",
+    )
+    artifact_paths = build_subset_artifact_paths(subset_output_dir, preset_name)
+    write_json(manifest_payload, artifact_paths.manifest_json)
+    return artifact_paths.manifest_json
+
+
+def write_subset_manifest(
+    *,
+    subset_output_dir: str | Path,
+    preset_name: str,
+    root_ids: Iterable[int],
+    extra_fields: dict[str, Any] | None = None,
+) -> Path:
+    manifest_payload = build_subset_manifest_payload(
+        preset_name=preset_name,
+        root_ids=root_ids,
+        extra_fields=extra_fields,
+    )
+    return write_subset_manifest_payload(
+        subset_output_dir=subset_output_dir,
+        preset_name=preset_name,
+        manifest_payload=manifest_payload,
+    )
+
+
 def _find_first_existing(df: pd.DataFrame, candidates: list[str]) -> str:
     lower_to_original = {c.lower(): c for c in df.columns}
     for candidate in candidates:
         if candidate.lower() in lower_to_original:
             return lower_to_original[candidate.lower()]
     raise KeyError(f"None of the candidate columns exist: {candidates}")
+
+
+def _normalize_subset_preset_name(value: Any, *, field_name: str) -> str:
+    if value is None:
+        raise ValueError(f"{field_name} must be a non-empty string.")
+    normalized = str(value).strip()
+    if not normalized:
+        raise ValueError(f"{field_name} must be a non-empty string.")
+    return normalized
+
+
+def _normalize_root_id_sequence(value: Any, *, field_name: str) -> list[int]:
+    if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
+        raise ValueError(f"{field_name} must be an iterable of root IDs.")
+    normalized: list[int] = []
+    for root_id in value:
+        normalized.append(int(root_id))
+    return normalized
 
 
 def load_classification_table(path: str | Path) -> pd.DataFrame:
@@ -279,7 +438,10 @@ def generate_subsets_from_config(
         if name == active_preset:
             selected_root_ids_path = paths_cfg.get("selected_root_ids")
             if selected_root_ids_path:
-                write_root_ids(extract_root_ids(selected_df), selected_root_ids_path)
+                write_selected_root_roster(
+                    extract_root_ids(selected_df),
+                    selected_root_ids_path,
+                )
             if "processed_coupling_dir" in paths_cfg or "synapse_source_csv" in paths_cfg:
                 if selected_root_ids_path:
                     materialize_synapse_registry(
@@ -410,24 +572,29 @@ def build_subset_artifacts(
         preview_edge_limit=preview_edge_limit,
     )
 
-    manifest_payload = {
-        "subset_manifest_version": "1",
-        "generated_at_utc": _now_utc_isoformat(),
-        "preset_name": preset_name,
-        "description": spec.get("description"),
-        "config_path": str(config_path) if config_path is not None else None,
-        "registry_path": str(registry_path),
-        "connectivity_registry_path": str(connectivity_registry_path) if connectivity_registry_path is not None else None,
-        "selection_spec": _json_ready(spec),
-        "summary": {
-            "neuron_count": int(len(selected_subset)),
-            "internal_connection_pairs": int(graph.number_of_edges()),
-            "project_role_counts": stats_payload["counts"]["project_roles"],
-            "cell_type_counts": stats_payload["counts"]["cell_types"],
+    manifest_payload = build_subset_manifest_payload(
+        preset_name=preset_name,
+        root_ids=extract_root_ids(selected_subset),
+        extra_fields={
+            "generated_at_utc": _now_utc_isoformat(),
+            "description": spec.get("description"),
+            "config_path": str(config_path) if config_path is not None else None,
+            "registry_path": str(registry_path),
+            "connectivity_registry_path": (
+                str(connectivity_registry_path)
+                if connectivity_registry_path is not None
+                else None
+            ),
+            "selection_spec": _json_ready(spec),
+            "summary": {
+                "neuron_count": int(len(selected_subset)),
+                "internal_connection_pairs": int(graph.number_of_edges()),
+                "project_role_counts": stats_payload["counts"]["project_roles"],
+                "cell_type_counts": stats_payload["counts"]["cell_types"],
+            },
+            "neurons": _df_to_records(selected_subset, MANIFEST_COLUMNS),
         },
-        "root_ids": extract_root_ids(selected_subset),
-        "neurons": _df_to_records(selected_subset, MANIFEST_COLUMNS),
-    }
+    )
     return selected_subset, stats_payload, manifest_payload, preview_markdown
 
 
@@ -601,10 +768,15 @@ def _write_subset_outputs(
     preview_markdown: str,
     artifact_paths: SubsetArtifactPaths,
 ) -> None:
-    write_root_ids(extract_root_ids(selected_df), artifact_paths.root_ids)
+    ensure_dir(artifact_paths.artifact_dir)
+    write_selected_root_roster(extract_root_ids(selected_df), artifact_paths.root_ids)
     selected_df.to_csv(artifact_paths.selected_neurons_csv, index=False)
     write_json(stats_payload, artifact_paths.stats_json)
-    write_json(manifest_payload, artifact_paths.manifest_json)
+    write_subset_manifest_payload(
+        subset_output_dir=artifact_paths.artifact_dir.parent,
+        preset_name=artifact_paths.preset_name,
+        manifest_payload=manifest_payload,
+    )
     artifact_paths.preview_markdown.write_text(preview_markdown, encoding="utf-8")
 
 

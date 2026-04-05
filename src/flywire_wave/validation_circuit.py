@@ -462,6 +462,143 @@ def resolve_circuit_validation_plan(
     }
 
 
+def _build_circuit_validation_plan_from_context(
+    *,
+    validation_plan: Mapping[str, Any],
+    simulation_plan: Mapping[str, Any],
+    analysis_plan: Mapping[str, Any],
+    bundle_set: Mapping[str, Any],
+    analysis_bundle_metadata_path: str | Path | None = None,
+    analysis_bundle_metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(validation_plan, Mapping):
+        raise ValueError("validation_plan must be a mapping.")
+    if not isinstance(simulation_plan, Mapping):
+        raise ValueError("simulation_plan must be a mapping.")
+    if not isinstance(analysis_plan, Mapping):
+        raise ValueError("analysis_plan must be a mapping.")
+    if not isinstance(bundle_set, Mapping):
+        raise ValueError("bundle_set must be a mapping.")
+
+    loaded_analysis_bundle_metadata = (
+        copy.deepcopy(dict(analysis_bundle_metadata))
+        if isinstance(analysis_bundle_metadata, Mapping)
+        else (
+            None
+            if analysis_bundle_metadata_path is None
+            else load_experiment_analysis_bundle_metadata(analysis_bundle_metadata_path)
+        )
+    )
+    active_validator_ids = [
+        validator_id
+        for validator_id in validation_plan["active_validator_ids"]
+        if validator_id
+        in {
+            COUPLING_SEMANTICS_CONTINUITY_VALIDATOR_ID,
+            MOTION_PATHWAY_ASYMMETRY_VALIDATOR_ID,
+        }
+    ]
+    if not active_validator_ids:
+        raise ValueError(
+            "Resolved validation configuration does not activate the circuit_sanity layer."
+        )
+    criteria_assignments = [
+        copy.deepcopy(dict(item))
+        for item in validation_plan["criteria_profile_assignments"]
+        if str(item["validator_id"]) in set(active_validator_ids)
+    ]
+    target_arm_ids = sorted(
+        {
+            str(item["arm_id"])
+            for item in bundle_set["bundle_inventory"]
+        }
+    )
+    source_plan_reference = copy.deepcopy(dict(validation_plan["validation_plan_reference"]))
+    plan_reference = build_validation_plan_reference(
+        experiment_id=str(simulation_plan["manifest_reference"]["experiment_id"]),
+        contract_reference=copy.deepcopy(
+            dict(source_plan_reference["contract_reference"])
+        ),
+        active_layer_ids=[CIRCUIT_SANITY_LAYER_ID],
+        active_validator_family_ids=[CIRCUIT_RESPONSE_FAMILY_ID],
+        active_validator_ids=active_validator_ids,
+        criteria_profile_references=[
+            item["criteria_profile_reference"] for item in criteria_assignments
+        ],
+        evidence_bundle_references=(
+            {}
+            if loaded_analysis_bundle_metadata is None
+            else {
+                "experiment_analysis_bundle": build_experiment_analysis_bundle_reference(
+                    loaded_analysis_bundle_metadata
+                )
+            }
+        ),
+        target_arm_ids=target_arm_ids,
+        comparison_group_ids=[],
+        criteria_profile_assignments=[
+            {
+                "validator_id": item["validator_id"],
+                "criteria_profile_reference": item["criteria_profile_reference"],
+            }
+            for item in criteria_assignments
+        ],
+        plan_version=CIRCUIT_VALIDATION_PLAN_VERSION,
+    )
+    bundle_metadata = build_validation_bundle_metadata(
+        validation_plan_reference=plan_reference,
+        processed_simulator_results_dir=validation_plan["validation_bundle"]["metadata"][
+            "output_root_reference"
+        ]["processed_simulator_results_dir"],
+    )
+    return {
+        "plan_version": CIRCUIT_VALIDATION_PLAN_VERSION,
+        "manifest_reference": copy.deepcopy(
+            dict(simulation_plan["manifest_reference"])
+        ),
+        "validation_config": copy.deepcopy(dict(validation_plan["validation_config"])),
+        "config_reference": copy.deepcopy(dict(validation_plan["config_reference"])),
+        "active_layer_ids": [CIRCUIT_SANITY_LAYER_ID],
+        "active_validator_family_ids": [CIRCUIT_RESPONSE_FAMILY_ID],
+        "active_validator_ids": list(active_validator_ids),
+        "criteria_profile_assignments": criteria_assignments,
+        "target_arm_ids": target_arm_ids,
+        "analysis_plan": copy.deepcopy(dict(analysis_plan)),
+        "bundle_set": copy.deepcopy(dict(bundle_set)),
+        "analysis_bundle": {
+            "metadata": (
+                None
+                if loaded_analysis_bundle_metadata is None
+                else copy.deepcopy(loaded_analysis_bundle_metadata)
+            ),
+            "reference": (
+                None
+                if loaded_analysis_bundle_metadata is None
+                else build_experiment_analysis_bundle_reference(
+                    loaded_analysis_bundle_metadata
+                )
+            ),
+            "packaged_analysis_bundle": None,
+        },
+        "analysis_summary": None,
+        "validation_plan_reference": plan_reference,
+        "validation_bundle": {
+            "bundle_id": str(bundle_metadata["bundle_id"]),
+            "validation_spec_hash": str(bundle_metadata["validation_spec_hash"]),
+            "metadata": copy.deepcopy(bundle_metadata),
+        },
+        "output_locations": {
+            "bundle_directory": str(
+                Path(bundle_metadata["bundle_layout"]["bundle_directory"]).resolve()
+            ),
+            "report_directory": str(
+                Path(bundle_metadata["bundle_layout"]["report_directory"]).resolve()
+            ),
+            "artifacts": copy.deepcopy(dict(bundle_metadata["artifacts"])),
+        },
+    }
+
+
 def build_motion_pathway_asymmetry_cases_from_bundle_set(
     *,
     analysis_plan: Mapping[str, Any],
@@ -826,13 +963,54 @@ def execute_circuit_validation_workflow(
     sign_cases: Sequence[SignValidationCase] = (),
     aggregation_cases: Sequence[AggregationValidationCase] = (),
     analysis_bundle_metadata_path: str | Path | None = None,
+    simulation_plan: Mapping[str, Any] | None = None,
+    analysis_plan: Mapping[str, Any] | None = None,
+    bundle_set: Mapping[str, Any] | None = None,
+    validation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    plan = resolve_circuit_validation_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
-        analysis_bundle_metadata_path=analysis_bundle_metadata_path,
+    resolved_simulation_plan = (
+        simulation_plan
+        if isinstance(simulation_plan, Mapping)
+        else resolve_manifest_simulation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+        )
+    )
+    if isinstance(analysis_plan, Mapping):
+        resolved_analysis_plan = analysis_plan
+    else:
+        embedded_analysis_plan = resolved_simulation_plan.get("readout_analysis_plan")
+        if not isinstance(embedded_analysis_plan, Mapping):
+            raise ValueError(
+                "simulation_plan is missing readout_analysis_plan required for circuit validation."
+            )
+        resolved_analysis_plan = dict(embedded_analysis_plan)
+    resolved_bundle_set = (
+        bundle_set
+        if isinstance(bundle_set, Mapping)
+        else discover_experiment_bundle_set(
+            simulation_plan=resolved_simulation_plan,
+            analysis_plan=resolved_analysis_plan,
+        )
+    )
+    plan = (
+        _build_circuit_validation_plan_from_context(
+            validation_plan=validation_plan,
+            simulation_plan=resolved_simulation_plan,
+            analysis_plan=resolved_analysis_plan,
+            bundle_set=resolved_bundle_set,
+            analysis_bundle_metadata_path=analysis_bundle_metadata_path,
+        )
+        if isinstance(validation_plan, Mapping)
+        else resolve_circuit_validation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+            analysis_bundle_metadata_path=analysis_bundle_metadata_path,
+        )
     )
 
     motion_cases: list[MotionPathwayAsymmetryCase] = []

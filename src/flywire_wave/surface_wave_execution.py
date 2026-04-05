@@ -58,6 +58,11 @@ FINALIZED_STAGE = "finalized"
 _DELAY_STEP_TOLERANCE = 1.0e-6
 _ZERO_TOLERANCE = 1.0e-15
 
+_RESOLVED_SURFACE_WAVE_EXECUTION_PLAN_CACHE: dict[
+    str,
+    "ResolvedSurfaceWaveExecutionPlan",
+] = {}
+
 
 @dataclass(frozen=True)
 class SurfaceWavePatchCloud:
@@ -851,6 +856,10 @@ def resolve_surface_wave_execution_plan_from_arm_plan(
     arm_plan: Mapping[str, Any],
 ) -> ResolvedSurfaceWaveExecutionPlan:
     normalized_arm_plan = _require_mapping(arm_plan, field_name="arm_plan")
+    cache_key = _surface_wave_execution_cache_key_from_arm_plan(normalized_arm_plan)
+    cached = _RESOLVED_SURFACE_WAVE_EXECUTION_PLAN_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     arm_reference = _require_mapping(
         normalized_arm_plan.get("arm_reference"),
         field_name="arm_plan.arm_reference",
@@ -876,7 +885,7 @@ def resolve_surface_wave_execution_plan_from_arm_plan(
         normalized_arm_plan.get("selection"),
         field_name="arm_plan.selection",
     )
-    return resolve_surface_wave_execution_plan(
+    resolved = resolve_surface_wave_execution_plan(
         surface_wave_model=_require_mapping(
             model_configuration.get("surface_wave_model"),
             field_name="arm_plan.model_configuration.surface_wave_model",
@@ -899,6 +908,8 @@ def resolve_surface_wave_execution_plan_from_arm_plan(
         ),
         arm_plan=normalized_arm_plan,
     )
+    _RESOLVED_SURFACE_WAVE_EXECUTION_PLAN_CACHE[cache_key] = resolved
+    return resolved
 
 
 def build_surface_wave_circuit_from_arm_plan(
@@ -967,6 +978,75 @@ def _resolve_operator_assets(
             asset["descriptor_sidecar_path"] = str(Path(str(descriptor_sidecar)).resolve())
         resolved.append(asset)
     return resolved
+
+
+def _surface_wave_execution_cache_key_from_arm_plan(
+    arm_plan: Mapping[str, Any],
+) -> str:
+    arm_reference = _require_mapping(
+        arm_plan.get("arm_reference"),
+        field_name="arm_plan.arm_reference",
+    )
+    model_configuration = _require_mapping(
+        arm_plan.get("model_configuration"),
+        field_name="arm_plan.model_configuration",
+    )
+    runtime = _require_mapping(
+        arm_plan.get("runtime"),
+        field_name="arm_plan.runtime",
+    )
+    selection = _require_mapping(
+        arm_plan.get("selection"),
+        field_name="arm_plan.selection",
+    )
+    payload = {
+        "arm_reference": copy.deepcopy(dict(arm_reference)),
+        "surface_wave_model": copy.deepcopy(
+            dict(
+                _require_mapping(
+                    model_configuration.get("surface_wave_model"),
+                    field_name="arm_plan.model_configuration.surface_wave_model",
+                )
+            )
+        ),
+        "surface_wave_execution_plan": copy.deepcopy(
+            dict(
+                _require_mapping(
+                    model_configuration.get("surface_wave_execution_plan"),
+                    field_name="arm_plan.model_configuration.surface_wave_execution_plan",
+                )
+            )
+        ),
+        "timebase": copy.deepcopy(
+            dict(
+                _require_mapping(
+                    runtime.get("timebase"),
+                    field_name="arm_plan.runtime.timebase",
+                )
+            )
+        ),
+        "determinism": copy.deepcopy(
+            dict(
+                _require_mapping(
+                    arm_plan.get("determinism"),
+                    field_name="arm_plan.determinism",
+                )
+            )
+        ),
+        "selected_root_ids": [
+            int(root_id)
+            for root_id in _require_sequence(
+                selection.get("selected_root_ids"),
+                field_name="arm_plan.selection.selected_root_ids",
+            )
+        ],
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _resolve_coupling_assets(

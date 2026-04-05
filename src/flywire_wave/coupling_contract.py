@@ -206,21 +206,17 @@ def build_edge_coupling_bundle_reference(
 def build_coupling_contract_manifest_metadata(
     *,
     processed_coupling_dir: str | Path | None = None,
-    coupling_bundle_metadata: Mapping[str, Any] | None = None,
+    local_synapse_registry_status: str = ASSET_STATUS_MISSING,
 ) -> dict[str, Any]:
-    local_synapse_registry_status = ASSET_STATUS_MISSING
-    resolved_processed_coupling_dir = processed_coupling_dir
-    if coupling_bundle_metadata is not None:
-        normalized_bundle = parse_coupling_bundle_metadata(coupling_bundle_metadata)
-        local_synapse_registry = dict(normalized_bundle["assets"][LOCAL_SYNAPSE_REGISTRY_KEY])
-        resolved_processed_coupling_dir = Path(local_synapse_registry["path"]).resolve().parent
-        local_synapse_registry_status = str(local_synapse_registry["status"])
-    if resolved_processed_coupling_dir is None:
+    if processed_coupling_dir is None:
         raise ValueError(
-            "processed_coupling_dir must be provided when coupling_bundle_metadata is unavailable."
+            "processed_coupling_dir must be provided when building manifest coupling metadata."
         )
+    normalized_local_synapse_registry_status = str(local_synapse_registry_status)
+    if not normalized_local_synapse_registry_status:
+        raise ValueError("local_synapse_registry_status must be a non-empty string.")
 
-    contract_paths = build_coupling_contract_paths(resolved_processed_coupling_dir)
+    contract_paths = build_coupling_contract_paths(processed_coupling_dir)
     return {
         "version": COUPLING_BUNDLE_CONTRACT_VERSION,
         "design_note": COUPLING_BUNDLE_DESIGN_NOTE,
@@ -247,7 +243,7 @@ def build_coupling_contract_manifest_metadata(
         "preferred_coupling_assembly": default_coupling_assembly_config(),
         "local_synapse_registry": {
             "path": str(contract_paths.local_synapse_registry_path),
-            "status": local_synapse_registry_status,
+            "status": normalized_local_synapse_registry_status,
         },
         "root_asset_directory": str(contract_paths.root_asset_directory),
         "edge_bundle_directory": str(contract_paths.edge_bundle_directory),

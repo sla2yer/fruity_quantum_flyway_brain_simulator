@@ -176,6 +176,7 @@ def execute_experiment_suite_plan(
     state_records_by_id = {
         str(item["work_item_id"]): item for item in state["work_items"]
     }
+    simulation_plan_cache: dict[str, dict[str, Any]] = {}
     schedule_results: list[dict[str, Any]] = []
     for entry in schedule["schedule"]:
         record = state_records_by_id[str(entry["work_item_id"])]
@@ -281,6 +282,7 @@ def execute_experiment_suite_plan(
                 schedule_entry=entry,
                 state_records_by_id=state_records_by_id,
                 materialized=materialized,
+                simulation_plan_cache=simulation_plan_cache,
             )
             raw_result = executor(execution_context)
             result = _normalize_stage_execution_result(
@@ -546,14 +548,11 @@ def _default_stage_executors() -> dict[str, StageExecutor]:
 
 
 def _execute_simulation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
-    from .simulation_planning import resolve_manifest_simulation_plan
     from .simulator_execution import execute_manifest_simulation
 
-    simulation_plan = resolve_manifest_simulation_plan(
-        manifest_path=context["manifest_path"],
-        config_path=context["config_path"],
-        schema_path=context["schema_path"],
-        design_lock_path=context["design_lock_path"],
+    simulation_plan = _require_mapping(
+        context.get("simulation_plan"),
+        field_name="context.simulation_plan",
     )
     arm_plans_by_id = {
         str(item["arm_reference"]["arm_id"]): item for item in simulation_plan["arm_plans"]
@@ -575,6 +574,7 @@ def _execute_simulation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
             design_lock_path=context["design_lock_path"],
             model_mode=model_mode,
             use_manifest_seed_sweep=False,
+            simulation_plan=simulation_plan,
         )
         for run in result["executed_runs"]:
             executed_runs.append(copy.deepcopy(dict(run)))
@@ -650,11 +650,20 @@ def _execute_simulation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
 def _execute_analysis_stage(context: Mapping[str, Any]) -> dict[str, Any]:
     from .experiment_comparison_analysis import execute_experiment_comparison_workflow
 
+    simulation_plan = _require_mapping(
+        context.get("simulation_plan"),
+        field_name="context.simulation_plan",
+    )
     result = execute_experiment_comparison_workflow(
         manifest_path=context["manifest_path"],
         config_path=context["config_path"],
         schema_path=context["schema_path"],
         design_lock_path=context["design_lock_path"],
+        simulation_plan=simulation_plan,
+        analysis_plan=_require_mapping(
+            simulation_plan.get("readout_analysis_plan"),
+            field_name="simulation_plan.readout_analysis_plan",
+        ),
     )
     packaged = copy.deepcopy(dict(result["packaged_analysis_bundle"]))
     downstream_artifacts = [
@@ -729,7 +738,7 @@ def _execute_analysis_stage(context: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _execute_validation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
-    from .simulation_planning import resolve_manifest_simulation_plan
+    from .experiment_comparison_analysis import discover_experiment_bundle_set
     from .validation_circuit import execute_circuit_validation_workflow
     from .validation_morphology import execute_morphology_validation_workflow
     from .validation_numerics import execute_numerical_validation_workflow
@@ -739,15 +748,23 @@ def _execute_validation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
 
     analysis_summary = _dependency_result_summary(context, STAGE_ANALYSIS)
     analysis_metadata_path = _summary_metadata_path(analysis_summary)
-    simulation_plan = resolve_manifest_simulation_plan(
-        manifest_path=context["manifest_path"],
-        config_path=context["config_path"],
-        schema_path=context["schema_path"],
-        design_lock_path=context["design_lock_path"],
+    simulation_plan = _require_mapping(
+        context.get("simulation_plan"),
+        field_name="context.simulation_plan",
+    )
+    analysis_plan = _require_mapping(
+        simulation_plan.get("readout_analysis_plan"),
+        field_name="simulation_plan.readout_analysis_plan",
+    )
+    bundle_set = discover_experiment_bundle_set(
+        simulation_plan=simulation_plan,
+        analysis_plan=analysis_plan,
     )
     validation_plan = resolve_validation_plan(
         config_path=context["config_path"],
         simulation_plan=simulation_plan,
+        analysis_plan=analysis_plan,
+        bundle_set=bundle_set,
         analysis_bundle_metadata_path=analysis_metadata_path,
     )
     active_layer_ids = list(validation_plan["validation_plan_reference"]["active_layer_ids"])
@@ -761,6 +778,8 @@ def _execute_validation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
             config_path=context["config_path"],
             schema_path=context["schema_path"],
             design_lock_path=context["design_lock_path"],
+            simulation_plan=simulation_plan,
+            validation_plan=validation_plan,
         )
         layer_results[NUMERICAL_SANITY_LAYER_ID] = copy.deepcopy(dict(numerical))
         layer_metadata_paths.append(str(numerical["metadata_path"]))
@@ -780,6 +799,8 @@ def _execute_validation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
             config_path=context["config_path"],
             schema_path=context["schema_path"],
             design_lock_path=context["design_lock_path"],
+            simulation_plan=simulation_plan,
+            validation_plan=validation_plan,
         )
         layer_results[MORPHOLOGY_SANITY_LAYER_ID] = copy.deepcopy(dict(morphology))
         layer_metadata_paths.append(str(morphology["metadata_path"]))
@@ -800,6 +821,10 @@ def _execute_validation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
             schema_path=context["schema_path"],
             design_lock_path=context["design_lock_path"],
             analysis_bundle_metadata_path=analysis_metadata_path,
+            simulation_plan=simulation_plan,
+            analysis_plan=analysis_plan,
+            bundle_set=bundle_set,
+            validation_plan=validation_plan,
         )
         layer_results[CIRCUIT_SANITY_LAYER_ID] = copy.deepcopy(dict(circuit))
         layer_metadata_paths.append(str(circuit["metadata_path"]))
@@ -820,6 +845,7 @@ def _execute_validation_stage(context: Mapping[str, Any]) -> dict[str, Any]:
             schema_path=context["schema_path"],
             design_lock_path=context["design_lock_path"],
             analysis_bundle_metadata_path=analysis_metadata_path,
+            validation_plan=validation_plan,
         )
         layer_results[TASK_SANITY_LAYER_ID] = copy.deepcopy(dict(task))
         layer_metadata_paths.append(str(task["metadata_path"]))
@@ -949,6 +975,7 @@ def _build_stage_execution_context(
     schedule_entry: Mapping[str, Any],
     state_records_by_id: Mapping[str, Mapping[str, Any]],
     materialized: Mapping[str, Any],
+    simulation_plan_cache: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     dependency_records = [
         copy.deepcopy(dict(state_records_by_id[work_item_id]))
@@ -958,7 +985,7 @@ def _build_stage_execution_context(
         str(item["suite_cell_id"]): copy.deepcopy(dict(item))
         for item in plan["cell_catalog"]
     }
-    return {
+    context = {
         "execution_version": EXPERIMENT_SUITE_EXECUTION_VERSION,
         "plan": copy.deepcopy(dict(plan)),
         "work_item": {
@@ -979,6 +1006,48 @@ def _build_stage_execution_context(
         "design_lock_path": str(plan["suite_source"]["design_lock_path"]),
         "dependency_records": dependency_records,
     }
+    simulation_plan = _resolve_cached_stage_simulation_plan(
+        schedule_entry=schedule_entry,
+        materialized=materialized,
+        simulation_plan_cache=simulation_plan_cache,
+        schema_path=Path(plan["suite_source"]["schema_path"]).resolve(),
+        design_lock_path=Path(plan["suite_source"]["design_lock_path"]).resolve(),
+    )
+    if simulation_plan is not None:
+        context["simulation_plan"] = simulation_plan
+    return context
+
+
+def _resolve_cached_stage_simulation_plan(
+    *,
+    schedule_entry: Mapping[str, Any],
+    materialized: Mapping[str, Any],
+    simulation_plan_cache: dict[str, dict[str, Any]],
+    schema_path: Path,
+    design_lock_path: Path,
+) -> dict[str, Any] | None:
+    if str(schedule_entry["stage_id"]) not in {
+        STAGE_SIMULATION,
+        STAGE_ANALYSIS,
+        STAGE_VALIDATION,
+    }:
+        return None
+
+    cache_key = str(schedule_entry["suite_cell_id"])
+    cached = simulation_plan_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from .simulation_planning import resolve_manifest_simulation_plan
+
+    resolved = resolve_manifest_simulation_plan(
+        manifest_path=Path(materialized["manifest_path"]).resolve(),
+        config_path=Path(materialized["config_path"]).resolve(),
+        schema_path=schema_path,
+        design_lock_path=design_lock_path,
+    )
+    simulation_plan_cache[cache_key] = resolved
+    return resolved
 
 
 def _persist_suite_execution_inputs(

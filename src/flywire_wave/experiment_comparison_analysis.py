@@ -52,11 +52,14 @@ from .simulator_result_contract import (
     READOUT_TRACES_KEY,
     STATE_SUMMARY_KEY,
     load_simulator_result_bundle_metadata,
+    lookup_simulator_result_bundle_metadata_path,
     parse_simulator_readout_definition,
     parse_simulator_result_bundle_metadata,
+    resolve_simulator_result_bundle_metadata_path,
 )
 from .stimulus_contract import (
     load_stimulus_bundle_metadata,
+    resolve_stimulus_bundle_metadata_path,
     _normalize_float,
     _normalize_identifier,
     _normalize_nonempty_string,
@@ -135,27 +138,30 @@ def discover_experiment_bundle_set(
         tuple(signature["condition_ids"])
         for signature in expected_condition_signatures
     }
+    expected_condition_variants = _expected_condition_variants(
+        condition_groups=condition_groups,
+        requires_condition_labels=requires_condition_labels,
+    )
 
     bundle_records: list[dict[str, Any]] = []
     bundle_inventory: list[dict[str, Any]] = []
     seen_bundle_keys: set[tuple[str, int, tuple[str, ...]]] = set()
 
-    for arm_id in arm_ids:
+    for run_plan in per_seed_run_plans:
+        arm_id = str(run_plan["arm_reference"]["arm_id"])
         arm_plan = canonical_arm_plans.get(arm_id)
-        if arm_plan is None:
+        if arm_id not in set(arm_ids) or arm_plan is None:
             raise ValueError(
                 f"Simulation plan is missing canonical arm plan metadata for arm_id {arm_id!r}."
             )
-        arm_bundle_dir = (
-            processed_simulator_results_dir / "bundles" / experiment_id / arm_id
-        ).resolve()
-        metadata_paths = sorted(arm_bundle_dir.glob("*/simulator_result_bundle.json"))
-        if not metadata_paths:
-            raise ValueError(
-                f"Experiment {experiment_id!r} is missing local simulator bundles for arm_id "
-                f"{arm_id!r} under {arm_bundle_dir}."
+        expected_seeds = expected_seeds_by_arm_id.get(arm_id, [])
+        for condition_variant in expected_condition_variants:
+            metadata_path = _resolve_expected_simulator_bundle_metadata_path(
+                run_plan=run_plan,
+                parameter_overrides=condition_variant["parameter_overrides"],
             )
-        for metadata_path in metadata_paths:
+            if metadata_path is None:
+                continue
             metadata = load_simulator_result_bundle_metadata(metadata_path)
             _validate_bundle_against_arm_plan(
                 bundle_metadata=metadata,
@@ -164,7 +170,6 @@ def discover_experiment_bundle_set(
                 experiment_id=experiment_id,
             )
             seed = int(metadata["determinism"]["seed"])
-            expected_seeds = expected_seeds_by_arm_id.get(arm_id, [])
             if seed not in set(expected_seeds):
                 raise ValueError(
                     f"Discovered simulator bundle {metadata['bundle_id']!r} uses seed {seed!r}, "
@@ -455,31 +460,44 @@ def execute_experiment_comparison_workflow(
     schema_path: str | Path,
     design_lock_path: str | Path,
     output_path: str | Path | None = None,
+    simulation_plan: Mapping[str, Any] | None = None,
+    analysis_plan: Mapping[str, Any] | None = None,
+    bundle_set: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    simulation_plan = resolve_manifest_simulation_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
+    resolved_simulation_plan = (
+        _require_mapping(simulation_plan, field_name="simulation_plan")
+        if simulation_plan is not None
+        else resolve_manifest_simulation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+        )
     )
-    analysis_plan = resolve_manifest_readout_analysis_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
+    resolved_analysis_plan = (
+        _require_mapping(analysis_plan, field_name="analysis_plan")
+        if analysis_plan is not None
+        else _require_mapping(
+            resolved_simulation_plan.get("readout_analysis_plan"),
+            field_name="simulation_plan.readout_analysis_plan",
+        )
     )
-    bundle_set = discover_experiment_bundle_set(
-        simulation_plan=simulation_plan,
-        analysis_plan=analysis_plan,
+    resolved_bundle_set = (
+        _require_mapping(bundle_set, field_name="bundle_set")
+        if bundle_set is not None
+        else discover_experiment_bundle_set(
+            simulation_plan=resolved_simulation_plan,
+            analysis_plan=resolved_analysis_plan,
+        )
     )
     summary = compute_experiment_comparison_summary(
-        analysis_plan=analysis_plan,
-        bundle_set=bundle_set,
+        analysis_plan=resolved_analysis_plan,
+        bundle_set=resolved_bundle_set,
     )
     packaged_bundle = package_experiment_analysis_bundle(
         summary=summary,
-        analysis_plan=analysis_plan,
-        bundle_set=bundle_set,
+        analysis_plan=resolved_analysis_plan,
+        bundle_set=resolved_bundle_set,
     )
     written_path = (
         write_experiment_comparison_summary(summary, output_path)
@@ -1430,6 +1448,146 @@ def _expected_condition_signatures(
         )
     signatures.sort(key=lambda item: str(item["condition_signature"]))
     return signatures
+
+
+def _expected_condition_variants(
+    *,
+    condition_groups: Mapping[str, Sequence[Mapping[str, Any]]],
+    requires_condition_labels: bool,
+) -> list[dict[str, Any]]:
+    if not requires_condition_labels or not condition_groups:
+        return [{"condition_ids": [], "parameter_overrides": {}}]
+    variants: list[dict[str, Any]] = [
+        {
+            "condition_ids": [],
+            "parameter_overrides": {},
+        }
+    ]
+    for parameter_name, candidates in sorted(condition_groups.items()):
+        next_variants: list[dict[str, Any]] = []
+        for variant in variants:
+            for candidate in candidates:
+                next_variants.append(
+                    {
+                        "condition_ids": sorted(
+                            [
+                                *variant["condition_ids"],
+                                str(candidate["condition_id"]),
+                            ]
+                        ),
+                        "parameter_overrides": {
+                            **variant["parameter_overrides"],
+                            parameter_name: copy.deepcopy(candidate["value"]),
+                        },
+                    }
+                )
+        variants = next_variants
+    variants.sort(
+        key=lambda item: (
+            _condition_signature(item["condition_ids"]),
+            tuple(item["condition_ids"]),
+        )
+    )
+    return variants
+
+
+def _resolve_expected_simulator_bundle_metadata_path(
+    *,
+    run_plan: Mapping[str, Any],
+    parameter_overrides: Mapping[str, Any],
+) -> Path | None:
+    selected_assets = [
+        copy.deepcopy(dict(item))
+        for item in run_plan["selected_assets"]
+    ]
+    if parameter_overrides:
+        selected_assets = _selected_assets_with_condition_stimulus(
+            selected_assets=selected_assets,
+            parameter_overrides=parameter_overrides,
+        )
+    exact_path = resolve_simulator_result_bundle_metadata_path(
+        manifest_reference=run_plan["manifest_reference"],
+        arm_reference=run_plan["arm_reference"],
+        determinism=run_plan["determinism"],
+        timebase=run_plan["runtime"]["timebase"],
+        selected_assets=selected_assets,
+        readout_catalog=run_plan["runtime"]["shared_readout_catalog"],
+        processed_simulator_results_dir=run_plan["runtime"][
+            "processed_simulator_results_dir"
+        ],
+    )
+    if exact_path.exists():
+        return exact_path
+    return lookup_simulator_result_bundle_metadata_path(
+        manifest_reference=run_plan["manifest_reference"],
+        arm_reference=run_plan["arm_reference"],
+        determinism=run_plan["determinism"],
+        timebase=run_plan["runtime"]["timebase"],
+        selected_assets=selected_assets,
+        readout_catalog=run_plan["runtime"]["shared_readout_catalog"],
+        processed_simulator_results_dir=run_plan["runtime"][
+            "processed_simulator_results_dir"
+        ],
+        path_relaxed_asset_roles=("model_configuration",),
+    )
+
+
+def _selected_assets_with_condition_stimulus(
+    *,
+    selected_assets: Sequence[Mapping[str, Any]],
+    parameter_overrides: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    replaced_assets: list[dict[str, Any]] = []
+    base_stimulus_asset: dict[str, Any] | None = None
+    for item in selected_assets:
+        record = copy.deepcopy(dict(item))
+        if (
+            str(record["asset_role"]) == "input_bundle"
+            and str(record["artifact_type"]) == "stimulus_bundle"
+        ):
+            base_stimulus_asset = record
+        replaced_assets.append(record)
+    if base_stimulus_asset is None:
+        raise ValueError(
+            "Experiment bundle discovery requires an input_bundle stimulus_bundle asset "
+            "to resolve condition-specific simulator bundles."
+        )
+    base_stimulus_metadata = load_stimulus_bundle_metadata(Path(base_stimulus_asset["path"]))
+    parameter_snapshot = copy.deepcopy(dict(base_stimulus_metadata["parameter_snapshot"]))
+    parameter_snapshot.update(
+        {str(key): copy.deepcopy(value) for key, value in parameter_overrides.items()}
+    )
+    processed_stimulus_dir = Path(
+        base_stimulus_metadata["assets"]["metadata_json"]["path"]
+    ).resolve().parents[4]
+    condition_stimulus_metadata_path = resolve_stimulus_bundle_metadata_path(
+        stimulus_family=str(base_stimulus_metadata["stimulus_family"]),
+        stimulus_name=str(base_stimulus_metadata["stimulus_name"]),
+        processed_stimulus_dir=processed_stimulus_dir,
+        parameter_snapshot=parameter_snapshot,
+        seed=int(base_stimulus_metadata["determinism"]["seed"]),
+        temporal_sampling=base_stimulus_metadata["temporal_sampling"],
+        spatial_frame=base_stimulus_metadata["spatial_frame"],
+        luminance_convention=base_stimulus_metadata["luminance_convention"],
+        rng_family=str(base_stimulus_metadata["determinism"]["rng_family"]),
+    )
+    if not condition_stimulus_metadata_path.exists():
+        raise ValueError(
+            "Experiment bundle discovery could not resolve the condition stimulus bundle "
+            f"metadata at {condition_stimulus_metadata_path}."
+        )
+    condition_stimulus_metadata = load_stimulus_bundle_metadata(
+        condition_stimulus_metadata_path
+    )
+    for item in replaced_assets:
+        if (
+            str(item["asset_role"]) == "input_bundle"
+            and str(item["artifact_type"]) == "stimulus_bundle"
+        ):
+            item["bundle_id"] = str(condition_stimulus_metadata["bundle_id"])
+            item["path"] = str(condition_stimulus_metadata_path.resolve())
+            break
+    return replaced_assets
 
 
 def _infer_bundle_conditions(

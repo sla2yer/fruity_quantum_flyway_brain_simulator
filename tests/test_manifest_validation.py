@@ -9,11 +9,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from flywire_wave.manifests import load_json, load_yaml, validate_manifest, validate_manifest_payload
 from flywire_wave.simulation_planning import resolve_manifest_simulation_plan
 from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
-from tests.test_simulation_planning import _write_simulation_fixture
+
+try:
+    from test_simulation_planning import _write_simulation_fixture
+except ModuleNotFoundError:
+    from tests.test_simulation_planning import _write_simulation_fixture
 
 
 class ManifestValidationTest(unittest.TestCase):

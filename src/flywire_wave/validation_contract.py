@@ -456,6 +456,18 @@ def build_validation_bundle_metadata(
     }
 
 
+def build_validation_bundle_reference(
+    bundle_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    normalized = parse_validation_bundle_metadata(bundle_metadata)
+    return {
+        "contract_version": normalized["contract_version"],
+        "bundle_id": normalized["bundle_id"],
+        "experiment_id": normalized["experiment_id"],
+        "validation_spec_hash": normalized["validation_spec_hash"],
+    }
+
+
 def parse_validation_evidence_scope_definition(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise ValueError("validation evidence scope definitions must be mappings.")
@@ -1049,6 +1061,164 @@ def load_validation_bundle_metadata(metadata_path: str | Path) -> dict[str, Any]
     with Path(metadata_path).open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     return parse_validation_bundle_metadata(payload)
+
+
+def resolve_validation_bundle_metadata_path(
+    *,
+    processed_simulator_results_dir: str | Path,
+    validation_plan_reference: Mapping[str, Any] | None = None,
+    bundle_reference: Mapping[str, Any] | None = None,
+) -> Path:
+    experiment_id, validation_spec_hash = _resolve_validation_bundle_identity(
+        validation_plan_reference=validation_plan_reference,
+        bundle_reference=bundle_reference,
+    )
+    bundle_paths = build_validation_bundle_paths(
+        experiment_id=experiment_id,
+        validation_spec_hash=validation_spec_hash,
+        processed_simulator_results_dir=processed_simulator_results_dir,
+    )
+    return bundle_paths.metadata_json_path.resolve()
+
+
+def lookup_validation_bundle_metadata_path(
+    *,
+    processed_simulator_results_dir: str | Path,
+    validation_plan_reference: Mapping[str, Any] | None = None,
+    bundle_reference: Mapping[str, Any] | None = None,
+    experiment_id: str | None = None,
+    analysis_bundle_reference: Mapping[str, Any] | None = None,
+    simulator_result_bundle_ids: Sequence[str] | None = None,
+    target_arm_ids: Sequence[str] | None = None,
+) -> Path:
+    if validation_plan_reference is not None or bundle_reference is not None:
+        metadata_path = resolve_validation_bundle_metadata_path(
+            processed_simulator_results_dir=processed_simulator_results_dir,
+            validation_plan_reference=validation_plan_reference,
+            bundle_reference=bundle_reference,
+        )
+        if metadata_path.exists():
+            return metadata_path
+        raise ValueError(
+            "validation_bundle metadata was not found at the canonical contract path "
+            f"{metadata_path}."
+        )
+
+    normalized_experiment_id = _normalize_identifier(
+        experiment_id,
+        field_name="experiment_id",
+    )
+    validation_root = (
+        Path(processed_simulator_results_dir).resolve()
+        / DEFAULT_VALIDATION_DIRECTORY_NAME
+        / normalized_experiment_id
+    ).resolve()
+    candidate_paths = sorted(validation_root.glob("*/validation_bundle.json"))
+    if not candidate_paths:
+        raise ValueError(
+            "validation_bundle lookup requires local bundle metadata for "
+            f"experiment_id {normalized_experiment_id!r} under {validation_root}."
+        )
+
+    requested_analysis_bundle_id = _normalize_optional_bundle_id(
+        analysis_bundle_reference,
+        field_name="analysis_bundle_reference",
+    )
+    requested_simulator_bundle_ids = _normalize_bundle_id_filters(
+        simulator_result_bundle_ids,
+        field_name="simulator_result_bundle_ids",
+    )
+    requested_target_arm_ids = _normalize_identifier_sequence(
+        target_arm_ids,
+        field_name="target_arm_ids",
+    )
+
+    matches: list[dict[str, Any]] = []
+    for path in candidate_paths:
+        metadata = load_validation_bundle_metadata(path)
+        plan_reference = metadata["validation_plan_reference"]
+        evidence_refs = plan_reference.get("evidence_bundle_references", {})
+        if requested_analysis_bundle_id is not None:
+            analysis_ref = evidence_refs.get("experiment_analysis_bundle")
+            if (
+                not isinstance(analysis_ref, Mapping)
+                or _normalize_optional_bundle_id(
+                    analysis_ref,
+                    field_name="validation_plan_reference.evidence_bundle_references.experiment_analysis_bundle",
+                )
+                != requested_analysis_bundle_id
+            ):
+                continue
+        if requested_simulator_bundle_ids:
+            simulator_ref = _normalize_json_mapping(
+                evidence_refs.get("simulator_result_bundle", {}),
+                field_name="validation_plan_reference.evidence_bundle_references.simulator_result_bundle",
+            )
+            available_bundle_ids = _normalize_bundle_id_filters(
+                simulator_ref.get("bundle_ids"),
+                field_name="validation_plan_reference.evidence_bundle_references.simulator_result_bundle.bundle_ids",
+            )
+            if not requested_simulator_bundle_ids.issubset(available_bundle_ids):
+                continue
+        if requested_target_arm_ids:
+            available_target_arm_ids = _normalize_identifier_sequence(
+                plan_reference.get("target_arm_ids", []),
+                field_name="validation_plan_reference.target_arm_ids",
+            )
+            if available_target_arm_ids and not requested_target_arm_ids.issubset(
+                available_target_arm_ids
+            ):
+                continue
+        matches.append(metadata)
+
+    if not matches:
+        filter_descriptions: list[str] = []
+        if requested_analysis_bundle_id is not None:
+            filter_descriptions.append(
+                f"analysis bundle_id {requested_analysis_bundle_id!r}"
+            )
+        if requested_simulator_bundle_ids:
+            filter_descriptions.append(
+                f"simulator bundle_ids {sorted(requested_simulator_bundle_ids)!r}"
+            )
+        if requested_target_arm_ids:
+            filter_descriptions.append(
+                f"target_arm_ids {sorted(requested_target_arm_ids)!r}"
+            )
+        suffix = "" if not filter_descriptions else " matching " + " and ".join(filter_descriptions)
+        raise ValueError(
+            "validation_bundle lookup could not find bundle metadata "
+            f"for experiment_id {normalized_experiment_id!r}{suffix}."
+        )
+    if len(matches) > 1:
+        raise ValueError(
+            "validation_bundle lookup found multiple bundle metadata candidates "
+            f"for experiment_id {normalized_experiment_id!r}. Pass an explicit metadata path "
+            "or contract identity to disambiguate."
+        )
+    return Path(matches[0]["artifacts"][METADATA_JSON_KEY]["path"]).resolve()
+
+
+def lookup_validation_bundle_metadata(
+    *,
+    processed_simulator_results_dir: str | Path,
+    validation_plan_reference: Mapping[str, Any] | None = None,
+    bundle_reference: Mapping[str, Any] | None = None,
+    experiment_id: str | None = None,
+    analysis_bundle_reference: Mapping[str, Any] | None = None,
+    simulator_result_bundle_ids: Sequence[str] | None = None,
+    target_arm_ids: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    metadata_path = lookup_validation_bundle_metadata_path(
+        processed_simulator_results_dir=processed_simulator_results_dir,
+        validation_plan_reference=validation_plan_reference,
+        bundle_reference=bundle_reference,
+        experiment_id=experiment_id,
+        analysis_bundle_reference=analysis_bundle_reference,
+        simulator_result_bundle_ids=simulator_result_bundle_ids,
+        target_arm_ids=target_arm_ids,
+    )
+    return load_validation_bundle_metadata(metadata_path)
 
 
 def discover_validation_evidence_scopes(
@@ -2099,6 +2269,115 @@ def _normalize_perturbation_suite_references(payload: Any) -> list[dict[str, Any
             }
         )
     return sorted(normalized, key=lambda item: item["suite_id"])
+
+
+def _resolve_validation_bundle_identity(
+    *,
+    validation_plan_reference: Mapping[str, Any] | None,
+    bundle_reference: Mapping[str, Any] | None,
+) -> tuple[str, str]:
+    if validation_plan_reference is not None:
+        normalized_plan = parse_validation_plan_reference(validation_plan_reference)
+        return (
+            normalized_plan["experiment_id"],
+            build_validation_spec_hash(normalized_plan),
+        )
+    if bundle_reference is not None:
+        normalized_reference = _normalize_validation_bundle_reference(bundle_reference)
+        return (
+            normalized_reference["experiment_id"],
+            normalized_reference["validation_spec_hash"],
+        )
+    raise ValueError(
+        "validation_bundle lookup requires validation_plan_reference or bundle_reference."
+    )
+
+
+def _normalize_validation_bundle_reference(
+    payload: Any,
+) -> dict[str, str]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("bundle_reference must be a mapping.")
+    contract_version = _normalize_nonempty_string(
+        payload.get("contract_version"),
+        field_name="bundle_reference.contract_version",
+    )
+    if contract_version != VALIDATION_LADDER_CONTRACT_VERSION:
+        raise ValueError(
+            "bundle_reference.contract_version must be "
+            f"{VALIDATION_LADDER_CONTRACT_VERSION!r}."
+        )
+    experiment_id = _normalize_identifier(
+        payload.get("experiment_id"),
+        field_name="bundle_reference.experiment_id",
+    )
+    validation_spec_hash = _normalize_parameter_hash(
+        payload.get("validation_spec_hash")
+    )
+    bundle_id = _normalize_nonempty_string(
+        payload.get("bundle_id"),
+        field_name="bundle_reference.bundle_id",
+    )
+    expected_bundle_id = (
+        f"{VALIDATION_LADDER_CONTRACT_VERSION}:"
+        f"{experiment_id}:{validation_spec_hash}"
+    )
+    if bundle_id != expected_bundle_id:
+        raise ValueError(
+            "bundle_reference.bundle_id must match the canonical validation bundle identity."
+        )
+    return {
+        "contract_version": contract_version,
+        "bundle_id": bundle_id,
+        "experiment_id": experiment_id,
+        "validation_spec_hash": validation_spec_hash,
+    }
+
+
+def _normalize_optional_bundle_id(
+    payload: Mapping[str, Any] | None,
+    *,
+    field_name: str,
+) -> str | None:
+    if payload is None:
+        return None
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{field_name} must be a mapping.")
+    bundle_id = payload.get("bundle_id")
+    if bundle_id in {None, ""}:
+        return None
+    return _normalize_nonempty_string(bundle_id, field_name=f"{field_name}.bundle_id")
+
+
+def _normalize_bundle_id_filters(
+    payload: Sequence[str] | None,
+    *,
+    field_name: str,
+) -> set[str]:
+    if payload is None:
+        return set()
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes, bytearray)):
+        raise ValueError(f"{field_name} must be a sequence.")
+    return {
+        _normalize_nonempty_string(item, field_name=field_name)
+        for item in payload
+    }
+
+
+def _normalize_identifier_sequence(
+    payload: Sequence[str] | None,
+    *,
+    field_name: str,
+) -> set[str]:
+    if payload is None:
+        return set()
+    return set(
+        _normalize_identifier_list(
+            payload,
+            field_name=field_name,
+            allow_empty=True,
+        )
+    )
 
 
 def _normalize_output_root_reference(payload: Any) -> dict[str, Any]:

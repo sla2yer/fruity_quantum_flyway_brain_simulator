@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from flywire_wave.coupling_contract import (
+    ASSET_STATUS_MISSING,
     ASSET_STATUS_READY,
     COUPLING_BUNDLE_CONTRACT_VERSION,
     COUPLING_BUNDLE_DESIGN_NOTE,
@@ -214,6 +215,132 @@ class CouplingContractFixtureTest(unittest.TestCase):
             write_json(manifest, second_path)
             self.assertEqual(first_path.read_text(encoding="utf-8"), second_path.read_text(encoding="utf-8"))
             self.assertEqual(first_path.read_text(encoding="utf-8"), serialized)
+
+    def test_manifest_header_uses_explicit_processed_coupling_dir_and_rejects_stale_lower_root_bundle(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            explicit_coupling_dir = tmp_dir / "expected_coupling"
+            stale_coupling_dir = tmp_dir / "stale_coupling"
+
+            manifest = build_geometry_manifest(
+                bundle_records={
+                    202: _build_fixture_geometry_record(
+                        root_id=202,
+                        processed_coupling_dir=explicit_coupling_dir,
+                        local_synapse_registry_status=ASSET_STATUS_READY,
+                    )
+                },
+                dataset_name="public",
+                materialization_version=783,
+                meshing_config_snapshot={"fetch_skeletons": False, "patch_hops": 2},
+                processed_coupling_dir=explicit_coupling_dir,
+            )
+
+            self.assertEqual(
+                manifest["_coupling_contract"]["local_synapse_registry"]["path"],
+                str((explicit_coupling_dir / "synapse_registry.csv").resolve()),
+            )
+            self.assertEqual(
+                manifest["_coupling_contract"]["local_synapse_registry"]["status"],
+                ASSET_STATUS_READY,
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                r"root 101 has coupling_bundle\.assets\.local_synapse_registry\.path",
+            ):
+                build_geometry_manifest(
+                    bundle_records={
+                        202: _build_fixture_geometry_record(
+                            root_id=202,
+                            processed_coupling_dir=explicit_coupling_dir,
+                            local_synapse_registry_status=ASSET_STATUS_READY,
+                        ),
+                        101: _build_fixture_geometry_record(
+                            root_id=101,
+                            processed_coupling_dir=stale_coupling_dir,
+                            local_synapse_registry_status=ASSET_STATUS_READY,
+                        ),
+                    },
+                    dataset_name="public",
+                    materialization_version=783,
+                    meshing_config_snapshot={"fetch_skeletons": False, "patch_hops": 2},
+                    processed_coupling_dir=explicit_coupling_dir,
+                )
+
+    def test_manifest_build_fails_for_conflicting_per_root_local_synapse_registry_status(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            coupling_dir = tmp_dir / "processed_coupling"
+
+            with self.assertRaisesRegex(
+                ValueError,
+                r"local_synapse_registry status conflicts across roots",
+            ):
+                build_geometry_manifest(
+                    bundle_records={
+                        101: _build_fixture_geometry_record(
+                            root_id=101,
+                            processed_coupling_dir=coupling_dir,
+                            local_synapse_registry_status=ASSET_STATUS_READY,
+                        ),
+                        202: _build_fixture_geometry_record(
+                            root_id=202,
+                            processed_coupling_dir=coupling_dir,
+                            local_synapse_registry_status=ASSET_STATUS_MISSING,
+                        ),
+                    },
+                    dataset_name="public",
+                    materialization_version=783,
+                    meshing_config_snapshot={"fetch_skeletons": False, "patch_hops": 2},
+                    processed_coupling_dir=coupling_dir,
+                )
+
+
+def _build_fixture_geometry_record(
+    *,
+    root_id: int,
+    processed_coupling_dir: Path,
+    local_synapse_registry_status: str,
+) -> dict[str, object]:
+    bundle_paths = build_geometry_bundle_paths(
+        root_id,
+        meshes_raw_dir=ROOT / "data" / "interim" / "meshes_raw",
+        skeletons_raw_dir=ROOT / "data" / "interim" / "skeletons_raw",
+        processed_mesh_dir=ROOT / "data" / "processed" / "meshes",
+        processed_graph_dir=ROOT / "data" / "processed" / "graphs",
+    )
+    asset_statuses = default_asset_statuses(fetch_skeletons=False)
+    asset_statuses.update(
+        {
+            RAW_MESH_KEY: ASSET_STATUS_READY,
+            SIMPLIFIED_MESH_KEY: ASSET_STATUS_READY,
+            SURFACE_GRAPH_KEY: ASSET_STATUS_READY,
+            PATCH_GRAPH_KEY: ASSET_STATUS_READY,
+            DESCRIPTOR_SIDECAR_KEY: ASSET_STATUS_READY,
+            QA_SIDECAR_KEY: ASSET_STATUS_READY,
+            TRANSFER_OPERATORS_KEY: ASSET_STATUS_READY,
+            OPERATOR_METADATA_KEY: ASSET_STATUS_READY,
+        }
+    )
+    coupling_metadata = build_coupling_bundle_metadata(
+        root_id=root_id,
+        processed_coupling_dir=processed_coupling_dir,
+        local_synapse_registry_status=local_synapse_registry_status,
+        incoming_anchor_map_status=ASSET_STATUS_READY,
+        outgoing_anchor_map_status=ASSET_STATUS_READY,
+        coupling_index_status=ASSET_STATUS_READY,
+        edge_bundles=[],
+    )
+    return build_geometry_manifest_record(
+        bundle_paths=bundle_paths,
+        asset_statuses=asset_statuses,
+        dataset_name="public",
+        materialization_version=783,
+        meshing_config_snapshot={"fetch_skeletons": False, "patch_hops": 2},
+        coupling_bundle_metadata=coupling_metadata,
+        processed_coupling_dir=processed_coupling_dir,
+    )
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ help:
 		'bootstrap          Create/update .venv and install the repo in editable mode' \
 		'test               Run local unit tests' \
 		'smoke              Run tests plus manifest validation' \
-		'verify             Check FlyWire/CAVE access (needs token/config)' \
+		'verify             Verify the active FlyWire mesh preflight (needs token/config)' \
 		'registry           Build canonical metadata/connectivity registries' \
 		'select             Build the selected root-id subset' \
 		'meshes             Fetch raw meshes and optional skeletons' \

@@ -11,7 +11,7 @@ import numpy as np
 import yaml
 
 from .config import REPO_ROOT, load_config
-from .io_utils import ensure_dir, write_json, write_root_ids
+from .io_utils import ensure_dir, write_json
 from .manifests import load_json, load_yaml
 from .milestone9_readiness import (
     DEFAULT_VERIFICATION_BASELINE_FAMILIES,
@@ -53,6 +53,7 @@ from .simulator_result_contract import (
 )
 from .stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
 from .surface_wave_contract import parse_surface_wave_model_metadata, write_surface_wave_model_metadata
+from .selection import write_selected_root_roster, write_subset_manifest
 
 
 MILESTONE10_READINESS_REPORT_VERSION = "milestone10_readiness.v1"
@@ -387,22 +388,12 @@ def _materialize_verification_fixture(
     record_stimulus_bundle(stimulus)
 
     selected_root_ids_path = generated_fixture_dir / "selected_root_ids.txt"
-    write_root_ids(selected_root_ids, selected_root_ids_path)
+    write_selected_root_roster(selected_root_ids, selected_root_ids_path)
 
-    subset_manifest_path = subset_output_dir / subset_name / "subset_manifest.json"
-    subset_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    subset_manifest_path.write_text(
-        json.dumps(
-            {
-                "subset_manifest_version": "1",
-                "preset_name": subset_name,
-                "root_ids": selected_root_ids,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
+    subset_manifest_path = write_subset_manifest(
+        subset_output_dir=subset_output_dir,
+        preset_name=subset_name,
+        root_ids=selected_root_ids,
     )
 
     geometry_manifest_path = generated_fixture_dir / "geometry_manifest.json"

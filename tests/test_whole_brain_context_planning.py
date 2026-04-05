@@ -16,7 +16,11 @@ sys.path.insert(0, str(ROOT / "tests"))
 from flywire_wave.config import load_config
 from flywire_wave.coupling_contract import build_coupling_contract_paths
 from flywire_wave.io_utils import read_root_ids, write_json
-from flywire_wave.selection import build_subset_artifact_paths
+from flywire_wave.selection import (
+    build_subset_artifact_paths,
+    write_selected_root_roster,
+    write_subset_manifest,
+)
 from flywire_wave.showcase_session_contract import ANALYSIS_SUMMARY_PRESET_ID
 from flywire_wave.showcase_session_planning import (
     package_showcase_session,
@@ -696,18 +700,14 @@ def _materialize_subset_bundle_from_config(
         subset_name,
     )
     subset_paths.artifact_dir.mkdir(parents=True, exist_ok=True)
-    subset_paths.root_ids.write_text(
-        "".join(f"{int(root_id)}\n" for root_id in root_ids),
-        encoding="utf-8",
-    )
-    write_json(
-        {
-            "subset_manifest_version": "1",
-            "preset_name": subset_name,
-            "root_ids": [int(root_id) for root_id in root_ids],
+    write_selected_root_roster(root_ids, subset_paths.root_ids)
+    write_subset_manifest(
+        subset_output_dir=cfg["paths"]["subset_output_dir"],
+        preset_name=subset_name,
+        root_ids=root_ids,
+        extra_fields={
             "neurons": [{"root_id": int(root_id)} for root_id in root_ids],
         },
-        subset_paths.manifest_json,
     )
     write_json(
         {

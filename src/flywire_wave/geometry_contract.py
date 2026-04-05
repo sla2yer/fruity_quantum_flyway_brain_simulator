@@ -10,7 +10,9 @@ from typing import Any
 
 from .coupling_contract import (
     COUPLING_BUNDLE_CONTRACT_VERSION,
+    LOCAL_SYNAPSE_REGISTRY_KEY,
     build_coupling_bundle_metadata,
+    build_coupling_contract_paths,
     build_coupling_contract_manifest_metadata,
     normalize_coupling_assembly_config,
     parse_coupling_bundle_metadata,
@@ -727,9 +729,14 @@ def build_geometry_manifest(
     materialization_version: int | str | None,
     meshing_config_snapshot: dict[str, Any],
     processed_coupling_dir: str | Path | None = None,
+    local_synapse_registry_status: str | None = None,
 ) -> dict[str, Any]:
     meshing_config_snapshot = _normalize_meshing_config_snapshot(meshing_config_snapshot)
-    coupling_contract_seed = _first_coupling_bundle_metadata(bundle_records)
+    coupling_contract = _build_manifest_coupling_contract(
+        bundle_records=bundle_records,
+        processed_coupling_dir=processed_coupling_dir,
+        local_synapse_registry_status=local_synapse_registry_status,
+    )
     manifest: dict[str, Any] = {
         "_asset_contract_version": GEOMETRY_ASSET_CONTRACT_VERSION,
         "_dataset": {
@@ -740,10 +747,7 @@ def build_geometry_manifest(
         "_operator_contract_version": OPERATOR_BUNDLE_CONTRACT_VERSION,
         "_operator_contract": build_operator_bundle_manifest_metadata(),
         "_coupling_contract_version": COUPLING_BUNDLE_CONTRACT_VERSION,
-        "_coupling_contract": build_coupling_contract_manifest_metadata(
-            coupling_bundle_metadata=coupling_contract_seed,
-            processed_coupling_dir=processed_coupling_dir,
-        ),
+        "_coupling_contract": coupling_contract,
     }
     for root_id, record in bundle_records.items():
         manifest[str(int(root_id))] = copy.deepcopy(record)
@@ -758,6 +762,7 @@ def write_geometry_manifest(
     materialization_version: int | str | None,
     meshing_config_snapshot: dict[str, Any],
     processed_coupling_dir: str | Path | None = None,
+    local_synapse_registry_status: str | None = None,
 ) -> Path:
     manifest = build_geometry_manifest(
         bundle_records=bundle_records,
@@ -765,6 +770,7 @@ def write_geometry_manifest(
         materialization_version=materialization_version,
         meshing_config_snapshot=meshing_config_snapshot,
         processed_coupling_dir=processed_coupling_dir,
+        local_synapse_registry_status=local_synapse_registry_status,
     )
     return write_json(manifest, manifest_path)
 
@@ -849,17 +855,156 @@ def _default_processed_coupling_dir(bundle_paths: GeometryBundlePaths) -> Path:
     return (bundle_paths.surface_graph_path.parent.parent / "coupling").resolve()
 
 
-def _first_coupling_bundle_metadata(
+def _build_manifest_coupling_contract(
+    *,
     bundle_records: Mapping[int | str, Mapping[str, Any]],
-) -> dict[str, Any] | None:
+    processed_coupling_dir: str | Path | None,
+    local_synapse_registry_status: str | None,
+) -> dict[str, Any]:
+    registry_records = _collect_manifest_local_synapse_registry_records(bundle_records)
+    resolved_processed_coupling_dir = _resolve_manifest_processed_coupling_dir(
+        bundle_records,
+        processed_coupling_dir=processed_coupling_dir,
+    )
+    resolved_local_synapse_registry_status = _resolve_manifest_local_synapse_registry_status(
+        registry_records,
+        local_synapse_registry_status=local_synapse_registry_status,
+    )
+    expected_local_synapse_registry_path = build_coupling_contract_paths(
+        resolved_processed_coupling_dir
+    ).local_synapse_registry_path
+    _validate_manifest_local_synapse_registry_metadata(
+        registry_records,
+        expected_local_synapse_registry_path=expected_local_synapse_registry_path,
+        expected_local_synapse_registry_status=resolved_local_synapse_registry_status,
+    )
+    return build_coupling_contract_manifest_metadata(
+        processed_coupling_dir=resolved_processed_coupling_dir,
+        local_synapse_registry_status=resolved_local_synapse_registry_status,
+    )
+
+
+def _collect_manifest_local_synapse_registry_records(
+    bundle_records: Mapping[int | str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    registry_records: list[dict[str, Any]] = []
     for root_id in sorted(bundle_records, key=lambda value: int(value)):
         record = bundle_records[root_id]
         if not isinstance(record, Mapping):
             continue
         coupling_bundle = record.get("coupling_bundle")
         if isinstance(coupling_bundle, Mapping):
-            return parse_coupling_bundle_metadata(coupling_bundle)
-    return None
+            normalized_bundle = parse_coupling_bundle_metadata(coupling_bundle)
+            local_synapse_registry = normalized_bundle["assets"][LOCAL_SYNAPSE_REGISTRY_KEY]
+            registry_records.append(
+                {
+                    "root_id": int(root_id),
+                    "path": Path(str(local_synapse_registry["path"])).resolve(),
+                    "status": str(local_synapse_registry["status"]),
+                }
+            )
+    return registry_records
+
+
+def _resolve_manifest_processed_coupling_dir(
+    bundle_records: Mapping[int | str, Mapping[str, Any]],
+    *,
+    processed_coupling_dir: str | Path | None,
+) -> Path:
+    if processed_coupling_dir is not None:
+        return Path(processed_coupling_dir).resolve()
+
+    inferred_dirs: dict[Path, list[int]] = {}
+    for root_id in sorted(bundle_records, key=lambda value: int(value)):
+        record = bundle_records[root_id]
+        if not isinstance(record, Mapping):
+            continue
+        inferred_dir = _infer_record_processed_coupling_dir(record)
+        if inferred_dir is None:
+            continue
+        inferred_dirs.setdefault(inferred_dir, []).append(int(root_id))
+
+    if not inferred_dirs:
+        raise ValueError(
+            "processed_coupling_dir must be provided when geometry manifest records do not "
+            "contain enough geometry path metadata to infer the manifest coupling directory."
+        )
+    if len(inferred_dirs) > 1:
+        conflict_details = "; ".join(
+            f"{path} from roots {root_ids!r}"
+            for path, root_ids in sorted(inferred_dirs.items(), key=lambda item: str(item[0]))
+        )
+        raise ValueError(
+            "Geometry manifest records imply conflicting default processed_coupling_dir values. "
+            f"Provide processed_coupling_dir explicitly. Conflicts: {conflict_details}."
+        )
+    return next(iter(inferred_dirs))
+
+
+def _infer_record_processed_coupling_dir(record: Mapping[str, Any]) -> Path | None:
+    surface_graph_path = record.get("surface_graph_path", record.get("processed_graph_path"))
+    if not isinstance(surface_graph_path, str) or not surface_graph_path:
+        return None
+    return (Path(surface_graph_path).resolve().parent.parent / "coupling").resolve()
+
+
+def _resolve_manifest_local_synapse_registry_status(
+    registry_records: list[dict[str, Any]],
+    *,
+    local_synapse_registry_status: str | None,
+) -> str:
+    if local_synapse_registry_status is not None:
+        normalized_status = str(local_synapse_registry_status)
+        if not normalized_status:
+            raise ValueError("local_synapse_registry_status must be a non-empty string when provided.")
+        return normalized_status
+
+    if not registry_records:
+        return ASSET_STATUS_MISSING
+
+    statuses = {str(record["status"]) for record in registry_records}
+    if len(statuses) > 1:
+        conflict_details = ", ".join(
+            f"root {record['root_id']}: {record['status']!r}"
+            for record in registry_records
+        )
+        raise ValueError(
+            "Geometry manifest coupling local_synapse_registry status conflicts across roots: "
+            f"{conflict_details}."
+        )
+    return str(registry_records[0]["status"])
+
+
+def _validate_manifest_local_synapse_registry_metadata(
+    registry_records: list[dict[str, Any]],
+    *,
+    expected_local_synapse_registry_path: Path,
+    expected_local_synapse_registry_status: str,
+) -> None:
+    conflicts: list[str] = []
+    for record in registry_records:
+        root_id = int(record["root_id"])
+        actual_path = Path(record["path"]).resolve()
+        actual_status = str(record["status"])
+        if actual_path != expected_local_synapse_registry_path:
+            conflicts.append(
+                "root "
+                f"{root_id} has coupling_bundle.assets.{LOCAL_SYNAPSE_REGISTRY_KEY}.path "
+                f"{str(actual_path)!r}, expected {str(expected_local_synapse_registry_path)!r}"
+            )
+        if actual_status != expected_local_synapse_registry_status:
+            conflicts.append(
+                "root "
+                f"{root_id} has coupling_bundle.assets.{LOCAL_SYNAPSE_REGISTRY_KEY}.status "
+                f"{actual_status!r}, expected {expected_local_synapse_registry_status!r}"
+            )
+    if conflicts:
+        raise ValueError(
+            "Geometry manifest coupling contract conflicts with per-root "
+            f"coupling_bundle.assets.{LOCAL_SYNAPSE_REGISTRY_KEY} metadata: "
+            + "; ".join(conflicts)
+            + "."
+        )
 
 
 def _normalize_diagonal_tensor_pair(value: Any, *, field_name: str) -> list[float]:

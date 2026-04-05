@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,7 @@ from flywire_wave.validation_contract import (
     VALIDATION_STATUS_PASS,
 )
 from flywire_wave.validation_planning import NOISE_ROBUSTNESS_SUITE_ID
+from flywire_wave.validation_planning import resolve_validation_plan
 from flywire_wave.validation_task import (
     execute_task_validation_workflow,
 )
@@ -239,6 +241,34 @@ class TaskValidationWorkflowTest(unittest.TestCase):
                 )
             self.assertIn("task-decoder inventory required", str(ctx.exception))
 
+    def test_workflow_accepts_pre_resolved_validation_plan_without_replanning(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _prepare_task_validation_fixture(tmp_dir)
+            validation_plan = resolve_validation_plan(
+                config_path=fixture["config_path"],
+                simulation_plan=fixture["simulation_plan"],
+                analysis_plan=fixture["analysis_plan"],
+                bundle_set=fixture["bundle_set"],
+                analysis_bundle_metadata_path=fixture["base_bundle"]["metadata_path"],
+            )
+
+            with mock.patch(
+                "flywire_wave.validation_task.resolve_manifest_simulation_plan",
+                side_effect=AssertionError("unexpected simulation plan re-resolution"),
+            ):
+                result = execute_task_validation_workflow(
+                    manifest_path=fixture["manifest_path"],
+                    config_path=fixture["config_path"],
+                    schema_path=fixture["schema_path"],
+                    design_lock_path=fixture["design_lock_path"],
+                    analysis_bundle_metadata_path=fixture["base_bundle"]["metadata_path"],
+                    perturbation_analysis_bundle_specs=fixture["pass_noise_specs"],
+                    validation_plan=validation_plan,
+                )
+
+            self.assertEqual(result["overall_status"], VALIDATION_STATUS_PASS)
+
 
 def _prepare_task_validation_fixture(tmp_dir: Path) -> dict[str, Any]:
     comparison_fixture = _materialize_experiment_comparison_fixture(tmp_dir)
@@ -330,6 +360,9 @@ def _prepare_task_validation_fixture(tmp_dir: Path) -> dict[str, Any]:
 
     return {
         **comparison_fixture,
+        "simulation_plan": simulation_plan,
+        "analysis_plan": analysis_plan,
+        "bundle_set": bundle_set,
         "base_bundle": base_bundle,
         "pass_noise_specs": [
             {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import sys
 import time
@@ -15,7 +16,7 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from flywire_wave.auth import ensure_flywire_secret
-from flywire_wave.config import load_config
+from flywire_wave.config import get_config_path, load_config
 
 
 def _http_status(exc: BaseException) -> int | None:
@@ -72,118 +73,310 @@ def _call_with_retries(label: str, func: Callable[[], Any], attempts: int = 3) -
     raise RuntimeError(f"{label} failed before making a request.")
 
 
+def _format_exception(exc: BaseException) -> str:
+    detail = str(exc).strip()
+    if detail:
+        return f"{type(exc).__name__}: {detail}"
+    return type(exc).__name__
+
+
+def _print_next_step(message: str) -> None:
+    print(f"Next step: {message}")
+
+
+def _resolved_config_path(cfg: dict[str, Any], fallback: str) -> Path:
+    config_path = get_config_path(cfg)
+    if config_path is not None:
+        return config_path.resolve()
+    return Path(fallback).expanduser().resolve()
+
+
+def _fail_missing_dependency(message: str) -> int:
+    print(message)
+    _print_next_step("run `make bootstrap` in this repo, then rerun `make verify`.")
+    return 1
+
+
+def _handle_http_failure(*, label: str, datastack: str, config_path: Path, exc: BaseException) -> int:
+    status = _http_status(exc)
+    url = _http_url(exc) or "<unknown>"
+    if status in {400, 404}:
+        print(f"{label} failed for datastack '{datastack}': HTTP {status} from {url}")
+        _print_next_step(f"check `dataset.datastack_name` in {config_path} and retry.")
+        return 1
+    if status in {401, 403}:
+        print(f"{label} auth failed for datastack '{datastack}': HTTP {status} from {url}")
+        _print_next_step("refresh `FLYWIRE_TOKEN` or your local caveclient token, then rerun `make verify`.")
+        return 1
+    if _is_transient_http_error(exc):
+        print(f"{label} is temporarily unavailable for datastack '{datastack}': HTTP {status} from {url}")
+        _print_next_step("retry after the FlyWire service recovers or verify network reachability.")
+        return 1
+    print(f"{label} failed for datastack '{datastack}': HTTP {status} from {url}")
+    _print_next_step(f"confirm the FlyWire service is reachable and recheck {config_path}.")
+    return 1
+
+
+def _handle_network_failure(*, label: str, datastack: str, exc: BaseException) -> int:
+    print(f"{label} hit a network error for datastack '{datastack}': {exc}")
+    _print_next_step("verify FlyWire network reachability and rerun `make verify`.")
+    return 1
+
+
+def _handle_unexpected_service_failure(*, label: str, datastack: str, config_path: Path, exc: BaseException) -> int:
+    print(f"{label} failed for datastack '{datastack}': {_format_exception(exc)}")
+    _print_next_step(f"check the FlyWire config in {config_path} and rerun `make verify`.")
+    return 1
+
+
+def _check_materialize_access(*, client: Any, version: int, datastack: str) -> int:
+    try:
+        import requests
+    except Exception:
+        return _fail_missing_dependency(
+            "requests is required for the optional materialize probe."
+        )
+
+    try:
+        versions = _call_with_retries("Materialize version lookup", client.materialize.get_versions)
+        tables = _call_with_retries("Materialize table lookup", client.materialize.get_tables)
+    except requests.HTTPError as exc:
+        status = _http_status(exc)
+        url = _http_url(exc) or "<unknown>"
+        if _is_transient_http_error(exc):
+            print(
+                "Materialize access is temporarily unavailable "
+                f"for datastack '{datastack}': HTTP {status} from {url}"
+            )
+            _print_next_step("retry after the FlyWire materialize service recovers.")
+            return 1
+        print(f"Materialize access failed for datastack '{datastack}': HTTP {status} from {url}")
+        _print_next_step("confirm the configured materialization service is reachable and retry.")
+        return 1
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        print(f"Materialize access hit a network error for datastack '{datastack}': {exc}")
+        _print_next_step("verify FlyWire network reachability and rerun `make verify`.")
+        return 1
+    except Exception as exc:
+        print(f"Materialize access failed for datastack '{datastack}': {_format_exception(exc)}")
+        _print_next_step("confirm the configured materialization service is reachable and retry.")
+        return 1
+
+    print(f"Requested version: {version}")
+    print(f"Materialization versions visible: {versions}")
+    print(f"Tables: {tables}")
+    print("Materialize access: OK")
+
+    if int(version) not in [int(v) for v in versions]:
+        print(f"Requested materialization version {version} is not visible in this environment.")
+        _print_next_step("set `dataset.materialization_version` to a visible version and rerun `make verify`.")
+        return 1
+    return 0
+
+
+def _check_mesh_prerequisites(
+    *,
+    flywire_dataset: str,
+    fetch_skeletons: bool,
+    token: str,
+    config_path: Path,
+) -> int:
+    if token:
+        try:
+            token_sync = ensure_flywire_secret(token)
+        except Exception as exc:
+            detail = _format_exception(exc)
+            print(f"FlyWire token sync failed for `.env` `FLYWIRE_TOKEN`: {detail}")
+            detail_lower = detail.lower()
+            if "cloudvolume" in detail_lower:
+                _print_next_step(
+                    "install `cloudvolume` in the active environment, or run `make bootstrap`, then rerun `make verify`."
+                )
+            elif "fafbseg" in detail_lower:
+                _print_next_step(
+                    "install `fafbseg` in the active environment, or run `make bootstrap`, then rerun `make verify`."
+                )
+            else:
+                _print_next_step(
+                    "check `.env` `FLYWIRE_TOKEN` and local CAVE/cloudvolume secret-store access, then rerun `make verify`."
+                )
+            return 1
+
+        if token_sync == "updated":
+            print("FlyWire token sync: updated local secret storage")
+        elif token_sync == "already-configured":
+            print("FlyWire token sync: already configured")
+        else:
+            print("FlyWire token sync: skipped (no `.env` token)")
+
+    try:
+        flywire = importlib.import_module("fafbseg.flywire")
+    except Exception:
+        return _fail_missing_dependency(
+            "fafbseg is required for FlyWire mesh access before `make meshes` can run."
+        )
+
+    try:
+        flywire.set_default_dataset(flywire_dataset)
+    except Exception as exc:
+        print(f"FlyWire dataset setup failed for dataset '{flywire_dataset}': {_format_exception(exc)}")
+        _print_next_step(
+            f"set `dataset.flywire_dataset` to a fafbseg-supported value in {config_path} and rerun `make verify`."
+        )
+        return 1
+    print("fafbseg setup: OK")
+
+    if fetch_skeletons:
+        try:
+            importlib.import_module("navis")
+        except Exception:
+            print("navis is required because `meshing.fetch_skeletons` is enabled.")
+            _print_next_step(
+                f"install `navis`, or set `meshing.fetch_skeletons: false` in {config_path}, before running `make meshes`."
+            )
+            return 1
+        print("navis setup: OK")
+    else:
+        print("navis setup: skipped (`meshing.fetch_skeletons` is false)")
+
+    return 0
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify FlyWire/CAVE access for FAFB public.")
+    parser = argparse.ArgumentParser(
+        description="Verify the active FlyWire/CAVE mesh preflight for FAFB public."
+    )
     parser.add_argument("--config", required=True)
     parser.add_argument(
         "--require-materialize",
         action="store_true",
-        help="Exit non-zero if the FlyWire materialize service is unavailable.",
+        help="Also require the optional FlyWire materialize probe to succeed.",
+    )
+    parser.add_argument(
+        "--auth-only",
+        action="store_true",
+        help="Only verify FlyWire auth/info access; skip mesh dependency checks and label the result as partial.",
     )
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env")
-    cfg = load_config(args.config)
-    datastack = cfg["dataset"]["datastack_name"]
-    version = cfg["dataset"]["materialization_version"]
-    flywire_dataset = cfg["dataset"].get("flywire_dataset", "public")
+    try:
+        cfg = load_config(args.config)
+    except Exception as exc:
+        print(f"Could not load config '{args.config}': {_format_exception(exc)}")
+        _print_next_step("fix the config file and rerun `make verify`.")
+        return 1
+
+    config_path = _resolved_config_path(cfg, args.config)
+    try:
+        dataset_cfg = cfg["dataset"]
+        meshing_cfg = dict(cfg.get("meshing", {}))
+        datastack = str(dataset_cfg["datastack_name"])
+        version = int(dataset_cfg["materialization_version"])
+        flywire_dataset = str(dataset_cfg.get("flywire_dataset", "public"))
+    except Exception as exc:
+        print(f"Config '{config_path}' is missing required dataset settings: {_format_exception(exc)}")
+        _print_next_step("define `dataset.datastack_name` and `dataset.materialization_version`, then rerun `make verify`.")
+        return 1
+
+    fetch_skeletons = bool(meshing_cfg.get("fetch_skeletons", True))
+    require_skeletons = bool(meshing_cfg.get("require_skeletons", False))
     token = os.getenv("FLYWIRE_TOKEN", "").strip()
+
+    if require_skeletons and not fetch_skeletons:
+        print("Config error: `meshing.require_skeletons` cannot be true when `meshing.fetch_skeletons` is false.")
+        _print_next_step(
+            f"set `meshing.fetch_skeletons: true` or disable `meshing.require_skeletons` in {config_path}."
+        )
+        return 1
 
     try:
         from caveclient import CAVEclient
-    except Exception as exc:
-        raise RuntimeError("caveclient is not installed. Run: pip install -r requirements.txt") from exc
+    except Exception:
+        return _fail_missing_dependency("caveclient is required for FlyWire/CAVE access verification.")
 
     try:
         import requests
-    except Exception as exc:
-        raise RuntimeError("requests is not installed. Run: pip install -r requirements.txt") from exc
+    except Exception:
+        return _fail_missing_dependency("requests is required for FlyWire/CAVE access verification.")
+
+    print(f"Config: {config_path}")
+    print(f"Datastack: {datastack}")
+    print(f"FlyWire dataset: {flywire_dataset}")
+    print(f"Auth source: {'.env FLYWIRE_TOKEN' if token else 'caveclient default token lookup'}")
+    print(f"Verifier mode: {'auth-only (partial)' if args.auth_only else 'full mesh preflight'}")
+    print(f"Skeleton fetch prerequisite: {'enabled' if fetch_skeletons else 'disabled'}")
 
     try:
         client = CAVEclient(datastack_name=datastack, auth_token=token or None)
     except requests.HTTPError as exc:
-        status = _http_status(exc)
-        url = _http_url(exc) or "<unknown>"
-        if status in {400, 401, 403}:
-            print("FlyWire/CAVE auth failed while contacting the global info service.")
-            print(f"URL: {url}")
-            print("Refresh the token and update .env, then rerun this script.")
-            return 1
-        print(f"Could not initialize the CAVE client: HTTP {status} from {url}")
-        return 1
+        return _handle_http_failure(
+            label="FlyWire/CAVE client initialization",
+            datastack=datastack,
+            config_path=config_path,
+            exc=exc,
+        )
     except (requests.ConnectionError, requests.Timeout) as exc:
-        print(f"Network error while contacting the FlyWire info service: {exc}")
-        return 1
+        return _handle_network_failure(
+            label="FlyWire/CAVE client initialization",
+            datastack=datastack,
+            exc=exc,
+        )
+    except Exception as exc:
+        return _handle_unexpected_service_failure(
+            label="FlyWire/CAVE client initialization",
+            datastack=datastack,
+            config_path=config_path,
+            exc=exc,
+        )
 
-    datastack_info = client.info.get_datastack_info(datastack_name=datastack)
-    local_server = client.info.local_server()
-    print(f"Datastack: {datastack}")
-    print(f"Auth source: {'.env FLYWIRE_TOKEN' if token else 'caveclient default token lookup'}")
-    print(f"Aligned volume: {datastack_info['aligned_volume']['name']}")
-    print(f"Local server: {local_server}")
-    print(f"Segmentation source: {datastack_info['segmentation_source']}")
+    try:
+        datastack_info = client.info.get_datastack_info(datastack_name=datastack)
+    except requests.HTTPError as exc:
+        return _handle_http_failure(
+            label="FlyWire/CAVE info lookup",
+            datastack=datastack,
+            config_path=config_path,
+            exc=exc,
+        )
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        return _handle_network_failure(
+            label="FlyWire/CAVE info lookup",
+            datastack=datastack,
+            exc=exc,
+        )
+    except Exception as exc:
+        return _handle_unexpected_service_failure(
+            label="FlyWire/CAVE info lookup",
+            datastack=datastack,
+            config_path=config_path,
+            exc=exc,
+        )
+
+    aligned_volume = datastack_info.get("aligned_volume", {})
+    print(f"Aligned volume: {aligned_volume.get('name', '<unknown>')}")
+    print(f"Segmentation source: {datastack_info.get('segmentation_source', '<unknown>')}")
     print("Info service auth: OK")
 
-    materialize_available = False
-    try:
-        versions = _call_with_retries("Materialize version lookup", client.materialize.get_versions)
-        tables = _call_with_retries("Materialize table lookup", client.materialize.get_tables)
-        materialize_available = True
-    except requests.HTTPError as exc:
-        status = _http_status(exc)
-        url = _http_url(exc) or f"{local_server}/materialize"
-        if _is_transient_http_error(exc):
-            print(
-                "Materialize access: TEMPORARILY UNAVAILABLE "
-                f"(HTTP {status} from {url})"
-            )
-            print(
-                "This appears to be an upstream FlyWire service outage, not a token failure."
-            )
-            print("Requested materialization version check skipped for now.")
-            if args.require_materialize:
-                return 2
-        else:
-            print(f"Materialize access failed: HTTP {status} from {url}")
-            return 1
-    except (requests.ConnectionError, requests.Timeout) as exc:
-        print(f"Materialize access failed with a network error: {exc}")
-        if args.require_materialize:
-            return 2
+    if args.require_materialize:
+        materialize_status = _check_materialize_access(client=client, version=version, datastack=datastack)
+        if materialize_status != 0:
+            return materialize_status
 
-    print(f"Requested version: {version}")
-    if materialize_available:
-        print(f"Materialization versions visible: {versions}")
-        print(f"Tables: {tables}")
-        print("Materialize access: OK")
+    if args.auth_only:
+        print("Access partially verified: auth-only check passed; mesh dependency preflight skipped.")
+        return 0
 
-        if int(version) not in [int(v) for v in versions]:
-            print(
-                f"Requested materialization version {version} is not visible in this environment."
-            )
-            return 1
+    prerequisite_status = _check_mesh_prerequisites(
+        flywire_dataset=flywire_dataset,
+        fetch_skeletons=fetch_skeletons,
+        token=token,
+        config_path=config_path,
+    )
+    if prerequisite_status != 0:
+        return prerequisite_status
 
-    try:
-        from fafbseg import flywire
-
-        token_sync = "missing"
-        if token:
-            token_sync = ensure_flywire_secret(token)
-        flywire.set_default_dataset(flywire_dataset)
-        if token_sync == "updated":
-            print("fafbseg token sync: updated local secret storage")
-        elif token_sync == "already-configured":
-            print("fafbseg token sync: already configured")
-        else:
-            print("fafbseg token sync: skipped (no .env token)")
-        print("fafbseg setup: OK")
-    except Exception as exc:
-        print(f"Warning: fafbseg verification skipped/failed: {exc}")
-
-    if materialize_available:
-        print("Access looks good.")
-    else:
-        print("Access looks partially verified: token/auth OK, materialize unavailable.")
+    print("Mesh preflight looks good.")
     return 0
 
 

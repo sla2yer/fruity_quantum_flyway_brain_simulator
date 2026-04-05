@@ -89,6 +89,7 @@ from .stimulus_contract import (
 )
 from .surface_operators import serialize_sparse_matrix
 from .task_decoder_analysis import SUPPORTED_TASK_DECODER_ANALYSIS_METRIC_IDS
+from .selection import write_selected_root_roster, write_subset_manifest
 from .wave_structure_analysis import (
     SUPPORTED_WAVE_STRUCTURE_METRIC_IDS,
     SURFACE_WAVE_PATCH_TRACES_ARTIFACT_ID,
@@ -524,6 +525,7 @@ def _materialize_verification_fixture(
     analysis_summary_output_path = (generated_fixture_dir / "analysis_summary.json").resolve()
 
     manifest_payload = yaml.safe_load(source_manifest_path.read_text(encoding="utf-8"))
+    subset_name = str(manifest_payload["subset_name"])
     fixture_manifest_path.write_text(
         yaml.safe_dump(manifest_payload, sort_keys=False),
         encoding="utf-8",
@@ -534,6 +536,7 @@ def _materialize_verification_fixture(
         processed_stimulus_dir=processed_stimulus_dir,
         processed_retinal_dir=processed_retinal_dir,
         processed_simulator_results_dir=processed_simulator_results_dir,
+        subset_name=subset_name,
     )
     _record_fixture_stimulus_bundle(
         manifest_path=fixture_manifest_path,
@@ -596,33 +599,18 @@ def _write_simulation_fixture(
     processed_retinal_dir: Path,
     processed_simulator_results_dir: Path,
     root_specs: list[dict[str, object]] | None = None,
+    subset_name: str = "motion_minimal",
 ) -> None:
     normalized_root_specs = _normalize_root_specs(root_specs)
     analysis_output_dir = fixture_assets_dir / "analysis_outputs"
     selected_root_ids = [spec["root_id"] for spec in normalized_root_specs]
     selected_root_ids_path = fixture_assets_dir / "selected_root_ids.txt"
-    selected_root_ids_path.parent.mkdir(parents=True, exist_ok=True)
-    selected_root_ids_path.write_text(
-        "".join(f"{root_id}\n" for root_id in selected_root_ids),
-        encoding="utf-8",
-    )
+    write_selected_root_roster(selected_root_ids, selected_root_ids_path)
 
-    subset_manifest_path = (
-        fixture_assets_dir / "subsets" / "motion_minimal" / "subset_manifest.json"
-    )
-    subset_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    subset_manifest_path.write_text(
-        json.dumps(
-            {
-                "subset_manifest_version": "1",
-                "preset_name": "motion_minimal",
-                "root_ids": selected_root_ids,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
+    write_subset_manifest(
+        subset_output_dir=fixture_assets_dir / "subsets",
+        preset_name=subset_name,
+        root_ids=selected_root_ids,
     )
 
     _write_geometry_manifest_fixture(fixture_assets_dir, root_specs=normalized_root_specs)
@@ -637,7 +625,7 @@ def _write_simulation_fixture(
             "processed_simulator_results_dir": str(processed_simulator_results_dir),
         },
         "selection": {
-            "active_preset": "motion_minimal",
+            "active_preset": subset_name,
         },
         "simulation": {
             "input": {

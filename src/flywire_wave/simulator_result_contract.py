@@ -1066,6 +1066,94 @@ def resolve_simulator_result_bundle_metadata_path(
     return bundle_paths.metadata_json_path.resolve()
 
 
+def lookup_simulator_result_bundle_metadata_path(
+    *,
+    manifest_reference: Mapping[str, Any],
+    arm_reference: Mapping[str, Any],
+    timebase: Mapping[str, Any],
+    selected_assets: Sequence[Mapping[str, Any]],
+    readout_catalog: Sequence[Mapping[str, Any]],
+    processed_simulator_results_dir: str | Path = DEFAULT_PROCESSED_SIMULATOR_RESULTS_DIR,
+    determinism: Mapping[str, Any] | None = None,
+    seed: int | str | None = None,
+    rng_family: str = DEFAULT_RNG_FAMILY,
+    seed_scope: str = "all_stochastic_simulator_components",
+    ignored_asset_roles: Sequence[str] | None = None,
+    path_relaxed_asset_roles: Sequence[str] | None = None,
+) -> Path | None:
+    exact_path = resolve_simulator_result_bundle_metadata_path(
+        manifest_reference=manifest_reference,
+        arm_reference=arm_reference,
+        timebase=timebase,
+        selected_assets=selected_assets,
+        readout_catalog=readout_catalog,
+        processed_simulator_results_dir=processed_simulator_results_dir,
+        determinism=determinism,
+        seed=seed,
+        rng_family=rng_family,
+        seed_scope=seed_scope,
+    )
+    if exact_path.exists():
+        return exact_path
+
+    normalized_manifest_reference = parse_simulator_manifest_reference(manifest_reference)
+    normalized_arm_reference = parse_simulator_arm_reference(arm_reference)
+    normalized_determinism = _resolve_determinism(
+        determinism=determinism,
+        seed=seed,
+        rng_family=rng_family,
+        seed_scope=seed_scope,
+    )
+    normalized_timebase = normalize_simulator_timebase(timebase)
+    normalized_selected_assets = _normalize_selected_assets(selected_assets)
+    ignored_roles = _normalize_asset_role_filters(
+        ignored_asset_roles,
+        field_name="ignored_asset_roles",
+    )
+    path_relaxed_roles = _normalize_asset_role_filters(
+        path_relaxed_asset_roles,
+        field_name="path_relaxed_asset_roles",
+    )
+    arm_root = (
+        Path(processed_simulator_results_dir).resolve()
+        / "bundles"
+        / normalized_manifest_reference["experiment_id"]
+        / normalized_arm_reference["arm_id"]
+    ).resolve()
+    if not arm_root.exists():
+        return None
+
+    matches: list[Path] = []
+    seen_canonical_paths: set[Path] = set()
+    for candidate_path in sorted(arm_root.glob("*/simulator_result_bundle.json")):
+        metadata = load_simulator_result_bundle_metadata(candidate_path)
+        if not _simulator_bundle_matches_lookup(
+            metadata=metadata,
+            manifest_reference=normalized_manifest_reference,
+            arm_reference=normalized_arm_reference,
+            determinism=normalized_determinism,
+            timebase=normalized_timebase,
+            selected_assets=normalized_selected_assets,
+            ignored_asset_roles=ignored_roles,
+            path_relaxed_asset_roles=path_relaxed_roles,
+        ):
+            continue
+        canonical_path = Path(metadata["artifacts"][METADATA_JSON_KEY]["path"]).resolve()
+        if canonical_path in seen_canonical_paths:
+            continue
+        seen_canonical_paths.add(canonical_path)
+        matches.append(canonical_path)
+
+    if len(matches) > 1:
+        raise ValueError(
+            "Multiple simulator_result_bundle metadata candidates matched the contract lookup "
+            f"for arm_id {normalized_arm_reference['arm_id']!r}: {matches!r}."
+        )
+    if matches:
+        return matches[0]
+    return None
+
+
 def default_shared_payload_contract() -> dict[str, Any]:
     return {
         STATE_SUMMARY_KEY: {
@@ -1672,6 +1760,93 @@ def _extract_simulator_bundle_mapping(record: Mapping[str, Any]) -> Mapping[str,
     if isinstance(simulator_bundle, Mapping):
         return simulator_bundle
     return record
+
+
+def _simulator_bundle_matches_lookup(
+    *,
+    metadata: Mapping[str, Any],
+    manifest_reference: Mapping[str, Any],
+    arm_reference: Mapping[str, Any],
+    determinism: Mapping[str, Any],
+    timebase: Mapping[str, Any],
+    selected_assets: Sequence[Mapping[str, Any]],
+    ignored_asset_roles: set[str],
+    path_relaxed_asset_roles: set[str],
+) -> bool:
+    normalized_metadata = parse_simulator_result_bundle_metadata(metadata)
+    candidate_manifest_reference = normalized_metadata["manifest_reference"]
+    for field_name in (
+        "experiment_id",
+        "manifest_id",
+        "milestone",
+        "brief_version",
+        "hypothesis_version",
+    ):
+        if candidate_manifest_reference[field_name] != manifest_reference[field_name]:
+            return False
+    candidate_arm_reference = normalized_metadata["arm_reference"]
+    for field_name in ("arm_id", "model_mode", "baseline_family"):
+        if candidate_arm_reference[field_name] != arm_reference[field_name]:
+            return False
+    if dict(normalized_metadata["determinism"]) != dict(determinism):
+        return False
+    if dict(normalized_metadata["timebase"]) != dict(timebase):
+        return False
+    expected_assets = [
+        _asset_lookup_identity(
+            asset,
+            ignored_asset_roles=ignored_asset_roles,
+            path_relaxed_asset_roles=path_relaxed_asset_roles,
+        )
+        for asset in selected_assets
+    ]
+    discovered_assets = [
+        _asset_lookup_identity(
+            asset,
+            ignored_asset_roles=ignored_asset_roles,
+            path_relaxed_asset_roles=path_relaxed_asset_roles,
+        )
+        for asset in normalized_metadata["selected_assets"]
+    ]
+    return sorted(item for item in expected_assets if item is not None) == sorted(
+        item for item in discovered_assets if item is not None
+    )
+
+
+def _asset_lookup_identity(
+    asset: Mapping[str, Any],
+    *,
+    ignored_asset_roles: set[str],
+    path_relaxed_asset_roles: set[str],
+) -> tuple[str, str, str, str | None, str | None] | None:
+    asset_role = str(asset["asset_role"])
+    if asset_role in ignored_asset_roles:
+        return None
+    resolved_path = str(Path(asset["path"]).resolve())
+    if asset_role in path_relaxed_asset_roles:
+        resolved_path = ""
+    return (
+        asset_role,
+        str(asset["artifact_type"]),
+        resolved_path,
+        asset["artifact_id"],
+        asset["bundle_id"],
+    )
+
+
+def _normalize_asset_role_filters(
+    payload: Sequence[str] | None,
+    *,
+    field_name: str,
+) -> set[str]:
+    if payload is None:
+        return set()
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
+        raise ValueError(f"{field_name} must be a list.")
+    return {
+        _normalize_identifier(item, field_name=field_name)
+        for item in payload
+    }
 
 
 def _normalize_model_mode(value: Any) -> str:

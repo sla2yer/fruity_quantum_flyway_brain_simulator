@@ -45,6 +45,11 @@ from flywire_wave.skeleton_runtime_assets import (
     SKELETON_RUNTIME_ASSET_CONTRACT_VERSION,
     SKELETON_RUNTIME_ASSET_KEY,
 )
+from flywire_wave.selection import (
+    build_subset_artifact_paths,
+    write_selected_root_roster,
+    write_subset_manifest,
+)
 from flywire_wave.simulation_planning import (
     discover_simulation_run_plans,
     resolve_manifest_mixed_fidelity_plan,
@@ -927,6 +932,49 @@ class SimulationPlanningTest(unittest.TestCase):
                 str(ctx.exception),
             )
 
+    def test_mixed_case_subset_name_resolves_selection_manifest_path_via_shared_contract(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            subset_name = "Motion Minimal! Beta"
+            manifest_path = _write_manifest_fixture(
+                tmp_dir,
+                manifest_overrides={"subset_name": subset_name},
+            )
+            config_path = _write_simulation_fixture(
+                tmp_dir,
+                subset_name=subset_name,
+            )
+            schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+
+            _record_fixture_stimulus_bundle(
+                manifest_path=manifest_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            plan = resolve_manifest_simulation_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+
+            expected_subset_paths = build_subset_artifact_paths(
+                tmp_dir / "out" / "subsets",
+                subset_name,
+            )
+            self.assertEqual(
+                plan["arm_plans"][0]["selection"]["subset_manifest_reference"][
+                    "subset_manifest_path"
+                ],
+                str(expected_subset_paths.manifest_json.resolve()),
+            )
+            self.assertEqual(
+                plan["arm_plans"][0]["selection"]["selected_root_ids"],
+                [101, 202],
+            )
+
 
 def _write_simulation_fixture(
     tmp_dir: Path,
@@ -937,31 +985,17 @@ def _write_simulation_fixture(
     readout_catalog: list[dict[str, object]] | None = None,
     analysis_config: dict[str, object] | None = None,
     experiment_suite_config: dict[str, object] | None = None,
+    subset_name: str = "motion_minimal",
 ) -> Path:
     output_dir = tmp_dir / "out"
     normalized_root_specs = _normalize_root_specs(root_specs)
     selected_root_ids = [spec["root_id"] for spec in normalized_root_specs]
     selected_root_ids_path = output_dir / "selected_root_ids.txt"
-    selected_root_ids_path.parent.mkdir(parents=True, exist_ok=True)
-    selected_root_ids_path.write_text(
-        "".join(f"{root_id}\n" for root_id in selected_root_ids),
-        encoding="utf-8",
-    )
-
-    subset_manifest_path = output_dir / "subsets" / "motion_minimal" / "subset_manifest.json"
-    subset_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    subset_manifest_path.write_text(
-        json.dumps(
-            {
-                "subset_manifest_version": "1",
-                "preset_name": "motion_minimal",
-                "root_ids": selected_root_ids,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
+    write_selected_root_roster(selected_root_ids, selected_root_ids_path)
+    write_subset_manifest(
+        subset_output_dir=output_dir / "subsets",
+        preset_name=subset_name,
+        root_ids=selected_root_ids,
     )
 
     _write_geometry_manifest(output_dir, root_specs=normalized_root_specs)
@@ -977,7 +1011,7 @@ def _write_simulation_fixture(
             "processed_simulator_results_dir": str(output_dir / "simulator_results"),
         },
         "selection": {
-            "active_preset": "motion_minimal",
+            "active_preset": subset_name,
         },
         "simulation": {
             "input": {

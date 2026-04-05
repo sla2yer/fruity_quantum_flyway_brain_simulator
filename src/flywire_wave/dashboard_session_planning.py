@@ -76,13 +76,13 @@ from .dashboard_session_contract import (
 from .experiment_analysis_contract import (
     ANALYSIS_UI_PAYLOAD_ARTIFACT_ID,
     COMPARISON_MATRICES_ARTIFACT_ID,
-    DEFAULT_ANALYSIS_DIRECTORY_NAME,
     EXPERIMENT_ANALYSIS_BUNDLE_CONTRACT_VERSION,
     EXPERIMENT_COMPARISON_SUMMARY_ARTIFACT_ID,
     OFFLINE_REPORT_INDEX_ARTIFACT_ID,
     VISUALIZATION_CATALOG_ARTIFACT_ID,
     discover_experiment_analysis_bundle_paths,
     load_experiment_analysis_bundle_metadata,
+    lookup_experiment_analysis_bundle_metadata,
     parse_experiment_analysis_bundle_metadata,
 )
 from .experiment_comparison_analysis import discover_experiment_bundle_set
@@ -103,7 +103,6 @@ from .simulator_result_contract import (
     parse_simulator_result_bundle_metadata,
 )
 from .validation_contract import (
-    DEFAULT_VALIDATION_DIRECTORY_NAME,
     OFFLINE_REVIEW_REPORT_ARTIFACT_ID,
     REVIEW_HANDOFF_ARTIFACT_ID,
     VALIDATOR_FINDINGS_ARTIFACT_ID,
@@ -111,8 +110,10 @@ from .validation_contract import (
     VALIDATION_SUMMARY_ARTIFACT_ID,
     discover_validation_bundle_paths,
     load_validation_bundle_metadata,
+    lookup_validation_bundle_metadata,
     parse_validation_bundle_metadata,
 )
+from .validation_planning import resolve_validation_plan
 from .whole_brain_context_contract import (
     CONTEXT_QUERY_CATALOG_ARTIFACT_ID,
     CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID,
@@ -265,34 +266,34 @@ def resolve_dashboard_session_plan(
 
     resolved_analysis_bundle = _resolve_analysis_bundle(
         explicit_analysis=explicit_analysis,
+        analysis_plan=(
+            None
+            if simulation_plan is None
+            else simulation_plan["readout_analysis_plan"]
+        ),
         experiment_id=normalized_experiment_id,
         processed_simulator_results_dir=processed_dir,
         manifest_path=manifest_path,
+        required_result_bundle_ids=_explicit_bundle_ids(
+            explicit_baseline=explicit_baseline,
+            explicit_wave=explicit_wave,
+        ),
     )
+    validation_plan_reference = None
+    if simulation_plan is not None and explicit_validation is None:
+        validation_plan = resolve_validation_plan(
+            config_path=config_path,
+            simulation_plan=simulation_plan,
+            analysis_plan=simulation_plan["readout_analysis_plan"],
+            bundle_set=bundle_set,
+            analysis_bundle_metadata=resolved_analysis_bundle,
+        )
+        validation_plan_reference = validation_plan["validation_bundle"]["metadata"][
+            "validation_plan_reference"
+        ]
     inventory = _bundle_inventory_from_context(
         bundle_set=bundle_set,
         analysis_bundle=resolved_analysis_bundle,
-    )
-
-    resolved_validation_bundle = _resolve_validation_bundle(
-        explicit_validation=explicit_validation,
-        experiment_id=normalized_experiment_id,
-        processed_simulator_results_dir=processed_dir,
-        analysis_bundle=resolved_analysis_bundle,
-        selected_arm_ids=_selected_arm_ids_from_overrides(
-            explicit_baseline=explicit_baseline,
-            explicit_wave=explicit_wave,
-            baseline_arm_id=baseline_arm_id,
-            wave_arm_id=wave_arm_id,
-        ),
-    )
-    _ensure_processed_dir_alignment(
-        processed_dir=processed_dir,
-        experiment_id=normalized_experiment_id,
-        analysis_bundle=resolved_analysis_bundle,
-        validation_bundle=resolved_validation_bundle,
-        baseline_bundle=explicit_baseline,
-        wave_bundle=explicit_wave,
     )
 
     arm_pair = _resolve_arm_pair(
@@ -327,6 +328,26 @@ def resolve_dashboard_session_plan(
         wave_item=wave_item,
         baseline_metadata=baseline_metadata,
         wave_metadata=wave_metadata,
+    )
+    resolved_validation_bundle = _resolve_validation_bundle(
+        explicit_validation=explicit_validation,
+        validation_plan_reference=validation_plan_reference,
+        experiment_id=normalized_experiment_id,
+        processed_simulator_results_dir=processed_dir,
+        analysis_bundle=resolved_analysis_bundle,
+        selected_arm_ids=(arm_pair["baseline_arm_id"], arm_pair["wave_arm_id"]),
+        selected_bundle_ids=(
+            str(baseline_metadata["bundle_id"]),
+            str(wave_metadata["bundle_id"]),
+        ),
+    )
+    _ensure_processed_dir_alignment(
+        processed_dir=processed_dir,
+        experiment_id=normalized_experiment_id,
+        analysis_bundle=resolved_analysis_bundle,
+        validation_bundle=resolved_validation_bundle,
+        baseline_bundle=baseline_metadata,
+        wave_bundle=wave_metadata,
     )
     _validate_analysis_bundle_alignment(
         analysis_bundle=resolved_analysis_bundle,
@@ -655,9 +676,11 @@ def _resolve_optional_whole_brain_context_bundle(
 def _resolve_analysis_bundle(
     *,
     explicit_analysis: Mapping[str, Any] | None,
+    analysis_plan: Mapping[str, Any] | None,
     experiment_id: str,
     processed_simulator_results_dir: Path,
     manifest_path: str | Path | None,
+    required_result_bundle_ids: Sequence[str],
 ) -> dict[str, Any]:
     if explicit_analysis is not None:
         return copy.deepcopy(dict(explicit_analysis))
@@ -666,49 +689,24 @@ def _resolve_analysis_bundle(
             "Dashboard session planning requires experiment_id when analysis_bundle metadata "
             "is not provided explicitly."
         )
-    analysis_root = (
-        processed_simulator_results_dir
-        / DEFAULT_ANALYSIS_DIRECTORY_NAME
-        / experiment_id
-    ).resolve()
-    candidate_paths = sorted(analysis_root.glob("*/experiment_analysis_bundle.json"))
-    if not candidate_paths:
-        raise ValueError(
-            f"Dashboard session planning requires a local experiment_analysis_bundle for "
-            f"experiment_id {experiment_id!r} under {analysis_root}."
-        )
-    candidates = [
-        load_experiment_analysis_bundle_metadata(path)
-        for path in candidate_paths
-    ]
-    if manifest_path is not None:
-        requested_manifest_path = str(Path(manifest_path).resolve())
-        candidates = [
-            metadata
-            for metadata in candidates
-            if str(metadata["manifest_reference"]["manifest_path"]) == requested_manifest_path
-        ]
-    if not candidates:
-        raise ValueError(
-            "Dashboard session planning could not find an experiment_analysis_bundle that "
-            f"matches manifest_path {Path(manifest_path).resolve()}."
-        )
-    if len(candidates) > 1:
-        raise ValueError(
-            "Experiment-driven dashboard planning found multiple local experiment_analysis_bundle "
-            f"candidates for experiment_id {experiment_id!r}. Pass analysis_bundle_metadata_path "
-            "or manifest_path explicitly to disambiguate."
-        )
-    return candidates[0]
+    return lookup_experiment_analysis_bundle_metadata(
+        processed_simulator_results_dir=processed_simulator_results_dir,
+        analysis_plan=analysis_plan,
+        experiment_id=experiment_id,
+        manifest_path=manifest_path,
+        required_result_bundle_ids=required_result_bundle_ids,
+    )
 
 
 def _resolve_validation_bundle(
     *,
     explicit_validation: Mapping[str, Any] | None,
+    validation_plan_reference: Mapping[str, Any] | None,
     experiment_id: str,
     processed_simulator_results_dir: Path,
     analysis_bundle: Mapping[str, Any],
     selected_arm_ids: tuple[str | None, str | None],
+    selected_bundle_ids: tuple[str, str],
 ) -> dict[str, Any]:
     if explicit_validation is not None:
         return copy.deepcopy(dict(explicit_validation))
@@ -717,54 +715,17 @@ def _resolve_validation_bundle(
             "Dashboard session planning requires experiment_id when validation_bundle metadata "
             "is not provided explicitly."
         )
-    validation_root = (
-        processed_simulator_results_dir
-        / DEFAULT_VALIDATION_DIRECTORY_NAME
-        / experiment_id
-    ).resolve()
-    candidate_paths = sorted(validation_root.glob("*/validation_bundle.json"))
-    if not candidate_paths:
-        raise ValueError(
-            f"Dashboard session planning requires a local validation_bundle for experiment_id "
-            f"{experiment_id!r} under {validation_root}."
-        )
-    candidates = [
-        load_validation_bundle_metadata(path)
-        for path in candidate_paths
+    requested_target_arm_ids = [
+        arm_id for arm_id in selected_arm_ids if arm_id is not None
     ]
-    filtered: list[dict[str, Any]] = []
-    expected_analysis_bundle_id = str(analysis_bundle["bundle_id"])
-    for metadata in candidates:
-        evidence_refs = metadata["validation_plan_reference"].get("evidence_bundle_references", {})
-        analysis_ref = evidence_refs.get("experiment_analysis_bundle")
-        if isinstance(analysis_ref, Mapping) and str(analysis_ref.get("bundle_id", "")) not in {
-            "",
-            expected_analysis_bundle_id,
-        }:
-            continue
-        target_arm_ids = {
-            str(arm_id)
-            for arm_id in metadata["validation_plan_reference"].get("target_arm_ids", [])
-        }
-        baseline_arm_id, wave_arm_id = selected_arm_ids
-        if target_arm_ids and (
-            (baseline_arm_id is not None and baseline_arm_id not in target_arm_ids)
-            or (wave_arm_id is not None and wave_arm_id not in target_arm_ids)
-        ):
-            continue
-        filtered.append(metadata)
-    if not filtered:
-        raise ValueError(
-            "Dashboard session planning could not find a validation_bundle aligned with "
-            f"analysis bundle {expected_analysis_bundle_id!r}."
-        )
-    if len(filtered) > 1:
-        raise ValueError(
-            "Experiment-driven dashboard planning found multiple validation_bundle candidates "
-            f"for experiment_id {experiment_id!r}. Pass validation_bundle_metadata_path "
-            "explicitly to disambiguate."
-        )
-    return filtered[0]
+    return lookup_validation_bundle_metadata(
+        processed_simulator_results_dir=processed_simulator_results_dir,
+        validation_plan_reference=validation_plan_reference,
+        experiment_id=experiment_id,
+        analysis_bundle_reference=analysis_bundle,
+        simulator_result_bundle_ids=selected_bundle_ids,
+        target_arm_ids=requested_target_arm_ids,
+    )
 
 
 def _ensure_processed_dir_alignment(
@@ -854,6 +815,19 @@ def _selected_arm_ids_from_overrides(
         )
     )
     return resolved_baseline, resolved_wave
+
+
+def _explicit_bundle_ids(
+    *,
+    explicit_baseline: Mapping[str, Any] | None,
+    explicit_wave: Mapping[str, Any] | None,
+) -> tuple[str, ...]:
+    bundle_ids: list[str] = []
+    if explicit_baseline is not None:
+        bundle_ids.append(str(explicit_baseline["bundle_id"]))
+    if explicit_wave is not None:
+        bundle_ids.append(str(explicit_wave["bundle_id"]))
+    return tuple(bundle_ids)
 
 
 def _resolve_arm_pair(

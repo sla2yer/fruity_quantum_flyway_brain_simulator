@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -396,6 +396,131 @@ def load_experiment_analysis_bundle_metadata(
     return parse_experiment_analysis_bundle_metadata(payload)
 
 
+def resolve_experiment_analysis_bundle_metadata_path(
+    *,
+    processed_simulator_results_dir: str | Path,
+    analysis_plan: Mapping[str, Any] | None = None,
+    bundle_reference: Mapping[str, Any] | None = None,
+) -> Path:
+    experiment_id, analysis_spec_hash = _resolve_experiment_analysis_bundle_identity(
+        analysis_plan=analysis_plan,
+        bundle_reference=bundle_reference,
+    )
+    bundle_paths = build_experiment_analysis_bundle_paths(
+        experiment_id=experiment_id,
+        analysis_spec_hash=analysis_spec_hash,
+        processed_simulator_results_dir=processed_simulator_results_dir,
+    )
+    return bundle_paths.metadata_json_path.resolve()
+
+
+def lookup_experiment_analysis_bundle_metadata_path(
+    *,
+    processed_simulator_results_dir: str | Path,
+    analysis_plan: Mapping[str, Any] | None = None,
+    bundle_reference: Mapping[str, Any] | None = None,
+    experiment_id: str | None = None,
+    manifest_path: str | Path | None = None,
+    required_result_bundle_ids: Sequence[str] | None = None,
+) -> Path:
+    if analysis_plan is not None or bundle_reference is not None:
+        metadata_path = resolve_experiment_analysis_bundle_metadata_path(
+            processed_simulator_results_dir=processed_simulator_results_dir,
+            analysis_plan=analysis_plan,
+            bundle_reference=bundle_reference,
+        )
+        if metadata_path.exists():
+            return metadata_path
+        raise ValueError(
+            "experiment_analysis_bundle metadata was not found at the canonical contract path "
+            f"{metadata_path}."
+        )
+
+    normalized_experiment_id = _normalize_identifier(
+        experiment_id,
+        field_name="experiment_id",
+    )
+    analysis_root = (
+        Path(processed_simulator_results_dir).resolve()
+        / DEFAULT_ANALYSIS_DIRECTORY_NAME
+        / normalized_experiment_id
+    ).resolve()
+    candidate_paths = sorted(analysis_root.glob("*/experiment_analysis_bundle.json"))
+    if not candidate_paths:
+        raise ValueError(
+            "experiment_analysis_bundle lookup requires local bundle metadata for "
+            f"experiment_id {normalized_experiment_id!r} under {analysis_root}."
+        )
+
+    requested_manifest_path = (
+        None if manifest_path is None else str(Path(manifest_path).resolve())
+    )
+    requested_bundle_ids = _normalize_bundle_id_filters(
+        required_result_bundle_ids,
+        field_name="required_result_bundle_ids",
+    )
+    matches: list[dict[str, Any]] = []
+    for path in candidate_paths:
+        metadata = load_experiment_analysis_bundle_metadata(path)
+        if (
+            requested_manifest_path is not None
+            and str(metadata["manifest_reference"]["manifest_path"])
+            != requested_manifest_path
+        ):
+            continue
+        if requested_bundle_ids:
+            available_bundle_ids = {
+                str(item["bundle_id"])
+                for item in metadata["bundle_set_reference"]["bundle_inventory"]
+            }
+            if not requested_bundle_ids.issubset(available_bundle_ids):
+                continue
+        matches.append(metadata)
+
+    if not matches:
+        filter_descriptions: list[str] = []
+        if requested_manifest_path is not None:
+            filter_descriptions.append(
+                f"manifest_path {requested_manifest_path!r}"
+            )
+        if requested_bundle_ids:
+            filter_descriptions.append(
+                f"simulator bundle_ids {sorted(requested_bundle_ids)!r}"
+            )
+        suffix = "" if not filter_descriptions else " matching " + " and ".join(filter_descriptions)
+        raise ValueError(
+            "experiment_analysis_bundle lookup could not find bundle metadata "
+            f"for experiment_id {normalized_experiment_id!r}{suffix}."
+        )
+    if len(matches) > 1:
+        raise ValueError(
+            "experiment_analysis_bundle lookup found multiple bundle metadata candidates "
+            f"for experiment_id {normalized_experiment_id!r}. Pass an explicit metadata path "
+            "or contract identity to disambiguate."
+        )
+    return Path(matches[0]["artifacts"][METADATA_JSON_KEY]["path"]).resolve()
+
+
+def lookup_experiment_analysis_bundle_metadata(
+    *,
+    processed_simulator_results_dir: str | Path,
+    analysis_plan: Mapping[str, Any] | None = None,
+    bundle_reference: Mapping[str, Any] | None = None,
+    experiment_id: str | None = None,
+    manifest_path: str | Path | None = None,
+    required_result_bundle_ids: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    metadata_path = lookup_experiment_analysis_bundle_metadata_path(
+        processed_simulator_results_dir=processed_simulator_results_dir,
+        analysis_plan=analysis_plan,
+        bundle_reference=bundle_reference,
+        experiment_id=experiment_id,
+        manifest_path=manifest_path,
+        required_result_bundle_ids=required_result_bundle_ids,
+    )
+    return load_experiment_analysis_bundle_metadata(metadata_path)
+
+
 def discover_experiment_analysis_bundle_paths(
     record: Mapping[str, Any],
 ) -> dict[str, Path]:
@@ -505,6 +630,75 @@ def _normalize_analysis_plan_reference(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise ValueError("analysis_plan_reference must be a mapping.")
     return _build_analysis_plan_reference(payload)
+
+
+def _resolve_experiment_analysis_bundle_identity(
+    *,
+    analysis_plan: Mapping[str, Any] | None,
+    bundle_reference: Mapping[str, Any] | None,
+) -> tuple[str, str]:
+    if analysis_plan is not None:
+        manifest_reference = _normalize_manifest_reference(
+            analysis_plan.get("manifest_reference"),
+            field_name="analysis_plan.manifest_reference",
+        )
+        return (
+            manifest_reference["experiment_id"],
+            build_experiment_analysis_spec_hash(analysis_plan),
+        )
+    if bundle_reference is not None:
+        normalized_reference = _normalize_experiment_analysis_bundle_reference(
+            bundle_reference
+        )
+        return (
+            normalized_reference["experiment_id"],
+            normalized_reference["analysis_spec_hash"],
+        )
+    raise ValueError(
+        "experiment_analysis_bundle lookup requires analysis_plan or bundle_reference."
+    )
+
+
+def _normalize_experiment_analysis_bundle_reference(
+    payload: Any,
+) -> dict[str, str]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("bundle_reference must be a mapping.")
+    contract_version = _normalize_nonempty_string(
+        payload.get("contract_version"),
+        field_name="bundle_reference.contract_version",
+    )
+    if contract_version != EXPERIMENT_ANALYSIS_BUNDLE_CONTRACT_VERSION:
+        raise ValueError(
+            "bundle_reference.contract_version must be "
+            f"{EXPERIMENT_ANALYSIS_BUNDLE_CONTRACT_VERSION!r}."
+        )
+    experiment_id = _normalize_identifier(
+        payload.get("experiment_id"),
+        field_name="bundle_reference.experiment_id",
+    )
+    analysis_spec_hash = _normalize_parameter_hash(
+        payload.get("analysis_spec_hash")
+    )
+    bundle_id = _normalize_nonempty_string(
+        payload.get("bundle_id"),
+        field_name="bundle_reference.bundle_id",
+    )
+    expected_bundle_id = (
+        f"{EXPERIMENT_ANALYSIS_BUNDLE_CONTRACT_VERSION}:"
+        f"{experiment_id}:{analysis_spec_hash}"
+    )
+    if bundle_id != expected_bundle_id:
+        raise ValueError(
+            "bundle_reference.bundle_id must match the canonical experiment-analysis "
+            "bundle identity."
+        )
+    return {
+        "contract_version": contract_version,
+        "bundle_id": bundle_id,
+        "experiment_id": experiment_id,
+        "analysis_spec_hash": analysis_spec_hash,
+    }
 
 
 def _build_bundle_set_reference(bundle_set: Mapping[str, Any]) -> dict[str, Any]:
@@ -772,6 +966,21 @@ def _normalize_artifact_record(
     }
 
 
+def _normalize_bundle_id_filters(
+    payload: Sequence[str] | None,
+    *,
+    field_name: str,
+) -> set[str]:
+    if payload is None:
+        return set()
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes, bytearray)):
+        raise ValueError(f"{field_name} must be a sequence.")
+    return {
+        _normalize_nonempty_string(item, field_name=field_name)
+        for item in payload
+    }
+
+
 __all__ = [
     "ANALYSIS_UI_PAYLOAD_ARTIFACT_ID",
     "COMPARISON_MATRICES_ARTIFACT_ID",
@@ -793,6 +1002,9 @@ __all__ = [
     "build_experiment_analysis_spec_hash",
     "discover_experiment_analysis_bundle_paths",
     "load_experiment_analysis_bundle_metadata",
+    "lookup_experiment_analysis_bundle_metadata",
+    "lookup_experiment_analysis_bundle_metadata_path",
     "parse_experiment_analysis_bundle_metadata",
+    "resolve_experiment_analysis_bundle_metadata_path",
     "write_experiment_analysis_bundle_metadata",
 ]

@@ -4,10 +4,12 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
 import scipy.sparse as sp
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -15,8 +17,11 @@ sys.path.insert(0, str(SRC))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from flywire_wave.geometry_contract import DEFAULT_BOUNDARY_CONDITION_MODE
+from flywire_wave.simulation_planning import resolve_manifest_simulation_plan
+from flywire_wave.simulator_execution import execute_manifest_simulation
 from flywire_wave.surface_wave_contract import build_surface_wave_model_metadata
 from flywire_wave.surface_wave_solver import SurfaceWaveOperatorBundle
+from flywire_wave.validation_planning import resolve_validation_plan
 from flywire_wave.validation_morphology import (
     BOTTLENECK_EFFECT_COMPARISON_KIND,
     BRANCHING_EFFECT_COMPARISON_KIND,
@@ -429,6 +434,143 @@ class MorphologyValidationSuiteTest(unittest.TestCase):
             case_ids = {item["case_id"] for item in summary_payload["case_summaries"]}
             self.assertIn("surface_wave_intact__root_303", case_ids)
 
+    def test_workflow_accepts_pre_resolved_validation_context_without_replanning(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_policy_fixture(Path(tmp_dir_str))
+            config_payload = yaml.safe_load(
+                fixture["config_path"].read_text(encoding="utf-8")
+            )
+            config_payload["validation"] = {
+                "active_layer_ids": ["morphology_sanity"],
+                "active_validator_ids": ["mixed_fidelity_surrogate_preservation"],
+            }
+            fixture["config_path"].write_text(
+                yaml.safe_dump(config_payload, sort_keys=False),
+                encoding="utf-8",
+            )
+            thresholds = {
+                "root_mean_trace_mae": {
+                    "warn": 1.0e-12,
+                    "fail": 1.0e6,
+                    "comparison": "max",
+                    "blocking": False,
+                },
+                "root_peak_abs_error": {
+                    "warn": 1.0e6,
+                    "fail": 1.0e9,
+                    "comparison": "max",
+                    "blocking": False,
+                },
+                "root_final_abs_error": {
+                    "warn": 1.0e6,
+                    "fail": 1.0e9,
+                    "comparison": "max",
+                    "blocking": False,
+                },
+                "root_peak_time_delta_ms": {
+                    "warn": 1.0e6,
+                    "fail": 1.0e9,
+                    "comparison": "max",
+                    "blocking": False,
+                },
+                "shared_output_trace_mae": {
+                    "warn": 1.0e6,
+                    "fail": 1.0e9,
+                    "comparison": "max",
+                    "blocking": True,
+                },
+                "shared_output_peak_abs_error": {
+                    "warn": 1.0e6,
+                    "fail": 1.0e9,
+                    "comparison": "max",
+                    "blocking": True,
+                },
+            }
+            simulation_plan = resolve_manifest_simulation_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+            execution_summary = execute_manifest_simulation(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+                model_mode="surface_wave",
+                simulation_plan=simulation_plan,
+            )
+            surface_wave_arm_plans = {
+                str(arm_plan["arm_reference"]["arm_id"]): arm_plan
+                for arm_plan in simulation_plan["arm_plans"]
+                if str(arm_plan["arm_reference"]["model_mode"]) == "surface_wave"
+            }
+            bundle_set = {
+                "processed_simulator_results_dir": str(
+                    Path(
+                        next(iter(surface_wave_arm_plans.values()))["runtime"][
+                            "processed_simulator_results_dir"
+                        ]
+                    ).resolve()
+                ),
+                "bundle_records": [],
+                "bundle_inventory": [
+                    {
+                        "bundle_id": str(run["bundle_id"]),
+                        "metadata_path": str(Path(run["metadata_path"]).resolve()),
+                        "arm_id": str(run["arm_id"]),
+                        "model_mode": "surface_wave",
+                        "baseline_family": None,
+                        "seed": int(
+                            surface_wave_arm_plans[str(run["arm_id"])]["determinism"][
+                                "seed"
+                            ]
+                        ),
+                        "condition_ids": [],
+                        "condition_signature": "",
+                        "stimulus_family": "fixture",
+                        "stimulus_name": "fixture",
+                        "parameter_snapshot": {},
+                        "available_readout_ids": [
+                            str(item["readout_id"])
+                            for item in surface_wave_arm_plans[str(run["arm_id"])][
+                                "runtime"
+                            ]["shared_readout_catalog"]
+                        ],
+                    }
+                    for run in execution_summary["executed_runs"]
+                ],
+                "expected_arm_ids": sorted(surface_wave_arm_plans),
+                "expected_seeds_by_arm_id": {
+                    arm_id: [int(arm_plan["determinism"]["seed"])]
+                    for arm_id, arm_plan in surface_wave_arm_plans.items()
+                },
+            }
+            validation_plan = resolve_validation_plan(
+                config_path=fixture["config_path"],
+                simulation_plan=simulation_plan,
+                bundle_set=bundle_set,
+            )
+
+            with mock.patch(
+                "flywire_wave.validation_morphology.resolve_manifest_simulation_plan",
+                side_effect=AssertionError("unexpected simulation plan re-resolution"),
+            ):
+                result = execute_morphology_validation_workflow(
+                    manifest_path=fixture["manifest_path"],
+                    config_path=fixture["config_path"],
+                    schema_path=fixture["schema_path"],
+                    design_lock_path=fixture["design_lock_path"],
+                    arm_ids=["surface_wave_intact"],
+                    mixed_fidelity_thresholds=thresholds,
+                    simulation_plan=simulation_plan,
+                    validation_plan=validation_plan,
+                )
+
+            self.assertEqual(result["overall_status"], "review")
+            findings_payload = json.loads(
+                Path(result["findings_path"]).read_text(encoding="utf-8")
+            )
             findings = _flatten_validator_findings(findings_payload["validator_findings"])
             finding_by_id = {item["finding_id"]: item for item in findings}
             mixed_fidelity_finding = finding_by_id[

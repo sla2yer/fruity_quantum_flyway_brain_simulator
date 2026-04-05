@@ -30,6 +30,7 @@ from flywire_wave.experiment_suite_planning import (
     EXPERIMENT_SUITE_PLAN_VERSION,
     resolve_experiment_suite_plan,
 )
+from flywire_wave.selection import build_subset_artifact_paths
 from flywire_wave.simulation_planning import SIMULATION_PLAN_VERSION
 try:
     from tests.test_simulation_planning import (
@@ -319,6 +320,71 @@ class ExperimentSuitePlanningTest(unittest.TestCase):
                     if item["artifact_role_id"] == "suite_manifest_input"
                 ][0],
                 str(manifest_path.resolve()),
+            )
+
+    def test_active_subset_prerequisite_uses_selection_contract_for_mixed_case_subset_names(self) -> None:
+        schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+        design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            subset_name = "Motion Minimal! Beta"
+            manifest_path = _write_manifest_fixture(
+                tmp_dir,
+                manifest_overrides={"subset_name": subset_name},
+            )
+            config_path = _write_simulation_fixture(
+                tmp_dir,
+                subset_name=subset_name,
+                experiment_suite_config={
+                    "version": EXPERIMENT_SUITE_CONFIG_VERSION,
+                    "enabled_stage_ids": ["simulation"],
+                    "output_root": str(tmp_dir / "out" / "suite_root"),
+                },
+            )
+            _record_fixture_stimulus_bundle(
+                manifest_path=manifest_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            suite_block = _base_suite_block(output_root=tmp_dir / "out" / "suite_root")
+            suite_block["dimensions"]["fixed"] = [
+                item
+                for item in suite_block["dimensions"]["fixed"]
+                if item["dimension_id"] != ACTIVE_SUBSET_DIMENSION_ID
+            ]
+            suite_block["dimensions"]["fixed"].append(
+                {
+                    "dimension_id": ACTIVE_SUBSET_DIMENSION_ID,
+                    "value_id": subset_name,
+                    "value_label": "Mixed Case Subset",
+                    "manifest_overrides": {"subset_name": subset_name},
+                    "parameter_snapshot": {"subset_name": subset_name},
+                }
+            )
+            suite_manifest_path = _write_suite_manifest_fixture(
+                tmp_dir=tmp_dir,
+                manifest_path=manifest_path,
+                suite_block=suite_block,
+            )
+
+            plan = resolve_experiment_suite_plan(
+                config_path=config_path,
+                suite_manifest_path=suite_manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+
+            expected_subset_paths = build_subset_artifact_paths(
+                tmp_dir / "out" / "subsets",
+                subset_name,
+            )
+            self.assertEqual(
+                plan["base_simulation_plan"]["arm_plans"][0]["selection"][
+                    "subset_manifest_reference"
+                ]["subset_manifest_path"],
+                str(expected_subset_paths.manifest_json.resolve()),
             )
 
     def test_suite_planner_fails_clearly_for_unsupported_suite_requests(self) -> None:

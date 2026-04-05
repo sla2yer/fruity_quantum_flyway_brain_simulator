@@ -462,6 +462,120 @@ def resolve_morphology_validation_plan(
     }
 
 
+def _build_morphology_validation_plan_from_context(
+    *,
+    validation_plan: Mapping[str, Any],
+    simulation_plan: Mapping[str, Any],
+    arm_ids: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(validation_plan, Mapping):
+        raise ValueError("validation_plan must be a mapping.")
+    if not isinstance(simulation_plan, Mapping):
+        raise ValueError("simulation_plan must be a mapping.")
+
+    validation_config = copy.deepcopy(dict(validation_plan["validation_config"]))
+    config_reference = copy.deepcopy(dict(validation_plan["config_reference"]))
+    source_plan_reference = copy.deepcopy(dict(validation_plan["validation_plan_reference"]))
+    target_arm_ids = _resolve_target_surface_wave_arm_ids(
+        simulation_plan=simulation_plan,
+        validation_config=validation_config,
+        arm_ids=arm_ids,
+    )
+    active_validator_ids = [
+        validator_id
+        for validator_id in validation_plan["active_validator_ids"]
+        if validator_id
+        in {
+            GEOMETRY_DEPENDENCE_COLLAPSE_VALIDATOR_ID,
+            MIXED_FIDELITY_SURROGATE_PRESERVATION_VALIDATOR_ID,
+        }
+    ]
+    if not active_validator_ids:
+        raise ValueError(
+            "Resolved validation configuration does not activate the morphology_sanity layer."
+        )
+    criteria_assignments = [
+        copy.deepcopy(dict(item))
+        for item in validation_plan["criteria_profile_assignments"]
+        if str(item["validator_id"]) in set(active_validator_ids)
+    ]
+    geometry_variant_ids = _resolve_geometry_variant_ids(
+        simulation_plan=simulation_plan,
+        validation_config=validation_config,
+        active_validator_ids=active_validator_ids,
+    )
+    plan_reference = build_validation_plan_reference(
+        experiment_id=str(simulation_plan["manifest_reference"]["experiment_id"]),
+        contract_reference=copy.deepcopy(
+            dict(source_plan_reference["contract_reference"])
+        ),
+        active_layer_ids=[MORPHOLOGY_SANITY_LAYER_ID],
+        active_validator_family_ids=[MORPHOLOGY_DEPENDENCE_FAMILY_ID],
+        active_validator_ids=active_validator_ids,
+        criteria_profile_references=[
+            item["criteria_profile_reference"] for item in criteria_assignments
+        ],
+        criteria_profile_assignments=[
+            {
+                "validator_id": item["validator_id"],
+                "criteria_profile_reference": item["criteria_profile_reference"],
+            }
+            for item in criteria_assignments
+        ],
+        evidence_bundle_references={},
+        target_arm_ids=target_arm_ids,
+        comparison_group_ids=[],
+        perturbation_suite_references=(
+            []
+            if not geometry_variant_ids
+            else [
+                {
+                    "suite_id": GEOMETRY_VARIANTS_SUITE_ID,
+                    "suite_kind": "geometry_variant_pairing",
+                    "target_layer_ids": [MORPHOLOGY_SANITY_LAYER_ID],
+                    "target_validator_ids": [GEOMETRY_DEPENDENCE_COLLAPSE_VALIDATOR_ID],
+                    "variant_ids": list(geometry_variant_ids),
+                }
+            ]
+        ),
+        plan_version=MORPHOLOGY_VALIDATION_PLAN_VERSION,
+    )
+    bundle_metadata = build_validation_bundle_metadata(
+        validation_plan_reference=plan_reference,
+        processed_simulator_results_dir=validation_plan["validation_bundle"]["metadata"][
+            "output_root_reference"
+        ]["processed_simulator_results_dir"],
+    )
+    return {
+        "plan_version": MORPHOLOGY_VALIDATION_PLAN_VERSION,
+        "manifest_reference": copy.deepcopy(
+            dict(simulation_plan["manifest_reference"])
+        ),
+        "validation_config": validation_config,
+        "config_reference": config_reference,
+        "active_layer_ids": [MORPHOLOGY_SANITY_LAYER_ID],
+        "active_validator_family_ids": [MORPHOLOGY_DEPENDENCE_FAMILY_ID],
+        "active_validator_ids": list(active_validator_ids),
+        "criteria_profile_assignments": criteria_assignments,
+        "target_arm_ids": target_arm_ids,
+        "validation_plan_reference": plan_reference,
+        "validation_bundle": {
+            "bundle_id": str(bundle_metadata["bundle_id"]),
+            "validation_spec_hash": str(bundle_metadata["validation_spec_hash"]),
+            "metadata": copy.deepcopy(bundle_metadata),
+        },
+        "output_locations": {
+            "bundle_directory": str(
+                Path(bundle_metadata["bundle_layout"]["bundle_directory"]).resolve()
+            ),
+            "report_directory": str(
+                Path(bundle_metadata["bundle_layout"]["report_directory"]).resolve()
+            ),
+            "artifacts": copy.deepcopy(dict(bundle_metadata["artifacts"])),
+        },
+    }
+
+
 def run_morphology_validation_suite(
     *,
     probe_cases: Sequence[MorphologyProbeComparisonCase] = (),
@@ -639,24 +753,38 @@ def execute_morphology_validation_workflow(
     arm_ids: Sequence[str] | None = None,
     reference_root_specs: Sequence[str | Mapping[str, Any]] | None = None,
     mixed_fidelity_thresholds: Mapping[str, Mapping[str, Any]] | None = None,
+    simulation_plan: Mapping[str, Any] | None = None,
+    validation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    plan = resolve_morphology_validation_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
-        arm_ids=arm_ids,
+    resolved_simulation_plan = (
+        simulation_plan
+        if isinstance(simulation_plan, Mapping)
+        else resolve_manifest_simulation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+        )
     )
-    simulation_plan = resolve_manifest_simulation_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
+    plan = (
+        _build_morphology_validation_plan_from_context(
+            validation_plan=validation_plan,
+            simulation_plan=resolved_simulation_plan,
+            arm_ids=arm_ids,
+        )
+        if isinstance(validation_plan, Mapping)
+        else resolve_morphology_validation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+            arm_ids=arm_ids,
+        )
     )
     target_arm_ids = set(plan["target_arm_ids"])
     target_arm_plans = [
-        copy.deepcopy(dict(arm_plan))
-        for arm_plan in simulation_plan["arm_plans"]
+        arm_plan
+        for arm_plan in resolved_simulation_plan["arm_plans"]
         if str(arm_plan["arm_reference"]["arm_id"]) in target_arm_ids
         and str(arm_plan["arm_reference"]["model_mode"]) == "surface_wave"
     ]
@@ -669,6 +797,7 @@ def execute_morphology_validation_workflow(
             schema_path=schema_path,
             design_lock_path=design_lock_path,
             arm_plans=target_arm_plans,
+            simulation_plan=resolved_simulation_plan,
         )
 
     mixed_fidelity_summaries: list[dict[str, Any]] = []
@@ -684,6 +813,7 @@ def execute_morphology_validation_workflow(
                     schema_path=schema_path,
                     design_lock_path=design_lock_path,
                     arm_id=arm_id,
+                    simulation_plan=resolved_simulation_plan,
                 )
             )
             if not resolved_reference_root_specs:
@@ -696,6 +826,7 @@ def execute_morphology_validation_workflow(
                 arm_id=arm_id,
                 reference_root_specs=resolved_reference_root_specs,
                 thresholds=mixed_fidelity_thresholds,
+                simulation_plan=resolved_simulation_plan,
             )
             mixed_fidelity_summaries.append(summary)
 
@@ -965,6 +1096,7 @@ def _derive_policy_reference_root_specs(
     schema_path: str | Path,
     design_lock_path: str | Path,
     arm_id: str,
+    simulation_plan: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     mixed_fidelity_plan = resolve_manifest_mixed_fidelity_plan(
         manifest_path=manifest_path,
@@ -972,6 +1104,7 @@ def _derive_policy_reference_root_specs(
         schema_path=schema_path,
         design_lock_path=design_lock_path,
         arm_id=arm_id,
+        simulation_plan=simulation_plan,
     )
     resolved: dict[int, dict[str, Any]] = {}
     for assignment in mixed_fidelity_plan["per_root_assignments"]:
@@ -1021,6 +1154,7 @@ def _build_geometry_trace_cases_from_manifest(
     schema_path: str | Path,
     design_lock_path: str | Path,
     arm_plans: Sequence[Mapping[str, Any]],
+    simulation_plan: Mapping[str, Any] | None = None,
 ) -> list[GeometryTraceComparisonCase]:
     arm_plan_by_topology = {
         str(arm_plan.get("topology_condition")): arm_plan
@@ -1037,6 +1171,7 @@ def _build_geometry_trace_cases_from_manifest(
         schema_path=schema_path,
         design_lock_path=design_lock_path,
         arm_plan=intact_plan,
+        simulation_plan=simulation_plan,
     )
     shuffled_metadata = _load_or_execute_arm_metadata(
         manifest_path=manifest_path,
@@ -1044,6 +1179,7 @@ def _build_geometry_trace_cases_from_manifest(
         schema_path=schema_path,
         design_lock_path=design_lock_path,
         arm_plan=shuffled_plan,
+        simulation_plan=simulation_plan,
     )
     intact_root_records = {
         int(item["root_id"]): item
@@ -1089,6 +1225,7 @@ def _load_or_execute_arm_metadata(
     schema_path: str | Path,
     design_lock_path: str | Path,
     arm_plan: Mapping[str, Any],
+    simulation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     result_bundle = dict(arm_plan["result_bundle"])
     metadata = copy.deepcopy(dict(result_bundle["metadata"]))
@@ -1103,6 +1240,7 @@ def _load_or_execute_arm_metadata(
         design_lock_path=design_lock_path,
         model_mode="surface_wave",
         arm_id=arm_id,
+        simulation_plan=simulation_plan,
     )
     if int(execution_summary["executed_run_count"]) != 1:
         raise ValueError(

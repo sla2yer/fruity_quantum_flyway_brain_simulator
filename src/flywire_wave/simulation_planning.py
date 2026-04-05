@@ -4,7 +4,6 @@ import copy
 import hashlib
 import json
 import math
-import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -63,7 +62,6 @@ from .hybrid_morphology_contract import (
     build_hybrid_morphology_plan_metadata,
     normalize_hybrid_morphology_class,
 )
-from .io_utils import read_root_ids
 from .manifests import (
     load_json,
     load_yaml,
@@ -104,6 +102,12 @@ from .readout_analysis_contract import (
 )
 from .retinal_contract import build_retinal_bundle_reference, load_retinal_bundle_metadata
 from .retinal_workflow import resolve_retinal_bundle_input
+from .selection import (
+    build_subset_artifact_paths,
+    load_subset_manifest,
+    read_selected_root_roster,
+    validate_subset_manifest_payload,
+)
 from .simulator_result_contract import (
     BASELINE_MODEL_MODE,
     P0_BASELINE_FAMILY,
@@ -173,8 +177,6 @@ GEOMETRY_MANIFEST_ASSET_ROLE = "geometry_manifest"
 COUPLING_REGISTRY_ASSET_ROLE = "coupling_synapse_registry"
 MODEL_CONFIGURATION_ASSET_ROLE = "model_configuration"
 SURFACE_WAVE_OPERATOR_INVENTORY_ASSET_ROLE = "surface_wave_operator_inventory"
-
-SUBSET_MANIFEST_FILENAME = "subset_manifest.json"
 ALLOWED_SIMULATION_CONFIG_KEYS = {
     "version",
     "input",
@@ -2320,13 +2322,18 @@ def resolve_manifest_mixed_fidelity_plan(
     schema_path: str | Path,
     design_lock_path: str | Path,
     arm_id: str,
+    simulation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     arm_plan = resolve_simulation_arm_plan(
-        resolve_manifest_simulation_plan(
-            manifest_path=manifest_path,
-            config_path=config_path,
-            schema_path=schema_path,
-            design_lock_path=design_lock_path,
+        (
+            _require_mapping(simulation_plan, field_name="simulation_plan")
+            if simulation_plan is not None
+            else resolve_manifest_simulation_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
         ),
         arm_id=arm_id,
     )
@@ -2750,16 +2757,13 @@ def _resolve_selection_reference(
         raise ValueError(
             f"Selected-root roster is missing at {selected_root_ids_path}."
         )
-    root_ids = read_root_ids(selected_root_ids_path)
-    if not root_ids:
-        raise ValueError(
-            f"Selected-root roster at {selected_root_ids_path} is empty."
-        )
+    root_ids = read_selected_root_roster(
+        selected_root_ids_path,
+        require_nonempty=True,
+        require_unique=True,
+        field_name=f"Selected-root roster at {selected_root_ids_path}",
+    )
     normalized_root_ids = sorted(int(root_id) for root_id in root_ids)
-    if len(set(normalized_root_ids)) != len(normalized_root_ids):
-        raise ValueError(
-            f"Selected-root roster at {selected_root_ids_path} contains duplicate root IDs."
-        )
 
     subset_name = manifest.get("subset_name")
     circuit_name = manifest.get("circuit_name")
@@ -2820,30 +2824,24 @@ def _resolve_subset_manifest_reference(
 ) -> dict[str, Any] | None:
     if subset_name is None:
         return None
-    normalized_subset_name = _normalize_identifier(
-        subset_name,
-        field_name="manifest.subset_name",
+    subset_artifact_paths = build_subset_artifact_paths(
+        subset_output_dir,
+        str(subset_name),
     )
-    safe_subset_name = re.sub(r"[^0-9A-Za-z._-]+", "_", normalized_subset_name).strip("_") or "default"
-    subset_manifest_path = (subset_output_dir / safe_subset_name / SUBSET_MANIFEST_FILENAME).resolve()
+    subset_manifest_path = subset_artifact_paths.manifest_json.resolve()
     if not subset_manifest_path.exists():
         return None
-    subset_manifest = load_json(subset_manifest_path)
-    manifest_root_ids = subset_manifest.get("root_ids")
-    if not isinstance(manifest_root_ids, list):
-        raise ValueError(
-            f"Subset manifest at {subset_manifest_path} is missing the root_ids list."
-        )
-    normalized_manifest_root_ids = sorted(int(root_id) for root_id in manifest_root_ids)
-    if normalized_manifest_root_ids != expected_root_ids:
-        raise ValueError(
-            "Subset manifest root_ids do not match the selected-root roster: "
-            f"{subset_manifest_path}."
-        )
+    subset_manifest = load_subset_manifest(subset_manifest_path)
+    manifest_validation = validate_subset_manifest_payload(
+        subset_manifest,
+        preset_name=str(subset_name),
+        expected_root_ids=expected_root_ids,
+        field_name=f"Subset manifest at {subset_manifest_path}",
+    )
     return {
         "subset_manifest_path": str(subset_manifest_path),
-        "subset_manifest_version": str(subset_manifest.get("subset_manifest_version", "")),
-        "root_id_count": len(normalized_manifest_root_ids),
+        "subset_manifest_version": manifest_validation["subset_manifest_version"],
+        "root_id_count": manifest_validation["root_id_count"],
     }
 
 
@@ -4352,6 +4350,7 @@ def _resolve_surface_wave_operator_asset(
             Path(str(operator_asset_records[TRANSFER_OPERATORS_KEY]["path"])).resolve()
         ),
         "operator_metadata_path": str(metadata_path),
+        "operator_metadata": copy.deepcopy(loaded_operator_metadata),
         "descriptor_sidecar_path": str(descriptor_sidecar_path),
         "surface_to_patch_membership_available": True,
         "fine_to_coarse_restriction_available": True,
@@ -4374,6 +4373,10 @@ def _resolve_surface_wave_operator_asset(
             ).get("available")
         ),
         "spectral_radius": spectral_radius,
+        "stability_metadata": {
+            "spectral_radius": spectral_radius,
+            "source": "simulation_planning",
+        },
     }
 
 

@@ -370,6 +370,7 @@ def execute_task_validation_workflow(
     design_lock_path: str | Path,
     analysis_bundle_metadata_path: str | Path | None = None,
     perturbation_analysis_bundle_specs: Sequence[Mapping[str, Any]] = (),
+    validation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     resolved_analysis_bundle_metadata_path = (
         None
@@ -393,6 +394,7 @@ def execute_task_validation_workflow(
         schema_path=schema_path,
         design_lock_path=design_lock_path,
         analysis_bundle_metadata_path=resolved_analysis_bundle_metadata_path,
+        validation_plan=validation_plan,
     )
     result = run_task_validation_suite(
         analysis_bundle_metadata_path=resolved_analysis_bundle_metadata_path,
@@ -413,17 +415,21 @@ def _resolve_task_validation_plan(
     schema_path: str | Path,
     design_lock_path: str | Path,
     analysis_bundle_metadata_path: str | Path,
+    validation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    simulation_plan = resolve_manifest_simulation_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
-    )
-    resolved_plan = resolve_validation_plan(
-        config_path=config_path,
-        simulation_plan=simulation_plan,
-        analysis_bundle_metadata_path=analysis_bundle_metadata_path,
+    resolved_plan = (
+        copy.deepcopy(dict(validation_plan))
+        if isinstance(validation_plan, Mapping)
+        else resolve_validation_plan(
+            config_path=config_path,
+            simulation_plan=resolve_manifest_simulation_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            ),
+            analysis_bundle_metadata_path=analysis_bundle_metadata_path,
+        )
     )
     analysis_bundle_metadata = load_experiment_analysis_bundle_metadata(
         analysis_bundle_metadata_path

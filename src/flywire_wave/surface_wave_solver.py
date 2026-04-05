@@ -517,6 +517,9 @@ class SurfaceWaveOperatorBundle:
         operator_metadata_path: str | Path | None = None,
         descriptor_sidecar_path: str | Path | None = None,
         root_id: int | None = None,
+        operator_metadata: Mapping[str, Any] | None = None,
+        geometry_descriptors: Mapping[str, Any] | None = None,
+        stability_metadata: Mapping[str, Any] | None = None,
     ) -> SurfaceWaveOperatorBundle:
         fine_path = Path(fine_operator_path).resolve()
         fine_payload = _load_npz_payload(fine_path)
@@ -541,24 +544,40 @@ class SurfaceWaveOperatorBundle:
             None if transfer_operator_path is None else Path(transfer_operator_path).resolve()
         )
         transfer_payload = None if transfer_path is None else _load_npz_payload(transfer_path)
-        operator_metadata: dict[str, Any] = {}
+        resolved_operator_metadata: dict[str, Any] = (
+            copy.deepcopy(dict(operator_metadata))
+            if isinstance(operator_metadata, Mapping)
+            else {}
+        )
         metadata_path = (
             None if operator_metadata_path is None else Path(operator_metadata_path).resolve()
         )
-        if metadata_path is not None:
+        if metadata_path is not None and not resolved_operator_metadata:
             with metadata_path.open("r", encoding="utf-8") as handle:
-                operator_metadata = json.load(handle)
+                resolved_operator_metadata = json.load(handle)
+        if isinstance(stability_metadata, Mapping):
+            resolved_operator_metadata.setdefault(
+                "_resolved_stability",
+                copy.deepcopy(dict(stability_metadata)),
+            )
         descriptor_sidecar = (
             None
             if descriptor_sidecar_path is None
             else Path(descriptor_sidecar_path).resolve()
         )
-        geometry_descriptors: dict[str, Any] = {}
-        if descriptor_sidecar is not None:
+        resolved_geometry_descriptors: dict[str, Any] = (
+            copy.deepcopy(dict(geometry_descriptors))
+            if isinstance(geometry_descriptors, Mapping)
+            else {}
+        )
+        if descriptor_sidecar is not None and not resolved_geometry_descriptors:
             with descriptor_sidecar.open("r", encoding="utf-8") as handle:
-                geometry_descriptors = json.load(handle)
+                resolved_geometry_descriptors = json.load(handle)
         boundary_condition_mode = str(
-            operator_metadata.get("boundary_condition_mode", DEFAULT_BOUNDARY_CONDITION_MODE)
+            resolved_operator_metadata.get(
+                "boundary_condition_mode",
+                DEFAULT_BOUNDARY_CONDITION_MODE,
+            )
         )
 
         return cls(
@@ -625,9 +644,9 @@ class SurfaceWaveOperatorBundle:
                 if transfer_payload is None
                 else _extract_optional_int_vector(transfer_payload, "surface_to_patch")
             ),
-            geometry_descriptors=geometry_descriptors,
+            geometry_descriptors=resolved_geometry_descriptors,
             boundary_condition_mode=boundary_condition_mode,
-            operator_metadata=operator_metadata,
+            operator_metadata=resolved_operator_metadata,
             source_reference={
                 "source_kind": "operator_bundle",
                 "fine_operator_path": str(fine_path),
@@ -656,6 +675,9 @@ class SurfaceWaveOperatorBundle:
             transfer_operator_path=operator_asset.get("transfer_operator_path"),
             operator_metadata_path=operator_asset.get("operator_metadata_path"),
             descriptor_sidecar_path=operator_asset.get("descriptor_sidecar_path"),
+            operator_metadata=operator_asset.get("operator_metadata"),
+            geometry_descriptors=operator_asset.get("geometry_descriptors"),
+            stability_metadata=operator_asset.get("stability_metadata"),
         )
 
     @property
@@ -1207,8 +1229,10 @@ class SingleNeuronSurfaceWaveSolver:
             ),
             "activation_scale": float(nonlinearity["activation_scale"]),
         }
-        spectral_radius = estimate_sparse_operator_spectral_radius(
-            self._propagation_operator
+        spectral_radius = _resolve_cached_runtime_spectral_radius(
+            operator_bundle=self._operator_bundle,
+            propagation_operator=self._propagation_operator,
+            anisotropy_summary=anisotropy_summary,
         )
         max_supported_dt_ms = compute_surface_wave_stability_timestep_ms(
             spectral_radius=spectral_radius,
@@ -1930,6 +1954,57 @@ def estimate_sparse_operator_spectral_radius(operator: sp.spmatrix) -> float:
     if not math.isfinite(spectral_radius):
         raise ValueError("Spectral radius estimate was not finite.")
     return round(max(0.0, spectral_radius), 12)
+
+
+def _resolve_cached_runtime_spectral_radius(
+    *,
+    operator_bundle: SurfaceWaveOperatorBundle,
+    propagation_operator: sp.spmatrix,
+    anisotropy_summary: Mapping[str, Any],
+) -> float:
+    cache = operator_bundle.operator_metadata.setdefault(
+        "_runtime_stability_cache",
+        {},
+    )
+    if not isinstance(cache, dict):
+        cache = {}
+        operator_bundle.operator_metadata["_runtime_stability_cache"] = cache
+
+    cache_key = json.dumps(
+        {
+            "mode": str(anisotropy_summary.get("mode", "")),
+            "identity_equivalent": bool(
+                anisotropy_summary.get("identity_equivalent", False)
+            ),
+            "strength_scale": round(
+                float(anisotropy_summary.get("strength_scale", 0.0)),
+                12,
+            ),
+            "source_anisotropy_model": str(
+                anisotropy_summary.get("source_anisotropy_model", "")
+            ),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    cached_entry = cache.get(cache_key)
+    if isinstance(cached_entry, Mapping) and "spectral_radius" in cached_entry:
+        return float(cached_entry["spectral_radius"])
+
+    planner_entry = operator_bundle.operator_metadata.get("_resolved_stability")
+    if (
+        bool(anisotropy_summary.get("identity_equivalent", False))
+        and isinstance(planner_entry, Mapping)
+        and "spectral_radius" in planner_entry
+    ):
+        spectral_radius = float(planner_entry["spectral_radius"])
+    else:
+        spectral_radius = estimate_sparse_operator_spectral_radius(propagation_operator)
+
+    cache[cache_key] = {
+        "spectral_radius": float(spectral_radius),
+    }
+    return float(spectral_radius)
 
 
 def compute_surface_wave_stability_timestep_ms(

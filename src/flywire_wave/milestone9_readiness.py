@@ -29,7 +29,7 @@ from .geometry_contract import (
     load_operator_bundle_metadata,
     write_geometry_manifest,
 )
-from .io_utils import ensure_dir, write_json, write_root_ids
+from .io_utils import ensure_dir, write_json
 from .manifests import load_json, load_yaml
 from .mesh_pipeline import process_mesh_into_wave_assets
 from .readiness_contract import (
@@ -61,6 +61,7 @@ from .simulator_result_contract import (
 )
 from .stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
 from .synapse_mapping import materialize_synapse_anchor_maps
+from .selection import write_selected_root_roster, write_subset_manifest
 
 
 MILESTONE9_READINESS_REPORT_VERSION = "milestone9_readiness.v1"
@@ -310,22 +311,12 @@ def _materialize_verification_fixture(
     record_stimulus_bundle(stimulus)
 
     selected_root_ids_path = generated_fixture_dir / "selected_root_ids.txt"
-    write_root_ids(selected_root_ids, selected_root_ids_path)
+    write_selected_root_roster(selected_root_ids, selected_root_ids_path)
 
-    subset_manifest_path = subset_output_dir / subset_name / "subset_manifest.json"
-    subset_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    subset_manifest_path.write_text(
-        json.dumps(
-            {
-                "subset_manifest_version": "1",
-                "preset_name": subset_name,
-                "root_ids": selected_root_ids,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
+    subset_manifest_path = write_subset_manifest(
+        subset_output_dir=subset_output_dir,
+        preset_name=subset_name,
+        root_ids=selected_root_ids,
     )
 
     geometry_manifest_path = generated_fixture_dir / "geometry_manifest.json"

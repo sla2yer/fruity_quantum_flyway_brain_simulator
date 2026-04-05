@@ -6,6 +6,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
@@ -514,6 +515,32 @@ class SimulatorExecutionSmokeTest(unittest.TestCase):
             )
             for path in compared_files:
                 self.assertEqual(path.read_bytes(), first_run_bytes[str(path)])
+
+    def test_execute_manifest_simulation_accepts_pre_resolved_plan_without_replanning(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_execution_fixture(Path(tmp_dir_str))
+            simulation_plan = resolve_manifest_simulation_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+
+            with mock.patch(
+                "flywire_wave.simulator_execution.resolve_manifest_simulation_plan",
+                side_effect=AssertionError("unexpected simulation plan re-resolution"),
+            ):
+                result = execute_manifest_simulation(
+                    manifest_path=fixture["manifest_path"],
+                    config_path=fixture["config_path"],
+                    schema_path=fixture["schema_path"],
+                    design_lock_path=fixture["design_lock_path"],
+                    model_mode="surface_wave",
+                    arm_id="surface_wave_intact",
+                    simulation_plan=simulation_plan,
+                )
+
+            self.assertEqual(result["executed_run_count"], 1)
 
 
 def _materialize_execution_fixture(tmp_dir: Path) -> dict[str, Path]:

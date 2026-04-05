@@ -286,6 +286,54 @@ class DashboardSessionPlanningTest(unittest.TestCase):
             )
             self.assertEqual(manifest_asset_manifest, experiment_asset_manifest)
 
+    def test_manifest_planning_ignores_stale_analysis_and_validation_bundle_copies(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_dashboard_fixture(Path(tmp_dir_str))
+
+            analysis_metadata_path = Path(
+                fixture["analysis_bundle_metadata"]["artifacts"]["metadata_json"]["path"]
+            ).resolve()
+            stray_analysis_path = (
+                analysis_metadata_path.parents[1]
+                / "stale_duplicate_copy"
+                / "experiment_analysis_bundle.json"
+            ).resolve()
+            stray_analysis_path.parent.mkdir(parents=True, exist_ok=True)
+            stray_analysis_path.write_text(
+                analysis_metadata_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            validation_metadata_path = Path(
+                fixture["validation_bundle_metadata"]["artifacts"]["metadata_json"]["path"]
+            ).resolve()
+            stray_validation_path = (
+                validation_metadata_path.parents[1]
+                / "stale_duplicate_copy"
+                / "validation_bundle.json"
+            ).resolve()
+            stray_validation_path.parent.mkdir(parents=True, exist_ok=True)
+            stray_validation_path.write_text(
+                validation_metadata_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            plan = resolve_dashboard_session_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+
+            self.assertEqual(
+                plan["selected_bundle_pair"]["baseline"]["arm_id"],
+                DEFAULT_BASELINE_ARM_ID,
+            )
+            self.assertEqual(
+                plan["selected_bundle_pair"]["wave"]["arm_id"],
+                DEFAULT_WAVE_ARM_ID,
+            )
+
     def test_planning_fails_clearly_for_missing_phase_map_overlay_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             fixture = _materialize_dashboard_fixture(Path(tmp_dir_str))

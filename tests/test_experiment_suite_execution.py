@@ -4,6 +4,7 @@ import copy
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -308,6 +309,130 @@ class ExperimentSuiteExecutionTest(unittest.TestCase):
             self.assertTrue(
                 all(arm["random_seed"] == 11 for arm in base_manifest["comparison_arms"])
             )
+
+    def test_stage_context_reuses_one_resolved_simulation_plan_per_suite_cell(self) -> None:
+        schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+        design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = _write_manifest_fixture(
+                tmp_dir,
+                manifest_overrides={"seed_sweep": [11, 17], "random_seed": 11},
+            )
+            config_path = _write_simulation_fixture(tmp_dir)
+            _record_fixture_stimulus_bundle(
+                manifest_path=manifest_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            suite_manifest_path = _write_suite_manifest_fixture(
+                tmp_dir=tmp_dir,
+                manifest_path=manifest_path,
+                suite_block=_minimal_execution_suite_block(
+                    output_root=tmp_dir / "out" / "suite_execution"
+                ),
+            )
+            plan = resolve_experiment_suite_plan(
+                config_path=config_path,
+                suite_manifest_path=suite_manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            schedule = build_experiment_suite_execution_schedule(plan)
+            simulation_plan_ids: dict[tuple[str, str], int] = {}
+
+            def stage_executor(stage_id: str):
+                def execute(context: dict[str, object]) -> dict[str, object]:
+                    work_item = dict(context["work_item"])
+                    suite_cell_id = str(work_item["suite_cell_id"])
+                    if stage_id in {"simulation", "analysis", "validation"}:
+                        simulation_plan_ids[(suite_cell_id, stage_id)] = id(
+                            context["simulation_plan"]
+                        )
+                    artifact_path = (
+                        Path(str(context["workspace_root"]))
+                        / "fixture_stage_outputs"
+                        / f"{work_item['work_item_id']}.json"
+                    ).resolve()
+                    write_json(
+                        {
+                            "stage_id": stage_id,
+                            "suite_cell_id": suite_cell_id,
+                            "work_item_id": str(work_item["work_item_id"]),
+                        },
+                        artifact_path,
+                    )
+                    summary: dict[str, object] = {
+                        "metadata_path": str(artifact_path),
+                    }
+                    if stage_id == "validation":
+                        summary["dashboard_validation_bundle_metadata_path"] = str(
+                            artifact_path
+                        )
+                    return {
+                        "status": WORK_ITEM_STATUS_SUCCEEDED,
+                        "status_detail": f"{stage_id} complete",
+                        "summary": summary,
+                        "downstream_artifacts": [
+                            {
+                                "path": str(artifact_path),
+                                "artifact_role_id": str(work_item["artifact_role_ids"][0]),
+                                "artifact_kind": f"{stage_id}_metadata",
+                                "status": "ready",
+                            }
+                        ],
+                    }
+
+                return execute
+
+            import flywire_wave.simulation_planning as simulation_planning
+
+            original_resolve = simulation_planning.resolve_manifest_simulation_plan
+            resolve_calls: list[tuple[str, str]] = []
+
+            def counting_resolve(*args, **kwargs):
+                resolve_calls.append(
+                    (
+                        str(Path(kwargs["manifest_path"]).resolve()),
+                        str(Path(kwargs["config_path"]).resolve()),
+                    )
+                )
+                return original_resolve(*args, **kwargs)
+
+            with mock.patch(
+                "flywire_wave.simulation_planning.resolve_manifest_simulation_plan",
+                side_effect=counting_resolve,
+            ):
+                execute_experiment_suite_plan(
+                    plan,
+                    stage_executors={
+                        "simulation": stage_executor("simulation"),
+                        "analysis": stage_executor("analysis"),
+                        "validation": stage_executor("validation"),
+                        "dashboard": stage_executor("dashboard"),
+                    },
+                )
+
+            expected_resolve_count = len(
+                {
+                    str(entry["suite_cell_id"])
+                    for entry in schedule["schedule"]
+                    if entry["stage_id"] in {"simulation", "analysis", "validation"}
+                }
+            )
+            self.assertEqual(len(resolve_calls), expected_resolve_count)
+
+            for suite_cell_id in {
+                str(entry["suite_cell_id"])
+                for entry in schedule["schedule"]
+                if entry["stage_id"] == "analysis"
+            }:
+                self.assertEqual(
+                    simulation_plan_ids[(suite_cell_id, "analysis")],
+                    simulation_plan_ids[(suite_cell_id, "validation")],
+                )
 
 
 def _minimal_execution_suite_block(*, output_root: Path) -> dict[str, object]:

@@ -738,6 +738,7 @@ def _resolve_subset_source_context(
     subset_manifest_path: str | Path | None,
     experiment_id: str | None,
 ) -> dict[str, Any]:
+    raw_subset_name = subset_name or selection_preset or cfg.get("selection", {}).get("active_preset")
     resolved_subset_name = (
         _normalize_optional_identifier(subset_name, field_name="subset_name")
         or _normalize_optional_identifier(
@@ -755,13 +756,14 @@ def _resolve_subset_source_context(
             "selection_preset, subset_manifest_path, or config.selection.active_preset."
         )
     if subset_manifest_path is not None and resolved_subset_name is None:
+        raw_subset_name = Path(subset_manifest_path).resolve().parent.name
         resolved_subset_name = _normalize_identifier(
-            Path(subset_manifest_path).resolve().parent.name,
+            raw_subset_name,
             field_name="subset_manifest_path.parent",
         )
     subset_artifact_paths = build_subset_artifact_paths(
         cfg["paths"]["subset_output_dir"],
-        _require_nonempty_string(resolved_subset_name, field_name="subset_name"),
+        _require_nonempty_string(raw_subset_name, field_name="subset_name"),
     )
     selection_context = _resolve_selection_context(
         selected_root_ids_path=subset_artifact_paths.root_ids,
@@ -994,12 +996,14 @@ def _resolve_selection_from_manifest_payload(
 ) -> dict[str, Any]:
     selected_root_ids_path = Path(cfg["paths"]["selected_root_ids"]).resolve()
     selection_cfg = _require_mapping(cfg.get("selection", {}), field_name="config.selection")
+    raw_active_preset = selection_cfg.get("active_preset")
     active_preset = _normalize_optional_identifier(
-        selection_cfg.get("active_preset"),
+        raw_active_preset,
         field_name="config.selection.active_preset",
     )
+    raw_subset_name = manifest_payload.get("subset_name")
     subset_name = _normalize_optional_identifier(
-        manifest_payload.get("subset_name"),
+        raw_subset_name,
         field_name="manifest.subset_name",
     )
     circuit_name = _normalize_optional_identifier(
@@ -1015,7 +1019,10 @@ def _resolve_selection_from_manifest_payload(
     subset_stats_candidate = None
     selected_root_candidate = selected_root_ids_path
     if subset_name is not None:
-        artifact_paths = build_subset_artifact_paths(cfg["paths"]["subset_output_dir"], subset_name)
+        artifact_paths = build_subset_artifact_paths(
+            cfg["paths"]["subset_output_dir"],
+            _require_nonempty_string(raw_subset_name, field_name="manifest.subset_name"),
+        )
         subset_manifest_candidate = artifact_paths.manifest_json.resolve()
         subset_stats_candidate = artifact_paths.stats_json.resolve()
         if artifact_paths.root_ids.exists():

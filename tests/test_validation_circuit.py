@@ -4,10 +4,12 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -31,11 +33,16 @@ from flywire_wave.coupling_contract import (
     SURFACE_PATCH_CLOUD_MODE,
 )
 from flywire_wave.io_utils import write_deterministic_npz, write_json
+from flywire_wave.experiment_comparison_analysis import (
+    discover_experiment_bundle_set,
+    execute_experiment_comparison_workflow,
+)
 from flywire_wave.simulation_planning import (
     discover_simulation_run_plans,
     resolve_manifest_readout_analysis_plan,
     resolve_manifest_simulation_plan,
 )
+from flywire_wave.validation_planning import resolve_validation_plan
 from flywire_wave.simulator_result_contract import (
     METRICS_TABLE_KEY,
     READOUT_TRACES_KEY,
@@ -567,6 +574,72 @@ class CircuitValidationSuiteTest(unittest.TestCase):
             self.assertTrue(
                 all(item["status"] == "pass" for item in findings)
             )
+
+    def test_workflow_accepts_pre_resolved_validation_context_without_replanning(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _materialize_circuit_workflow_fixture(tmp_dir)
+            config_payload = yaml.safe_load(
+                fixture["config_path"].read_text(encoding="utf-8")
+            )
+            config_payload["validation"] = {
+                "active_layer_ids": ["circuit_sanity"],
+            }
+            fixture["config_path"].write_text(
+                yaml.safe_dump(config_payload, sort_keys=False),
+                encoding="utf-8",
+            )
+            simulation_plan = resolve_manifest_simulation_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+            analysis_plan = simulation_plan["readout_analysis_plan"]
+            bundle_set = discover_experiment_bundle_set(
+                simulation_plan=simulation_plan,
+                analysis_plan=analysis_plan,
+            )
+            analysis_result = execute_experiment_comparison_workflow(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+                simulation_plan=simulation_plan,
+                analysis_plan=analysis_plan,
+                bundle_set=bundle_set,
+            )
+            analysis_bundle_metadata_path = analysis_result["packaged_analysis_bundle"][
+                "metadata_path"
+            ]
+            validation_plan = resolve_validation_plan(
+                config_path=fixture["config_path"],
+                simulation_plan=simulation_plan,
+                analysis_plan=analysis_plan,
+                bundle_set=bundle_set,
+                analysis_bundle_metadata_path=analysis_bundle_metadata_path,
+            )
+
+            with mock.patch(
+                "flywire_wave.validation_circuit.resolve_manifest_simulation_plan",
+                side_effect=AssertionError("unexpected simulation plan re-resolution"),
+            ), mock.patch(
+                "flywire_wave.validation_circuit.resolve_manifest_readout_analysis_plan",
+                side_effect=AssertionError("unexpected analysis plan re-resolution"),
+            ):
+                result = execute_circuit_validation_workflow(
+                    manifest_path=fixture["manifest_path"],
+                    config_path=fixture["config_path"],
+                    schema_path=fixture["schema_path"],
+                    design_lock_path=fixture["design_lock_path"],
+                    simulation_plan=simulation_plan,
+                    analysis_plan=analysis_plan,
+                    bundle_set=bundle_set,
+                    validation_plan=validation_plan,
+                    analysis_bundle_metadata_path=analysis_bundle_metadata_path,
+                )
+
+            self.assertEqual(result["overall_status"], "pass")
 
     def test_workflow_fails_clearly_when_requested_motion_readout_is_missing(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:

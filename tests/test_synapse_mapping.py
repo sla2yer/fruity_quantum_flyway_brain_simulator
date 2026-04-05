@@ -5,6 +5,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,11 @@ from flywire_wave.synapse_mapping import (
     MAPPING_STATUS_BLOCKED,
     MAPPING_STATUS_MAPPED,
     QUALITY_STATUS_OK,
+    RootContext,
+    _build_root_context,
+    _build_root_local_nearest_neighbor_index,
+    _skeleton_mapping,
+    _surface_patch_mapping,
     load_root_anchor_map,
     lookup_edge_synapses,
     lookup_inbound_synapses,
@@ -32,6 +38,130 @@ from flywire_wave.synapse_mapping import (
 
 
 class SynapseAnchorMappingTest(unittest.TestCase):
+    def test_build_root_context_caches_root_local_lookup_state(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            coupling_dir = tmp_dir / "processed_coupling"
+
+            bundle_paths_101 = build_geometry_bundle_paths(
+                101,
+                meshes_raw_dir=tmp_dir / "meshes_raw",
+                skeletons_raw_dir=tmp_dir / "skeletons_raw",
+                processed_mesh_dir=tmp_dir / "processed_meshes",
+                processed_graph_dir=tmp_dir / "processed_graphs",
+            )
+            _write_octahedron_mesh(bundle_paths_101.raw_mesh_path)
+            process_mesh_into_wave_assets(
+                root_id=101,
+                bundle_paths=bundle_paths_101,
+                simplify_target_faces=8,
+                patch_hops=1,
+                patch_vertex_cap=2,
+                registry_metadata={"cell_type": "T5a", "project_role": "surface_simulated"},
+            )
+
+            bundle_paths_202 = build_geometry_bundle_paths(
+                202,
+                meshes_raw_dir=tmp_dir / "meshes_raw",
+                skeletons_raw_dir=tmp_dir / "skeletons_raw",
+                processed_mesh_dir=tmp_dir / "processed_meshes",
+                processed_graph_dir=tmp_dir / "processed_graphs",
+            )
+            _write_stub_swc(bundle_paths_202.raw_skeleton_path)
+
+            synapse_registry_path = coupling_dir / "synapse_registry.csv"
+            _write_synapse_registry(synapse_registry_path)
+            root_synapses = pd.read_csv(synapse_registry_path)
+
+            surface_context = _build_root_context(
+                root_id=101,
+                project_role="surface_simulated",
+                root_synapses=root_synapses,
+                meshes_raw_dir=tmp_dir / "meshes_raw",
+                skeletons_raw_dir=tmp_dir / "skeletons_raw",
+                processed_mesh_dir=tmp_dir / "processed_meshes",
+                processed_graph_dir=tmp_dir / "processed_graphs",
+            )
+            skeleton_context = _build_root_context(
+                root_id=202,
+                project_role="skeleton_simulated",
+                root_synapses=root_synapses,
+                meshes_raw_dir=tmp_dir / "meshes_raw",
+                skeletons_raw_dir=tmp_dir / "skeletons_raw",
+                processed_mesh_dir=tmp_dir / "processed_meshes",
+                processed_graph_dir=tmp_dir / "processed_graphs",
+            )
+
+            self.assertIsNotNone(surface_context.surface_support_index)
+            self.assertIsNone(surface_context.skeleton_support_index)
+            self.assertIsNone(skeleton_context.surface_support_index)
+            self.assertIsNotNone(skeleton_context.skeleton_support_index)
+
+    def test_root_local_lookup_reuses_indices_and_preserves_lowest_support_tie_break(self) -> None:
+        surface_vertices = np.asarray(
+            [
+                [-1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+            ],
+            dtype=np.float64,
+        )
+        skeleton_points = np.asarray(
+            [
+                [-2.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+            ],
+            dtype=np.float64,
+        )
+        context = RootContext(
+            root_id=999,
+            project_role="surface_simulated",
+            supported_modes=("surface_patch_cloud", "skeleton_segment_cloud"),
+            surface_vertices=surface_vertices,
+            surface_support_index=_build_root_local_nearest_neighbor_index(surface_vertices),
+            surface_to_patch=np.asarray([0, 1], dtype=np.int32),
+            patch_centroids=surface_vertices.copy(),
+            patch_radii=np.asarray([1.0, 1.0], dtype=np.float64),
+            skeleton_node_ids=np.asarray([10, 20], dtype=np.int64),
+            skeleton_points=skeleton_points,
+            skeleton_support_index=_build_root_local_nearest_neighbor_index(skeleton_points),
+            skeleton_local_scales=np.asarray([1.5, 1.5], dtype=np.float64),
+            point_incoming_anchor=np.full(3, np.nan, dtype=np.float64),
+            point_incoming_radius=float("nan"),
+            point_outgoing_anchor=np.full(3, np.nan, dtype=np.float64),
+            point_outgoing_radius=float("nan"),
+            surface_unavailable_reason="",
+            skeleton_unavailable_reason="",
+            point_incoming_unavailable_reason="",
+            point_outgoing_unavailable_reason="",
+        )
+        original_norm = np.linalg.norm
+
+        def guarded_norm(values, *args, **kwargs):
+            axis = kwargs.get("axis")
+            shape = np.shape(values)
+            if axis == 1 and shape in {surface_vertices.shape, skeleton_points.shape}:
+                raise AssertionError("full geometry nearest-neighbor scan should not run during mapping")
+            return original_norm(values, *args, **kwargs)
+
+        with mock.patch("flywire_wave.synapse_mapping.np.linalg.norm", side_effect=guarded_norm):
+            surface_mapping = _surface_patch_mapping(
+                context=context,
+                query_point=np.asarray([0.0, 0.0, 0.0], dtype=np.float64),
+            )
+            skeleton_mapping = _skeleton_mapping(
+                context=context,
+                query_point=np.asarray([0.0, 0.0, 0.0], dtype=np.float64),
+            )
+
+        assert surface_mapping is not None
+        assert skeleton_mapping is not None
+        self.assertEqual(int(surface_mapping["support_index"]), 0)
+        self.assertEqual(int(surface_mapping["anchor_index"]), 0)
+        self.assertAlmostEqual(float(surface_mapping["support_distance"]), 1.0, places=9)
+        self.assertEqual(int(skeleton_mapping["support_index"]), 0)
+        self.assertEqual(int(skeleton_mapping["anchor_index"]), 10)
+        self.assertAlmostEqual(float(skeleton_mapping["support_distance"]), 2.0, places=9)
+
     def test_materialize_synapse_anchor_maps_maps_surface_and_fallbacks_deterministically(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)

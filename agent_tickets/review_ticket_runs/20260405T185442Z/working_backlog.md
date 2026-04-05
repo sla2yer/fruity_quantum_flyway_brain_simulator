@@ -27,193 +27,219 @@ Create one library-owned manifest-input resolver that accepts either `config_pat
 ### Verification
 `make validate-manifest`; `python3 -m unittest tests.test_manifest_validation -v`; add a regression test that compares validation output against `resolve_manifest_simulation_plan` under a nondefault `config.paths.processed_stimulus_dir`.
 
-## APICPL-002 - Experiment bundle discovery is implemented as directory globbing instead of contract-owned lookup
+## APICPL-002 - Planner bundle metadata resolution still falls back to filesystem globbing instead of contract-owned lookup
 - Status: open
 - Priority: high
 - Source: api_boundaries_and_coupling review
 - Area: experiment analysis / dashboard planning
 
 ### Problem
-Several planners discover packaged bundles by rebuilding directory layout and metadata filenames instead of asking a contract-owned helper to resolve them from plan identity. That leaks filename and folder ownership into higher-level workflows and makes stray files under an experiment directory part of discovery policy.
+The repository now has more contract support than this ticket originally assumed: simulator result bundles have a direct metadata-path resolver, experiment-analysis and validation contracts have deterministic bundle path builders, and validation planning already uses the identity-based analysis lookup pattern. The remaining issue is that experiment comparison and dashboard planning still bypass those contract surfaces and rescan on-disk directories for `*/...bundle.json`. That keeps discovery policy coupled to folder layout and allows unrelated or stale files under an experiment root to affect planner behavior.
 
 ### Evidence
-- `[src/flywire_wave/experiment_comparison_analysis.py#L149](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L149)` constructs `.../bundles/<experiment_id>/<arm_id>/`, and `[src/flywire_wave/experiment_comparison_analysis.py#L152](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L152)` globs `*/simulator_result_bundle.json`.
-- `[src/flywire_wave/dashboard_session_planning.py#L260](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L260)` already has a manifest-derived `bundle_set`, but `[src/flywire_wave/dashboard_session_planning.py#L674](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L674)` and `[src/flywire_wave/dashboard_session_planning.py#L725](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L725)` still glob analysis and validation bundle metadata under hardcoded contract filenames.
-- `[src/flywire_wave/validation_planning.py#L476](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_planning.py#L476)` shows the better pattern: derive the expected analysis bundle path from plan identity via contract helpers instead of scanning the filesystem.
+- [experiment_comparison_analysis.py:149](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L149) and [experiment_comparison_analysis.py:152](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L152) rebuild `processed_simulator_results_dir/bundles/<experiment_id>/<arm_id>/` and glob `*/simulator_result_bundle.json`.
+- Per-seed run plans already carry canonical result bundle metadata via [simulation_planning.py:4888](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4888) and [simulation_planning.py:4907](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4907), and the simulator contract already exposes [simulator_result_contract.py:1034](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_result_contract.py#L1034) for identity-based metadata-path resolution.
+- [dashboard_session_planning.py:674](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L674) and [dashboard_session_planning.py:725](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L725) still glob `analysis/<experiment_id>/*/experiment_analysis_bundle.json` and `validation/<experiment_id>/*/validation_bundle.json`.
+- Deterministic analysis and validation bundle layout is already owned by [experiment_analysis_contract.py:95](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_analysis_contract.py#L95) and [validation_contract.py:159](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_contract.py#L159), and validation planning already resolves the expected analysis bundle path from plan identity at [validation_planning.py:476](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_planning.py#L476). There is still no comparable shared analysis/validation metadata lookup helper; only simulator currently has one.
 
 ### Requested Change
-Add contract-owned discovery APIs for simulator, experiment-analysis, and validation bundle metadata lookup from plan identity or bundle ids, and replace raw `glob("*/...json")` discovery in `experiment_comparison_analysis.py` and `dashboard_session_planning.py`.
+Replace the remaining raw directory scans with contract-owned metadata lookup:
+- In `discover_experiment_bundle_set()`, resolve expected simulator bundle metadata from the canonical per-run `result_bundle` identity or `resolve_simulator_result_bundle_metadata_path()` instead of globbing arm bundle directories.
+- Add shared experiment-analysis and validation bundle metadata lookup helpers that accept plan identity when available and bundle-reference inputs when only upstream bundle ids are available, then route dashboard session planning through those helpers instead of direct `glob("*/...bundle.json")` calls.
+- Keep ambiguity handling inside the shared resolver layer so planner modules stop owning filename and folder policy.
 
 ### Acceptance Criteria
-High-level planners no longer hardcode `*/simulator_result_bundle.json`, `*/experiment_analysis_bundle.json`, or `*/validation_bundle.json` discovery. Discovery remains stable if on-disk naming changes behind the contract helpers.
+High-level planners no longer call `glob("*/simulator_result_bundle.json")`, `glob("*/experiment_analysis_bundle.json")`, or `glob("*/validation_bundle.json")` to resolve bundle metadata. Experiment comparison and dashboard planning resolve bundle metadata through contract-owned identity/path helpers, and stray or stale directories under `bundles/`, `analysis/`, or `validation/` do not change which bundle is selected.
 
 ### Verification
-`python3 -m unittest tests.test_experiment_comparison_analysis -v`; `python3 -m unittest tests.test_simulation_planning -v`; `python3 -m unittest tests.test_dashboard_session_planning -v` after full dev dependencies are installed (`trimesh` is missing in this environment).
+`python3 -m unittest tests.test_experiment_comparison_analysis -v`; `python3 -m unittest tests.test_validation_planning -v`; `python3 -m unittest tests.test_dashboard_session_planning -v` after installing `trimesh` (that suite currently fails to import in this environment with `ModuleNotFoundError: trimesh`).
 
-## APICPL-003 - Geometry manifest `_coupling_contract` header is derived from whichever root record sorts first
+## APICPL-003 - Geometry manifest `_coupling_contract` is sampled from the lowest sorted root's `coupling_bundle` instead of manifest inputs
 - Status: open
 - Priority: high
 - Source: api_boundaries_and_coupling review
-- Area: geometry / coupling manifest contract
+- Area: geometry manifest / coupling contract
 
 ### Problem
-The manifest-level coupling header is treated as the authoritative global seam for `synapse_registry.csv`, but it is currently synthesized from one per-root `coupling_bundle`. That makes a global contract depend on record order and allows stale or mixed per-root coupling metadata to silently rewrite the header that simulation planning trusts.
+The manifest-level coupling header is no longer sensitive to dict insertion order, because roots are sorted numerically before sampling. But it is still synthesized from exactly one per-root `coupling_bundle`: the lowest root ID that has one. That makes the global contract depend on sampled per-root metadata instead of explicit manifest-owned inputs. Because the header builder reconstructs `processed_coupling_dir` from that sampled bundle's `local_synapse_registry.path`, stale or mixed per-root coupling metadata can silently override the caller-provided coupling directory and rewrite the manifest-wide registry path/status that simulation planning treats as authoritative.
 
 ### Evidence
-- `[src/flywire_wave/geometry_contract.py#L732](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_contract.py#L732)` seeds `_coupling_contract` from `_first_coupling_bundle_metadata`, and `[src/flywire_wave/geometry_contract.py#L852](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_contract.py#L852)` returns the first root’s `coupling_bundle`.
-- `[src/flywire_wave/coupling_contract.py#L213](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/coupling_contract.py#L213)` then overrides the caller-provided `processed_coupling_dir` with the path embedded in that sampled bundle metadata.
-- `[src/flywire_wave/simulation_planning.py#L2978](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2978)` through `[src/flywire_wave/simulation_planning.py#L3003](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L3003)` consume `_coupling_contract.local_synapse_registry` as the authoritative plan input.
+- [src/flywire_wave/geometry_contract.py#L732](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_contract.py#L732) seeds `_coupling_contract` from `_first_coupling_bundle_metadata`, and [src/flywire_wave/geometry_contract.py#L855](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_contract.py#L855) selects the first `coupling_bundle` after sorting root IDs numerically.
+- [src/flywire_wave/coupling_contract.py#L213](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/coupling_contract.py#L213) parses the sampled bundle, [src/flywire_wave/coupling_contract.py#L216](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/coupling_contract.py#L216) rebuilds the manifest header directory from that bundle's `local_synapse_registry.path`, and [src/flywire_wave/coupling_contract.py#L300](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/coupling_contract.py#L300) shows that each per-root bundle carries its own `local_synapse_registry` path/status.
+- [src/flywire_wave/simulation_planning.py#L2983](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2983) loads `_coupling_contract`, [src/flywire_wave/simulation_planning.py#L2993](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2993) resolves `_coupling_contract.local_synapse_registry.path`, and [src/flywire_wave/simulation_planning.py#L3003](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L3003) gates planning on that header status rather than a cross-root consistency check.
+- [tests/test_geometry_contract.py#L119](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_geometry_contract.py#L119) and [tests/test_coupling_contract.py#L130](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_coupling_contract.py#L130) cover single-root happy paths only; there is no regression that exercises conflicting per-root coupling metadata or verifies that explicit `processed_coupling_dir` wins.
 
 ### Requested Change
-Make manifest-level coupling metadata a canonical manifest-owned record built from explicit manifest inputs, not from a sampled root bundle. If per-root coupling bundles disagree about the shared coupling registry location or status, manifest writing should fail instead of serializing whichever root happens to come first.
+Make `_coupling_contract` a manifest-owned record derived from explicit manifest inputs. The manifest writer should not infer the global `local_synapse_registry` location/status from a sampled root bundle, and an explicit `processed_coupling_dir` must not be overridden by per-root metadata. If per-root `coupling_bundle.assets.local_synapse_registry` entries disagree with the manifest-wide coupling location or readiness status, fail manifest construction with a clear error instead of serializing the lowest root's bundle into the header.
 
 ### Acceptance Criteria
-`_coupling_contract.local_synapse_registry` is stable under root reordering, and inconsistent per-root coupling metadata cannot produce a misleading manifest header.
+- `_coupling_contract.local_synapse_registry.path` is derived from explicit manifest input when `processed_coupling_dir` is supplied, even if per-root `coupling_bundle_metadata` is present.
+- Adding or removing a lower-root record with stale `coupling_bundle.assets.local_synapse_registry` metadata does not rewrite the manifest-wide coupling header.
+- Conflicting per-root `local_synapse_registry` path or status values cause geometry manifest writing to fail clearly.
+- Regression coverage includes a multi-root manifest with conflicting bundle metadata and a case where sampled bundle metadata disagrees with the explicit `processed_coupling_dir`.
 
 ### Verification
-`python3 -m unittest tests.test_coupling_contract -v`; `python3 -m unittest tests.test_simulation_planning -v`; add regressions that swap record order and that inject conflicting per-root coupling metadata.
+`python3 -m unittest tests.test_geometry_contract -v`; `python3 -m unittest tests.test_coupling_contract -v`; `python3 -m unittest tests.test_simulation_planning -v`
 
-## APICPL-004 - Subset handoff contract is duplicated across selection, planners, and readiness fixtures
+## APICPL-004 - Subset handoff contract remains duplicated in planners and readiness fixtures
 - Status: open
 - Priority: medium
 - Source: api_boundaries_and_coupling review
 - Area: selection / subset handoff
 
 ### Problem
-`selected_root_ids.txt` and `subset_manifest.json` are public pipeline handoff artifacts, but their filenames, safe-name rules, and JSON payload shape are reconstructed in multiple modules instead of being owned by one library contract. Any future change to subset metadata or naming has to be coordinated manually across planning and readiness code.
+`selection.py` already exposes `SubsetArtifactPaths` and `build_subset_artifact_paths()`, so the original "introduce a helper" framing is outdated. The remaining gap is that runtime planners and readiness fixtures still bypass that shared surface and rebuild subset directory naming, manifest lookup, or manifest serialization themselves. This is now a real drift risk, not just duplication: selection derives the safe subset directory directly from the preset name, while planners normalize subset identifiers differently before resolving paths. A subset name with case or punctuation differences can therefore resolve to different locations depending on which module touches it.
 
 ### Evidence
-- `[src/flywire_wave/selection.py#L103](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L103)`, `[src/flywire_wave/selection.py#L142](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L142)`, and `[src/flywire_wave/selection.py#L413](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L413)` define the canonical subset artifact names and payload shape.
-- `[src/flywire_wave/simulation_planning.py#L176](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L176)` and `[src/flywire_wave/simulation_planning.py#L2823](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2823)` duplicate the subset-manifest filename and path resolution.
-- `[src/flywire_wave/experiment_suite_planning.py#L1806](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_planning.py#L1806)` hardcodes the same filename again.
-- Readiness fixtures hand-write the same contract in `[src/flywire_wave/milestone9_readiness.py#L315](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone9_readiness.py#L315)`, `[src/flywire_wave/milestone10_readiness.py#L392](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone10_readiness.py#L392)`, `[src/flywire_wave/milestone11_readiness.py#L472](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone11_readiness.py#L472)`, `[src/flywire_wave/milestone12_readiness.py#L610](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone12_readiness.py#L610)`, and `[src/flywire_wave/milestone13_readiness.py#L838](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone13_readiness.py#L838)`.
+- [src/flywire_wave/selection.py#L131](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L131), [src/flywire_wave/selection.py#L142](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L142), [src/flywire_wave/selection.py#L413](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L413), and [src/flywire_wave/selection.py#L582](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L582) already define the shared subset artifact paths, safe-name rule, and canonical subset manifest payload.
+- [src/flywire_wave/whole_brain_context_planning.py#L1018](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L1018) already consumes `build_subset_artifact_paths()`, showing that the shared contract is in active use elsewhere.
+- [src/flywire_wave/simulation_planning.py#L2748](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2748) and [src/flywire_wave/simulation_planning.py#L2815](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L2815) still open-code selected-root roster validation, subset path resolution, `subset_manifest.json` lookup, and manifest `root_ids` parsing.
+- [src/flywire_wave/experiment_suite_planning.py#L1799](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_planning.py#L1799) and [src/flywire_wave/experiment_suite_planning.py#L1805](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_planning.py#L1805) independently derive the active-subset manifest path instead of using the selection-side helper.
+- Readiness fixture builders still hand-write the same handoff artifacts in [src/flywire_wave/milestone9_readiness.py#L312](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone9_readiness.py#L312), [src/flywire_wave/milestone10_readiness.py#L389](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone10_readiness.py#L389), [src/flywire_wave/milestone11_readiness.py#L469](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone11_readiness.py#L469), [src/flywire_wave/milestone12_readiness.py#L603](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone12_readiness.py#L603), and [src/flywire_wave/milestone13_readiness.py#L834](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone13_readiness.py#L834).
 
 ### Requested Change
-Introduce a small selection/subset contract helper that owns subset artifact path building, safe-name normalization, manifest serialization/parsing, and active-root roster references. Route selection generation, simulation planning, suite planning, and readiness fixture writers through that helper.
+Extend the existing selection-side subset helper, or add a small companion contract module beside it, so one library surface owns subset artifact path derivation plus subset-manifest read/write/validation and selected-root roster read/write routines. Route `simulation_planning.py`, `experiment_suite_planning.py`, and the milestone 9-13 readiness fixture builders through that surface instead of re-implementing filenames, safe-name handling, or manifest serialization.
 
 ### Acceptance Criteria
-One library surface owns `subset_manifest.json` and selected-root roster semantics, and downstream consumers stop hardcoding the filename or manually serializing subset manifest payloads.
+- The selection boundary is the only place that defines subset artifact filenames and preset-to-directory derivation.
+- `simulation_planning.py` and `experiment_suite_planning.py` stop hardcoding `subset_manifest.json` or independently constructing subset manifest paths.
+- Milestone 9-13 readiness fixtures stop hand-writing subset manifest JSON and selected-root roster text.
+- A subset name containing mixed case or punctuation resolves to the same artifact directory when generated by selection code and later consumed by planners/readiness helpers.
 
 ### Verification
-`python3 -m unittest tests.test_simulation_planning -v`; `python3 -m unittest tests.test_selection -v` after installing `networkx`; add readiness-fixture regressions that round-trip generated subset references through the shared helper.
+- `python3 -m unittest tests.test_selection tests.test_simulation_planning tests.test_whole_brain_context_planning tests.test_milestone9_readiness tests.test_milestone10_readiness tests.test_milestone11_readiness tests.test_milestone12_readiness tests.test_milestone13_readiness -v`
+- Add or update a regression that builds subset artifacts from a mixed-case or punctuation-containing preset name and verifies selection generation, simulation planning, suite planning, and readiness fixture setup all resolve the same subset manifest path and root roster.
 
-## efficiency_and_modularity
-
-# Efficiency And Modularity Review Tickets
-
-## EFFMOD-FW-001 - Stop rereading the raw synapse snapshot during registry and subset materialization
+## EFFMOD-FW-001 - Stop rereading the raw synapse snapshot when materializing the current local synapse registry
 - Status: open
 - Priority: high
 - Source: efficiency_and_modularity review
-- Area: registry
+- Area: registry/selection
 
 ### Problem
-The normal `make registry -> make select` flow reparses the raw synapse snapshot multiple times even though the code already has a normalized synapse table in memory or on disk. That is the largest CSV in this pipeline, so repeated `pandas` loads and normalization passes directly increase local preprocessing cost. The current API shape also makes reuse hard because `materialize_synapse_registry()` only accepts config and always reloads the raw source.
+`build_registry()` and active-preset subset generation both write the same local synapse-registry artifact under `config.paths.processed_coupling_dir/synapse_registry.csv`. In the current code, both flows reread and renormalize the raw synapse snapshot even when an equivalent normalized table is already available in memory during registry build or when the current local registry plus its provenance could be reused as the `all_rows` input. Because the synapse snapshot is the largest CSV in this pipeline, the extra `pandas` parse and alias-normalization passes add avoidable cost to the standard `make registry -> make select` flow. The current `materialize_synapse_registry()` API also makes reuse awkward because it only accepts config plus optional root-id inputs.
 
 ### Evidence
-- [registry.py:360](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L360) loads `synapse_df = _load_synapse_table(source_paths.synapses)` and then still calls `materialize_synapse_registry(...)` at [registry.py:410](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L410).
-- [registry.py:307](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L307) shows `materialize_synapse_registry()` immediately calling `_load_synapse_table(...)` again at [registry.py:319](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L319).
-- [registry.py:582](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L582) shows `_load_synapse_table()` doing a full `pd.read_csv(path)` plus schema normalization.
-- [selection.py:279](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L279) calls `materialize_synapse_registry()` again for the active preset, so `make select` can trigger another full raw-snapshot read just to refresh the subset-scoped registry.
+- [registry.py:378](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L378) loads `synapse_df = _load_synapse_table(source_paths.synapses)` for registry construction, but [registry.py:410](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L410) still calls `materialize_synapse_registry(...)` instead of reusing that normalized table.
+- [registry.py:307](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L307) shows `materialize_synapse_registry()` only accepting `cfg`, `root_ids`, `root_ids_path`, and `scope_label`; it immediately resolves the source path at [registry.py:317](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L317) and reloads `_load_synapse_table(...)` at [registry.py:319](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L319).
+- [registry.py:582](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L582) shows `_load_synapse_table()` doing a fresh `pd.read_csv(path)` plus full alias resolution and schema normalization.
+- [selection.py:445](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L445) shows active-preset subset generation always routing through `materialize_synapse_registry()` when coupling/synapse paths are configured, so `make select` can trigger another raw snapshot parse even if the local registry already exists.
+- [registry.py:502](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L502) maps both build-time and selection-time writes to the same `processed_coupling_dir/synapse_registry.csv` contract path, so this should be fixed by reusing the current local artifact rather than by broadening the ticket into a storage redesign.
+- [registry.py:953](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/registry.py#L953) already writes `synapse_registry_provenance.json` with `scope.mode` (`all_rows` vs `root_id_subset`), which is enough to decide whether the current local registry is reusable as the source for subset filtering.
 
 ### Requested Change
-Split synapse-registry loading from synapse-registry scoping/writing. `build_registry()` should be able to pass the already-normalized synapse table into the materialization path, and active subset refresh should filter either that canonical table or the already-written canonical registry instead of rereading the raw snapshot.
+Split raw-snapshot loading from local synapse-registry writing within the existing single-path coupling contract. `build_registry()` should be able to pass its already-normalized `synapse_df` into the synapse-registry materialization path. Active-preset subset refresh should reuse the current local synapse registry when `synapse_registry_provenance.json` shows it is an `all_rows` materialization with compatible source/version metadata, and only fall back to rereading the raw synapse snapshot when no reusable all-rows local registry is available.
 
 ### Acceptance Criteria
 - `build_registry()` reads and normalizes the raw synapse snapshot at most once per invocation.
-- Active-preset subset refresh can rewrite the scoped synapse registry without forcing another raw CSV parse when the canonical local registry already exists.
-- Provenance and scope metadata stay unchanged.
+- The synapse-registry materialization path can accept a caller-supplied normalized synapse table without changing the written CSV schema, output path, or provenance shape.
+- Active-preset subset refresh can rewrite `config.paths.processed_coupling_dir/synapse_registry.csv` without a raw CSV parse when the current local registry and provenance are reusable `all_rows` inputs.
+- If the current local registry is missing, already subset-scoped, or provenance/source/version metadata are incompatible, the code falls back to the raw snapshot path and preserves current behavior.
+- `synapse_registry_provenance.json` continues to record correct `scope.mode`, `scope.label`, `root_ids`, `root_ids_path`, and source metadata.
+- Regression tests cover both the single-load `build_registry()` path and the reusable-local-registry subset-refresh path.
 
 ### Verification
 - `make test`
 - `.venv/bin/python -m unittest tests.test_registry tests.test_selection -v`
 
-## EFFMOD-FW-002 - Replace per-synapse full-geometry scans with reusable spatial indices in anchor mapping
+## EFFMOD-FW-002 - Build reusable root-local nearest-neighbor indices for anchor mapping
 - Status: open
 - Priority: high
 - Source: efficiency_and_modularity review
-- Area: coupling
+- Area: anchor mapping
 
 ### Problem
-Synapse anchor materialization does nearest-anchor search by scanning every surface vertex or every skeleton node for every mapped synapse side. On selected circuits with many synapses, this turns coupling materialization into an O(synapse count × geometry size) hot path. The root context caches raw arrays, but not the search structure needed to reuse them efficiently.
+Synapse anchor materialization still does nearest-support lookup by scanning every surface vertex or every skeleton point for each mapped synapse side. The current code already builds one `RootContext` per root and caches the raw geometry arrays, but it does not cache any reusable search structure. That keeps anchor mapping on an O(mapped synapse sides × geometry size) path during coupling materialization even though the support geometry is root-local and reused across many queries.
 
 ### Evidence
-- [synapse_mapping.py:240](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L240) builds one `RootContext` per root, then [synapse_mapping.py:289](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L289) maps every synapse row through `_build_edge_record(...)`.
-- [synapse_mapping.py:957](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L957) calls `_surface_patch_mapping()` or `_skeleton_mapping()` for each query.
-- [synapse_mapping.py:1034](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L1034) computes `np.linalg.norm(context.surface_vertices - query_point, axis=1)` on every surface lookup.
-- [synapse_mapping.py:1063](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L1063) computes `np.linalg.norm(context.skeleton_points - query_point, axis=1)` on every skeleton lookup.
+- [synapse_mapping.py#L240](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L240) builds root contexts once per selected root, and [synapse_mapping.py#L289](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L289) still maps every synapse row through the per-row edge-record path.
+- [synapse_mapping.py#L209](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L209) shows `RootContext` storing raw surface and skeleton arrays only, and [synapse_mapping.py#L676](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L676) / [synapse_mapping.py#L709](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L709) populate those arrays without building a reusable lookup index.
+- [synapse_mapping.py#L877](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L877) calls `_map_query_to_anchor(...)` twice per synapse row, and [synapse_mapping.py#L957](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L957) dispatches each query into `_surface_patch_mapping()` or `_skeleton_mapping()`.
+- [synapse_mapping.py#L1034](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L1034) / [synapse_mapping.py#L1037](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L1037) compute `np.linalg.norm(context.surface_vertices - query_point, axis=1)` on every surface lookup, and [synapse_mapping.py#L1063](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L1063) / [synapse_mapping.py#L1066](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/synapse_mapping.py#L1066) do the same full scan for every skeleton lookup.
+- [test_synapse_mapping.py#L35](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_synapse_mapping.py#L35) and [test_coupling_assembly.py#L26](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_coupling_assembly.py#L26) already assert deterministic anchor-map and edge-bundle outputs, so this work remains an internal performance refactor that must preserve current mapping semantics.
 
 ### Requested Change
-Move nearest-anchor search into a reusable root-local search abstraction. Build the surface and skeleton lookup index once when constructing `RootContext`, then use that index inside `_map_query_to_anchor()` so the per-synapse loop no longer rescans full geometry arrays.
+Move nearest-support lookup into reusable root-local search state. Build the surface and skeleton indices once when constructing `RootContext`, then use those indices inside `_surface_patch_mapping()` and `_skeleton_mapping()` so the per-synapse loop no longer rescans full geometry arrays.
+
+Keep the current lookup semantics intact: surface mapping must still choose the patch associated with the nearest surface support vertex, not switch to a different patch-centroid nearest-neighbor rule, and skeleton mapping must still choose the nearest skeleton support point/node.
 
 ### Acceptance Criteria
-- Root contexts expose reusable nearest-neighbor search state for surface and skeleton anchors.
-- The inner mapping path no longer performs full-array distance scans for each synapse side.
-- Existing serialized anchor-map and edge-bundle outputs remain deterministic.
+- `RootContext` exposes reusable nearest-neighbor lookup state for surface support vertices and skeleton support points.
+- The inner mapping path no longer performs full-array `np.linalg.norm(..., axis=1)` scans for each surface or skeleton query.
+- Surface and skeleton mapping preserve the current fallback order, blocked-reason behavior, anchor identity, and support-index semantics.
+- Existing serialized root anchor maps and edge coupling bundles remain deterministic for the current fixture coverage.
 
 ### Verification
 - `.venv/bin/python -m unittest tests.test_synapse_mapping tests.test_coupling_assembly -v`
-- `make assets` when local mesh/coupling inputs already exist
+- `make assets` when local mesh, skeleton, and coupling inputs already exist
 
-## EFFMOD-FW-003 - Let experiment-suite stages execute from a resolved simulation plan instead of replanning per stage and model mode
+## EFFMOD-FW-003 - Reuse one resolved materialized simulation plan across experiment-suite stage execution
 - Status: open
 - Priority: high
 - Source: efficiency_and_modularity review
-- Area: experiment suites
+- Area: experiment suite execution
 
 ### Problem
-Suite execution is wired around file paths instead of a reusable planning object, so the same materialized cell can reparse config/manifest inputs and rerun expensive planning work multiple times. In the simulation stage, the suite resolves a plan to discover model modes, then `execute_manifest_simulation()` resolves the same plan again for each mode. That planning path also loads fine-operator archives and runs an eigensolver to estimate spectral radius, so the duplicated work is materially expensive for surface-wave cells.
+The repository now already computes and persists a suite-level `base_simulation_plan`, but runtime work-item execution still drives stage entrypoints from materialized manifest/config file paths instead of a reusable resolved plan object. That means a single materialized suite cell can reparse config/manifest inputs and rebuild the same simulation plan several times during one run.
+
+The duplication is broader than the original ticket text described. The simulation stage still resolves once to discover model modes and then resolves again inside `execute_manifest_simulation()` for each mode. The analysis stage also replans the same inputs to recover both the simulation plan and the embedded readout-analysis plan. The validation stage resolves a plan up front, then its layer workflows resolve the same plan again internally. For surface-wave cells, those extra resolutions still reopen operator bundles and rerun spectral-radius estimation, so the wasted work remains materially expensive.
 
 ### Evidence
-- [experiment_suite_execution.py:548](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L548) resolves `simulation_plan` once, then loops over `model_modes` and calls `execute_manifest_simulation(...)` at [experiment_suite_execution.py:570](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L570).
-- [simulator_execution.py:161](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L161) shows `execute_manifest_simulation()` immediately calling `resolve_manifest_simulation_plan(...)` again at [simulator_execution.py:172](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L172).
-- [simulation_planning.py:482](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L482) reloads config, manifest, schema, and design lock on each plan resolution.
-- [simulation_planning.py:4315](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4315) and [simulation_planning.py:4771](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4771) compute spectral radius by reopening the operator archive and running `eigsh`.
-- [experiment_suite_execution.py:731](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L731) shows the validation stage resolving the full simulation plan again for the same work item.
+- [experiment_suite_planning.py:359](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_planning.py#L359) resolves a suite `base_simulation_plan`, and [experiment_suite_execution.py:998](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L998) persists it, but the stage context built at [experiment_suite_execution.py:961](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L961) still carries materialized file paths rather than a resolved per-work-item plan.
+- [experiment_suite_execution.py:552](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L552) resolves `simulation_plan` once for the simulation stage, then [experiment_suite_execution.py:571](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L571) calls `execute_manifest_simulation(...)` per `model_mode`; [simulator_execution.py:172](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L172) shows that helper immediately resolving the same plan again.
+- [experiment_suite_execution.py:653](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L653) routes the analysis stage through `execute_experiment_comparison_workflow(...)`, which resolves the simulation plan at [experiment_comparison_analysis.py:464](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L464) and then calls `resolve_manifest_readout_analysis_plan(...)` at [experiment_comparison_analysis.py:470](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L470), which re-enters `resolve_manifest_simulation_plan(...)` at [simulation_planning.py:736](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L736).
+- [experiment_suite_execution.py:742](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L742) resolves the validation stage `simulation_plan`, but layer workflows still replan internally: [validation_numerics.py:428](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_numerics.py#L428) and [validation_numerics.py:435](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_numerics.py#L435), [validation_circuit.py:326](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_circuit.py#L326), [validation_task.py:417](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_task.py#L417), and [validation_morphology.py:366](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_morphology.py#L366). If morphology has to backfill simulator metadata, it falls through to [validation_morphology.py:1099](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_morphology.py#L1099), which uses the same path-based simulator entrypoint.
+- [simulation_planning.py:496](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L496) and [simulation_planning.py:508](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L508) show config/manifest/schema/design-lock loading on every plan resolution. For surface-wave arms, [simulation_planning.py:4313](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4313) triggers spectral-radius estimation, which reopens the operator payload at [simulation_planning.py:4776](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4776) and runs `eigsh` at [simulation_planning.py:4803](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4803).
 
 ### Requested Change
-Introduce a reusable suite execution context that carries a resolved simulation plan, resolved arm plans, and cached operator-stability metadata. Update simulator and validation entrypoints so they can consume that object directly instead of forcing a path-based round-trip back through `resolve_manifest_simulation_plan()`.
+Refine this ticket around a per-work-item execution context rather than a new planner surface. After materialized inputs are written for a suite work item, resolve that materialized simulation plan once and carry it through stage execution. Extend simulation, analysis, and validation entrypoints so they can consume a pre-resolved `simulation_plan` directly, and let analysis/validation reuse embedded derived state such as `readout_analysis_plan`, resolved arm plans, and validation-plan inputs instead of round-tripping back through file-based resolvers.
+
+Keep the existing path-based entrypoints as thin CLI wrappers, but make suite execution use the object path end-to-end. Memoize or persist surface-wave operator stability metadata within the resolved work-item plan so repeated stage/layer execution does not recompute spectral radius for the same operator bundle.
 
 ### Acceptance Criteria
-- A suite work item resolves its manifest/config-driven simulation plan once and reuses it across simulation and validation stages.
-- Executing multiple model modes for one materialized cell does not call `resolve_manifest_simulation_plan()` repeatedly.
-- Spectral-radius estimation is computed once per unique operator bundle per plan, or loaded from cached plan/metadata state.
+- A suite work item resolves its materialized simulation plan once and reuses it across simulation, analysis, and validation stage execution for that cell.
+- Executing multiple model modes for one materialized work item does not call `resolve_manifest_simulation_plan()` again after stage execution has started.
+- Analysis execution consumes `simulation_plan["readout_analysis_plan"]` directly instead of calling `resolve_manifest_readout_analysis_plan()` for the same inputs.
+- Validation layer workflows can consume the already resolved stage plan/context without reparsing the same manifest/config pair.
+- Surface-wave spectral-radius estimation is computed once per unique operator bundle within a resolved work-item plan, or loaded from memoized plan metadata.
 
 ### Verification
-- `.venv/bin/python -m unittest tests.test_experiment_suite_execution tests.test_simulation_planning tests.test_simulator_execution -v`
+- `.venv/bin/python -m unittest tests.test_experiment_suite_execution tests.test_experiment_comparison_analysis tests.test_simulator_execution tests.test_validation_circuit tests.test_validation_morphology tests.test_validation_numerics tests.test_validation_task tests.test_validation_planning -v`
 - `make smoke`
 
-## error_handling_and_operability
-
-# Error Handling And Operability Review Tickets
-
-## OPS-001 - `make verify` is not a reliable gate for `make meshes`
+## OPS-001 - `make verify` does not validate the active `make meshes` prerequisite set
 - Status: open
 - Priority: high
 - Source: error_handling_and_operability review
-- Area: `scripts/00_verify_access.py` / auth preflight
+- Area: `scripts/00_verify_access.py` / mesh preflight parity
 
 ### Problem
-`make verify` is documented as the operator preflight before the FlyWire-backed pipeline, but the script is not authoritative for the next step it is supposed to protect. It can still dump an uncaught info-service exception after client construction, and it also downgrades `fafbseg` or local-secret-sync failures to warnings while still returning success. That lets operators burn time on `make meshes` after a misleading green verify.
+`make verify` is still the documented preflight before `make meshes`, but it is not authoritative for the mesh step the repo actually runs today. The verifier can still throw an uncaught exception after CAVE client construction during the `client.info` lookup, it still downgrades `.env` token-sync failures to warnings, and it never checks the `navis` dependency that the default `meshing.fetch_skeletons: true` path requires. An operator can therefore see `Access looks good.` and then fail immediately in `make meshes` on missing `cloudvolume`, `fafbseg`, `navis`, or an unshaped info-service error.
 
 ### Evidence
-- [README.md:59](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md#L59) tells operators to run `make verify` before preprocessing.
-- [scripts/00_verify_access.py:118](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L118) and [scripts/00_verify_access.py:119](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L119) call the info service outside the request error-shaping used for client creation and materialize retries.
-- [scripts/00_verify_access.py:166](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L166) starts the `fafbseg`/secret-sync check, [scripts/00_verify_access.py:180](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L180) catches every exception, and [scripts/00_verify_access.py:183](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L183) still prints success text and returns `0`.
-- [scripts/02_fetch_meshes.py:83](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L83) and [scripts/02_fetch_meshes.py:118](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L118) depend on the same `ensure_flywire_secret` / `fafbseg` path that verify can currently waive.
+- [README.md:59](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md#L59), [README.md:65](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md#L65), and [README.md:88](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md#L88) still present `make verify` as the access check before `make meshes` and as the first step of `make all`.
+- [Makefile:108](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L108), [Makefile:117](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L117), and [Makefile:241](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L241) still wire `verify` as a separate preflight script ahead of the mesh-fetch target and the `all` pipeline.
+- [scripts/00_verify_access.py:118](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L118) and [scripts/00_verify_access.py:119](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L119) call the info service outside the request error shaping used for client construction and materialize retries.
+- [scripts/00_verify_access.py:166](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L166), [scripts/00_verify_access.py:180](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L180), [scripts/00_verify_access.py:184](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L184), and [scripts/00_verify_access.py:187](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L187) still catch mesh-client setup failures as warnings, then can emit a success path and return `0`.
+- [src/flywire_wave/auth.py:16](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/auth.py#L16) and [src/flywire_wave/auth.py:29](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/auth.py#L29) show the `.env` token sync path depends on `cloudvolume` and `fafbseg`, which [scripts/02_fetch_meshes.py:83](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L83) and [scripts/02_fetch_meshes.py:89](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L89) still treat as fatal for `make meshes`.
+- [config/local.yaml:104](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/config/local.yaml#L104) enables skeleton fetching by default, and [src/flywire_wave/mesh_pipeline.py:83](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/mesh_pipeline.py#L83), [src/flywire_wave/mesh_pipeline.py:91](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/mesh_pipeline.py#L91), and [src/flywire_wave/mesh_pipeline.py:341](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/mesh_pipeline.py#L341) show the default mesh path requires both `fafbseg` and `navis`, but `verify` never probes `navis` at all.
 
 ### Requested Change
-Make `verify` fail by default when mesh-fetch prerequisites are not usable, and shape every subcheck into explicit operator-facing statuses. If partial verification is still desired, require an explicit opt-in flag and label the result as partial rather than printing “Access looks good.”
+Make `verify` authoritative for the active `make meshes` preflight instead of a looser CAVE/materialize probe. It should shape post-client `client.info` failures into explicit operator-facing errors, consult the current meshing config, and fail by default whenever the next `make meshes` step would immediately fail on missing auth/dependency setup. That includes the `.env` token-sync path from [src/flywire_wave/auth.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/auth.py) and `navis` when `meshing.fetch_skeletons` is enabled. If a lighter auth-only check is still wanted, require an explicit opt-in flag and label the result as partial/auth-only instead of printing `Access looks good.`
 
 ### Acceptance Criteria
-`make verify` exits non-zero when FlyWire mesh prerequisites are broken, including missing `fafbseg`, broken secret sync, or post-client info-service failures.
-The script prints one actionable failure summary per failing subsystem, including the package/env fix or network/auth next step.
-The success path is only emitted when the prerequisites needed by `make meshes` have actually been validated, or when the operator explicitly asked for a partial check.
+- `make verify` exits non-zero for post-client info-service failures and prints a shaped auth/network/config error instead of a traceback.
+- When `FLYWIRE_TOKEN` is provided, `make verify` exits non-zero if the token-sync path is unusable, including missing `cloudvolume`, missing `fafbseg`, or other secret-sync failures.
+- When `meshing.fetch_skeletons` is `true`, `make verify` exits non-zero if `navis` is unavailable; when `meshing.fetch_skeletons` is `false`, `navis` is not treated as required.
+- The full success path is only emitted after the same immediate dependency/auth setup that `make meshes` needs has been validated, or when the operator explicitly requested a partial/auth-only check.
+- Each failing subcheck prints one actionable next step, such as install/bootstrap guidance for missing packages or token/network/config guidance for FlyWire access failures.
 
 ### Verification
-Run `make verify CONFIG=config/local.yaml` in an environment with working CAVE access but without `fafbseg` or working secret storage; it should exit non-zero with a targeted fix message.
-Run `make verify CONFIG=config/local.yaml` with an invalid datastack or forced info-service failure; it should return a shaped error, not a traceback.
-Run `make verify CONFIG=config/local.yaml` in a fully provisioned environment; it should still exit `0`.
+- Run `make verify CONFIG=config/local.yaml` in an environment with working CAVE access and `FLYWIRE_TOKEN` set, but without `fafbseg` or with broken `cloudvolume` secret handling; it should exit non-zero with a targeted fix message.
+- Run `make verify CONFIG=config/local.yaml` in an environment where the default `meshing.fetch_skeletons: true` config is active but `navis` is missing; it should exit non-zero before `make meshes` would fail.
+- Run `make verify CONFIG=config/local.yaml` with an invalid datastack or forced info-service failure; it should return a shaped error, not a traceback.
+- Run `make verify` against a config copy with `meshing.fetch_skeletons: false` in the same missing-`navis` environment; it should still succeed if the remaining mesh prerequisites are valid.
+- Run `make verify CONFIG=config/local.yaml` in a fully provisioned environment; it should exit `0`.
 
 ## OPS-002 - Missing Python dependencies fail as raw import tracebacks across pipeline entrypoints
 - Status: open

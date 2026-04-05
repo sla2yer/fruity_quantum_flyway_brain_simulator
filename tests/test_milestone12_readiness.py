@@ -11,14 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from flywire_wave.io_utils import read_root_ids
 from flywire_wave.milestone12_readiness import (
     DEFAULT_FIXTURE_TEST_TARGETS,
+    _write_simulation_fixture,
     execute_milestone12_readiness_pass,
 )
 from flywire_wave.readout_analysis_contract import (
     RETINOTOPIC_CONTEXT_METADATA_ARTIFACT_CLASS,
     SURFACE_WAVE_PHASE_MAP_ARTIFACT_CLASS,
 )
+from flywire_wave.selection import build_subset_artifact_paths
 
 
 class Milestone12ReadinessReportTest(unittest.TestCase):
@@ -137,6 +140,32 @@ class Milestone12ReadinessReportTest(unittest.TestCase):
             self.assertEqual(
                 persisted["visualization_report_file_url"],
                 report["visualization_report_file_url"],
+            )
+
+    def test_simulation_fixture_uses_selection_contract_for_mixed_case_subset_names(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            subset_name = "Motion Minimal! Beta"
+            fixture_assets_dir = tmp_dir / "fixture_assets"
+            config_path = tmp_dir / "simulation_fixture_config.yaml"
+
+            _write_simulation_fixture(
+                config_path=config_path,
+                fixture_assets_dir=fixture_assets_dir,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                processed_retinal_dir=tmp_dir / "out" / "retinal",
+                processed_simulator_results_dir=tmp_dir / "out" / "simulator_results",
+                subset_name=subset_name,
+            )
+
+            expected_subset_paths = build_subset_artifact_paths(
+                fixture_assets_dir / "subsets",
+                subset_name,
+            )
+            self.assertTrue(expected_subset_paths.manifest_json.exists())
+            self.assertEqual(
+                read_root_ids(fixture_assets_dir / "selected_root_ids.txt"),
+                [101, 202],
             )
 
 

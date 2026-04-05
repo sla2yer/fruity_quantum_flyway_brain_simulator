@@ -243,6 +243,7 @@ def execute_mixed_fidelity_inspection_workflow(
     reference_root_specs: Sequence[str | Mapping[str, Any]] | None = None,
     thresholds: Mapping[str, Mapping[str, Any]] | None = None,
     output_dir: str | Path | None = None,
+    simulation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     mixed_fidelity_plan = resolve_manifest_mixed_fidelity_plan(
         manifest_path=manifest_path,
@@ -250,6 +251,7 @@ def execute_mixed_fidelity_inspection_workflow(
         schema_path=schema_path,
         design_lock_path=design_lock_path,
         arm_id=arm_id,
+        simulation_plan=simulation_plan,
     )
     manifest_payload = load_yaml(manifest_path)
     experiment_id = str(manifest_payload["experiment_id"])
@@ -281,6 +283,7 @@ def execute_mixed_fidelity_inspection_workflow(
         design_lock_path=design_lock_path,
         model_mode="surface_wave",
         arm_id=arm_id,
+        simulation_plan=simulation_plan,
     )
     if int(base_execution_summary["executed_run_count"]) != 1:
         raise ValueError(

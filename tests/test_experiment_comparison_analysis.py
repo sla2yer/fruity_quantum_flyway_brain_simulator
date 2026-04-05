@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -222,6 +223,34 @@ class ExperimentComparisonWorkflowTest(unittest.TestCase):
             self.assertIn("Milestone 12 Experiment Analysis Bundle", regenerated_html)
             self.assertIn("Wave Diagnostics", regenerated_html)
 
+    def test_workflow_ignores_stray_bundle_metadata_copies_under_arm_directories(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _materialize_experiment_comparison_fixture(tmp_dir)
+
+            canonical_metadata_path = Path(
+                fixture["bundle_metadata_records"][0]["metadata_path"]
+            ).resolve()
+            stray_metadata_path = (
+                canonical_metadata_path.parents[1]
+                / "stale_duplicate_copy"
+                / "simulator_result_bundle.json"
+            ).resolve()
+            stray_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            stray_metadata_path.write_text(
+                canonical_metadata_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            result = execute_experiment_comparison_workflow(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+
+            self.assertEqual(len(result["bundle_set"]["bundle_inventory"]), 48)
+
     def test_workflow_fails_clearly_for_missing_condition_coverage(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
@@ -313,6 +342,37 @@ class ExperimentComparisonWorkflowTest(unittest.TestCase):
                 EXPERIMENT_COMPARISON_SUMMARY_VERSION,
             )
             self.assertGreater(len(result["bundle_set"]["bundle_inventory"]), 0)
+
+    def test_workflow_accepts_pre_resolved_simulation_plan_without_replanning(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            fixture = _materialize_experiment_comparison_fixture(tmp_dir)
+            simulation_plan = resolve_manifest_simulation_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+
+            with mock.patch(
+                "flywire_wave.experiment_comparison_analysis.resolve_manifest_simulation_plan",
+                side_effect=AssertionError("unexpected simulation plan re-resolution"),
+            ), mock.patch(
+                "flywire_wave.experiment_comparison_analysis.resolve_manifest_readout_analysis_plan",
+                side_effect=AssertionError("unexpected readout analysis re-resolution"),
+            ):
+                result = execute_experiment_comparison_workflow(
+                    manifest_path=fixture["manifest_path"],
+                    config_path=fixture["config_path"],
+                    schema_path=fixture["schema_path"],
+                    design_lock_path=fixture["design_lock_path"],
+                    simulation_plan=simulation_plan,
+                )
+
+            self.assertEqual(
+                result["summary_version"],
+                EXPERIMENT_COMPARISON_SUMMARY_VERSION,
+            )
 
 
 def _materialize_experiment_comparison_fixture(tmp_dir: Path) -> dict[str, Any]:

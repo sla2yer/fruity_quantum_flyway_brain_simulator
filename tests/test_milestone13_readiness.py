@@ -11,10 +11,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from flywire_wave.io_utils import read_root_ids
 from flywire_wave.milestone13_readiness import (
     DEFAULT_FIXTURE_TEST_TARGETS,
+    _write_simulation_fixture,
     execute_milestone13_readiness_pass,
 )
+from flywire_wave.selection import build_subset_artifact_paths
 
 
 class Milestone13ReadinessReportTest(unittest.TestCase):
@@ -107,6 +110,26 @@ class Milestone13ReadinessReportTest(unittest.TestCase):
             self.assertEqual(
                 persisted["smoke_workflow_audit"]["summary_path"],
                 report["smoke_workflow_audit"]["summary_path"],
+            )
+
+    def test_simulation_fixture_uses_selection_contract_for_mixed_case_subset_names(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            subset_name = "Motion Minimal! Beta"
+
+            _write_simulation_fixture(
+                tmp_dir / "fixture",
+                validation_config={"subset_name": subset_name},
+            )
+
+            expected_subset_paths = build_subset_artifact_paths(
+                tmp_dir / "fixture" / "out" / "subsets",
+                subset_name,
+            )
+            self.assertTrue(expected_subset_paths.manifest_json.exists())
+            self.assertEqual(
+                read_root_ids(tmp_dir / "fixture" / "out" / "selected_root_ids.txt"),
+                [101, 202],
             )
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +31,7 @@ from flywire_wave.surface_wave_solver import (
     SurfaceWaveOperatorBundle,
     SurfaceWaveSparseKernels,
     SurfaceWaveState,
+    estimate_sparse_operator_spectral_radius,
 )
 
 
@@ -399,6 +401,32 @@ class SurfaceWaveSolverTest(unittest.TestCase):
         self.assertEqual(anisotropic_solver.runtime_metadata.anisotropy_mode, "operator_embedded")
         self.assertTrue(anisotropic_solver.runtime_metadata.anisotropy_summary["identity_equivalent"])
         self.assertAlmostEqual(anisotropic_final.diagnostics.anisotropy_delta_l2, 0.0, places=12)
+
+    def test_runtime_stability_cache_reuses_spectral_radius_for_repeated_solver_construction(self) -> None:
+        bundle = _build_fixture_operator_bundle()
+        model = _build_linear_fixture_model(parameter_preset="runtime_stability_cache")
+
+        with mock.patch(
+            "flywire_wave.surface_wave_solver.estimate_sparse_operator_spectral_radius",
+            wraps=estimate_sparse_operator_spectral_radius,
+        ) as spectral_radius_mock:
+            SingleNeuronSurfaceWaveSolver(
+                operator_bundle=bundle,
+                surface_wave_model=model,
+                integration_timestep_ms=0.2,
+            )
+            SingleNeuronSurfaceWaveSolver(
+                operator_bundle=bundle,
+                surface_wave_model=model,
+                integration_timestep_ms=0.2,
+            )
+
+        self.assertEqual(spectral_radius_mock.call_count, 1)
+        runtime_cache = bundle.operator_metadata.get("_runtime_stability_cache")
+        self.assertIsInstance(runtime_cache, dict)
+        self.assertEqual(len(runtime_cache), 1)
+        cached_entry = next(iter(runtime_cache.values()))
+        self.assertGreater(float(cached_entry["spectral_radius"]), 0.0)
 
     def test_branching_descriptor_scaled_damping_changes_energy_on_branch_sensitive_fixture(self) -> None:
         bundle = _build_branch_sensitive_bundle(branch_point_count=3)

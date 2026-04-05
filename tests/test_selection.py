@@ -5,14 +5,16 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+import flywire_wave.registry as registry_module
 from flywire_wave.io_utils import read_root_ids
-from flywire_wave.registry import load_synapse_registry
-from flywire_wave.selection import generate_subsets_from_config
+from flywire_wave.registry import load_synapse_registry, materialize_synapse_registry
+from flywire_wave.selection import build_subset_artifact_paths, generate_subsets_from_config
 
 
 class SelectionPresetToolTest(unittest.TestCase):
@@ -111,7 +113,7 @@ class SelectionPresetToolTest(unittest.TestCase):
                 ["add_direct_context", "add_downstream_readout", "add_halo_context"],
             )
 
-    def test_active_preset_refreshes_subset_scoped_synapse_registry(self) -> None:
+    def test_active_preset_refreshes_subset_scoped_synapse_registry_from_reusable_local_all_rows_registry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
             registry_path, connectivity_path = _write_fixture_registry(tmp_dir)
@@ -129,14 +131,64 @@ class SelectionPresetToolTest(unittest.TestCase):
                 synapse_source_csv=synapse_source_path,
             )
 
-            generate_subsets_from_config(cfg, config_path=tmp_dir / "config.yaml")
+            materialize_synapse_registry(cfg, scope_label="build_registry")
+            with patch(
+                "flywire_wave.registry._load_synapse_table",
+                wraps=registry_module._load_synapse_table,
+            ) as load_synapse_table:
+                generate_subsets_from_config(cfg, config_path=tmp_dir / "config.yaml")
 
             selected_root_ids = set(read_root_ids(selected_root_ids_path))
             synapse_registry = load_synapse_registry(processed_coupling_dir / "synapse_registry.csv")
+            provenance = json.loads(
+                (processed_coupling_dir / "synapse_registry_provenance.json").read_text(encoding="utf-8")
+            )
 
+            self.assertEqual(load_synapse_table.call_count, 0)
             self.assertEqual(synapse_registry["synapse_id"].tolist(), ["syn-1", "syn-4"])
             self.assertTrue(synapse_registry["pre_root_id"].isin(selected_root_ids).all())
             self.assertTrue(synapse_registry["post_root_id"].isin(selected_root_ids).all())
+            self.assertEqual(provenance["scope"]["mode"], "root_id_subset")
+            self.assertEqual(provenance["scope"]["label"], "selection:motion_medium")
+            self.assertEqual(provenance["scope"]["root_ids_path"], str(selected_root_ids_path))
+            self.assertEqual(provenance["scope"]["root_ids"], sorted(selected_root_ids))
+            self.assertEqual(provenance["source"]["path"], str(synapse_source_path))
+
+    def test_mixed_case_preset_uses_selection_owned_subset_artifact_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            registry_path, connectivity_path = _write_fixture_registry(tmp_dir)
+            selected_root_ids_path = tmp_dir / "active_root_ids.txt"
+            subset_output_dir = tmp_dir / "subsets"
+            preset_name = "Motion Minimal! Beta"
+
+            cfg = _fixture_config(
+                registry_path=registry_path,
+                connectivity_path=connectivity_path,
+                selected_root_ids_path=selected_root_ids_path,
+                subset_output_dir=subset_output_dir,
+            )
+            cfg["selection"]["active_preset"] = preset_name
+            cfg["selection"]["presets"] = {
+                preset_name: cfg["selection"]["presets"]["motion_minimal"],
+            }
+
+            summary = generate_subsets_from_config(cfg, config_path=tmp_dir / "config.yaml")
+
+            expected_paths = build_subset_artifact_paths(subset_output_dir, preset_name)
+            generated_paths = summary["generated_presets"][0]["paths"]
+            self.assertEqual(
+                Path(generated_paths["artifact_dir"]).resolve(),
+                expected_paths.artifact_dir.resolve(),
+            )
+            self.assertEqual(
+                Path(generated_paths["manifest_json"]).resolve(),
+                expected_paths.manifest_json.resolve(),
+            )
+            self.assertEqual(
+                Path(generated_paths["root_ids"]).resolve(),
+                expected_paths.root_ids.resolve(),
+            )
 
 
 def _fixture_config(

@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 import pandas as pd
+from scipy.spatial import cKDTree
 
 from .coupling_assembly import (
     ANCHOR_COLUMN_TYPES,
@@ -205,6 +206,13 @@ QUALITY_STATUS_DEFINITIONS = {
     QUALITY_STATUS_UNAVAILABLE: "Quality metrics are unavailable because the mapping was blocked.",
 }
 
+_NEAREST_NEIGHBOR_QUERY_EPSILON = 1.0e-12
+
+
+@dataclass(frozen=True)
+class RootLocalNearestNeighborIndex:
+    tree: cKDTree
+
 
 @dataclass(frozen=True)
 class RootContext:
@@ -212,11 +220,13 @@ class RootContext:
     project_role: str
     supported_modes: tuple[str, ...]
     surface_vertices: np.ndarray
+    surface_support_index: RootLocalNearestNeighborIndex | None
     surface_to_patch: np.ndarray
     patch_centroids: np.ndarray
     patch_radii: np.ndarray
     skeleton_node_ids: np.ndarray
     skeleton_points: np.ndarray
+    skeleton_support_index: RootLocalNearestNeighborIndex | None
     skeleton_local_scales: np.ndarray
     point_incoming_anchor: np.ndarray
     point_incoming_radius: float
@@ -711,11 +721,13 @@ def _build_root_context(
         project_role=str(project_role),
         supported_modes=supported_modes,
         surface_vertices=surface_vertices,
+        surface_support_index=_build_root_local_nearest_neighbor_index(surface_vertices),
         surface_to_patch=surface_to_patch,
         patch_centroids=patch_centroids,
         patch_radii=patch_radii,
         skeleton_node_ids=skeleton_node_ids,
         skeleton_points=skeleton_points,
+        skeleton_support_index=_build_root_local_nearest_neighbor_index(skeleton_points),
         skeleton_local_scales=skeleton_local_scales,
         point_incoming_anchor=point_incoming_anchor,
         point_incoming_radius=float(point_incoming_radius),
@@ -872,6 +884,47 @@ def _build_point_anchor_proxy(
     distances = np.linalg.norm(stacked - anchor, axis=1)
     radius = float(distances.max(initial=0.0))
     return anchor, radius, ""
+
+
+def _build_root_local_nearest_neighbor_index(points: np.ndarray) -> RootLocalNearestNeighborIndex | None:
+    normalized = np.asarray(points, dtype=np.float64)
+    if normalized.ndim != 2 or normalized.shape[1] != 3 or normalized.shape[0] == 0:
+        return None
+    return RootLocalNearestNeighborIndex(tree=cKDTree(normalized, copy_data=False))
+
+
+def _query_root_local_nearest_neighbor(
+    *,
+    points: np.ndarray,
+    lookup: RootLocalNearestNeighborIndex | None,
+    query_point: np.ndarray,
+) -> tuple[int, float] | None:
+    if lookup is None:
+        return None
+
+    normalized_query = np.asarray(query_point, dtype=np.float64)
+    if normalized_query.shape != (3,) or not np.all(np.isfinite(normalized_query)):
+        return None
+
+    nearest_distance, nearest_index = lookup.tree.query(normalized_query, k=1)
+    if not np.isfinite(nearest_distance):
+        return None
+
+    support_distance = float(nearest_distance)
+    support_index = int(nearest_index)
+    tie_radius = float(np.nextafter(support_distance + _NEAREST_NEIGHBOR_QUERY_EPSILON, np.inf))
+    candidate_indices = np.asarray(lookup.tree.query_ball_point(normalized_query, r=tie_radius), dtype=np.int64)
+    if candidate_indices.size <= 1:
+        return support_index, support_distance
+
+    candidate_indices.sort()
+    candidate_points = np.asarray(points[candidate_indices], dtype=np.float64)
+    candidate_residuals = candidate_points - normalized_query
+    candidate_distances_sq = np.einsum("ij,ij->i", candidate_residuals, candidate_residuals, dtype=np.float64)
+    minimum_distance_sq = float(candidate_distances_sq.min(initial=np.inf))
+    closest_mask = candidate_distances_sq <= np.nextafter(minimum_distance_sq, np.inf)
+    support_index = int(candidate_indices[np.flatnonzero(closest_mask)[0]])
+    return support_index, float(np.sqrt(minimum_distance_sq))
 
 
 def _build_edge_record(*, row: Any, pre_context: RootContext, post_context: RootContext) -> dict[str, Any]:
@@ -1032,11 +1085,21 @@ def _map_query_to_anchor(
 
 
 def _surface_patch_mapping(*, context: RootContext, query_point: np.ndarray) -> dict[str, Any] | None:
-    if context.surface_vertices.size == 0 or context.patch_centroids.size == 0 or context.surface_to_patch.size == 0:
+    if (
+        context.surface_vertices.size == 0
+        or context.surface_support_index is None
+        or context.patch_centroids.size == 0
+        or context.surface_to_patch.size == 0
+    ):
         return None
-    distances = np.linalg.norm(context.surface_vertices - query_point, axis=1)
-    support_index = int(np.argmin(distances))
-    support_distance = float(distances[support_index])
+    nearest = _query_root_local_nearest_neighbor(
+        points=context.surface_vertices,
+        lookup=context.surface_support_index,
+        query_point=query_point,
+    )
+    if nearest is None:
+        return None
+    support_index, support_distance = nearest
     patch_id = int(context.surface_to_patch[support_index])
     if patch_id < 0 or patch_id >= int(context.patch_centroids.shape[0]):
         return None
@@ -1061,10 +1124,16 @@ def _surface_patch_mapping(*, context: RootContext, query_point: np.ndarray) -> 
 
 
 def _skeleton_mapping(*, context: RootContext, query_point: np.ndarray) -> dict[str, Any] | None:
-    if context.skeleton_points.size == 0:
+    if context.skeleton_points.size == 0 or context.skeleton_support_index is None:
         return None
-    distances = np.linalg.norm(context.skeleton_points - query_point, axis=1)
-    support_index = int(np.argmin(distances))
+    nearest = _query_root_local_nearest_neighbor(
+        points=context.skeleton_points,
+        lookup=context.skeleton_support_index,
+        query_point=query_point,
+    )
+    if nearest is None:
+        return None
+    support_index, support_distance = nearest
     anchor_point = np.asarray(context.skeleton_points[support_index], dtype=np.float64)
     residual = anchor_point - query_point
     return {
@@ -1080,7 +1149,7 @@ def _skeleton_mapping(*, context: RootContext, query_point: np.ndarray) -> dict[
         "anchor_residual_y": float(residual[1]),
         "anchor_residual_z": float(residual[2]),
         "support_index": support_index,
-        "support_distance": float(distances[support_index]),
+        "support_distance": support_distance,
         "support_scale": float(context.skeleton_local_scales[support_index]) if context.skeleton_local_scales.size else 0.0,
     }
 

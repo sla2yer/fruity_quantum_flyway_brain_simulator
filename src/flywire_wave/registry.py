@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -310,13 +311,22 @@ def materialize_synapse_registry(
     root_ids: Sequence[int] | None = None,
     root_ids_path: str | Path | None = None,
     scope_label: str | None = None,
+    synapse_df: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     if root_ids is not None and root_ids_path is not None:
         raise ValueError("Provide either root_ids or root_ids_path when materializing a synapse registry, not both.")
 
     synapse_source_path = resolve_synapse_source_path(cfg)
     snapshot_version, materialization_version = _resolve_snapshot_and_materialization_versions(cfg)
-    synapse_registry = _load_synapse_table(synapse_source_path)
+    output_paths = _resolve_synapse_registry_artifact_paths(cfg)
+    synapse_registry, source_provenance = _resolve_synapse_materialization_input(
+        synapse_source_path=synapse_source_path,
+        output_paths=output_paths,
+        snapshot_version=snapshot_version,
+        materialization_version=materialization_version,
+        root_ids_requested=root_ids is not None or root_ids_path is not None,
+        synapse_df=synapse_df,
+    )
 
     root_id_list: list[int] | None = None
     root_id_path_value: Path | None = None
@@ -331,14 +341,13 @@ def materialize_synapse_registry(
     synapse_registry = _filter_synapses_to_root_ids(synapse_registry, root_id_list)
     synapse_registry["snapshot_version"] = pd.Series(snapshot_version, index=synapse_registry.index, dtype="string")
     synapse_registry["materialization_version"] = pd.Series(materialization_version, index=synapse_registry.index, dtype="string")
-    output_paths = _resolve_synapse_registry_artifact_paths(cfg)
 
     ensure_dir(output_paths["registry_path"].parent)
     ensure_dir(output_paths["provenance_path"].parent)
     synapse_registry.to_csv(output_paths["registry_path"], index=False)
 
     provenance = _build_synapse_registry_provenance(
-        synapse_source_path=synapse_source_path,
+        source_provenance=source_provenance,
         synapse_registry_path=output_paths["registry_path"],
         snapshot_version=snapshot_version,
         materialization_version=materialization_version,
@@ -407,7 +416,7 @@ def build_registry(cfg: dict[str, Any]) -> dict[str, Any]:
         snapshot_version=snapshot_version,
         materialization_version=materialization_version,
     )
-    synapse_summary = materialize_synapse_registry(cfg, scope_label="build_registry")
+    synapse_summary = materialize_synapse_registry(cfg, scope_label="build_registry", synapse_df=synapse_df)
 
     ensure_dir(neuron_registry_path.parent)
     ensure_dir(connectivity_registry_path.parent)
@@ -608,6 +617,149 @@ def _load_synapse_table(path: Path | None) -> pd.DataFrame:
     out["materialization_version"] = pd.Series(pd.NA, index=df.index, dtype="string")
     _validate_synapse_localization_rows(out, path)
     return out.loc[:, SYNAPSE_REGISTRY_COLUMNS]
+
+
+def _resolve_synapse_materialization_input(
+    *,
+    synapse_source_path: Path | None,
+    output_paths: dict[str, Path],
+    snapshot_version: str,
+    materialization_version: str,
+    root_ids_requested: bool,
+    synapse_df: pd.DataFrame | None,
+) -> tuple[pd.DataFrame, dict[str, Any] | None]:
+    if synapse_df is not None:
+        return _normalize_supplied_synapse_registry(synapse_df), _file_provenance(synapse_source_path)
+
+    if root_ids_requested:
+        reusable = _load_reusable_local_synapse_registry(
+            synapse_source_path=synapse_source_path,
+            registry_path=output_paths["registry_path"],
+            provenance_path=output_paths["provenance_path"],
+            snapshot_version=snapshot_version,
+            materialization_version=materialization_version,
+        )
+        if reusable is not None:
+            return reusable
+
+    return _load_synapse_table(synapse_source_path), _file_provenance(synapse_source_path)
+
+
+def _load_reusable_local_synapse_registry(
+    *,
+    synapse_source_path: Path | None,
+    registry_path: Path,
+    provenance_path: Path,
+    snapshot_version: str,
+    materialization_version: str,
+) -> tuple[pd.DataFrame, dict[str, Any] | None] | None:
+    if not registry_path.exists() or not provenance_path.exists():
+        return None
+
+    provenance = _load_json_mapping(provenance_path)
+    if provenance is None:
+        return None
+
+    if not _synapse_registry_provenance_is_reusable(
+        provenance,
+        registry_path=registry_path,
+        synapse_source_path=synapse_source_path,
+        snapshot_version=snapshot_version,
+        materialization_version=materialization_version,
+    ):
+        return None
+
+    return load_synapse_registry(registry_path), provenance.get("source")
+
+
+def _load_json_mapping(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _synapse_registry_provenance_is_reusable(
+    provenance: dict[str, Any],
+    *,
+    registry_path: Path,
+    synapse_source_path: Path | None,
+    snapshot_version: str,
+    materialization_version: str,
+) -> bool:
+    if str(provenance.get("snapshot_version")) != snapshot_version:
+        return False
+    if str(provenance.get("materialization_version")) != materialization_version:
+        return False
+
+    scope = provenance.get("scope")
+    if not isinstance(scope, dict) or scope.get("mode") != "all_rows":
+        return False
+
+    output = provenance.get("output")
+    if not isinstance(output, dict) or not _paths_match(output.get("path"), registry_path):
+        return False
+
+    return _synapse_source_metadata_matches(provenance.get("source"), synapse_source_path)
+
+
+def _synapse_source_metadata_matches(source_provenance: Any, synapse_source_path: Path | None) -> bool:
+    if source_provenance is None:
+        return synapse_source_path is None
+    if not isinstance(source_provenance, dict):
+        return False
+    if synapse_source_path is None or not synapse_source_path.exists():
+        return False
+    if not _paths_match(source_provenance.get("path"), synapse_source_path):
+        return False
+
+    try:
+        recorded_size = int(source_provenance.get("size_bytes"))
+    except (TypeError, ValueError):
+        return False
+
+    stat = synapse_source_path.stat()
+    expected_mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).replace(microsecond=0).isoformat()
+    return recorded_size == int(stat.st_size) and source_provenance.get("mtime_utc") == expected_mtime
+
+
+def _paths_match(recorded_path: Any, expected_path: Path) -> bool:
+    if recorded_path is None:
+        return False
+    return Path(str(recorded_path)).resolve() == expected_path.resolve()
+
+
+def _normalize_supplied_synapse_registry(df: pd.DataFrame) -> pd.DataFrame:
+    label = Path("<caller-supplied synapse registry>")
+    normalized = df.copy()
+    _require_columns(
+        normalized,
+        [
+            "synapse_row_id",
+            "source_row_number",
+            "pre_root_id",
+            "post_root_id",
+            "source_file",
+        ],
+        label,
+    )
+    for column in SYNAPSE_REGISTRY_COLUMNS:
+        if column not in normalized.columns:
+            normalized[column] = pd.NA
+    normalized["synapse_row_id"] = _clean_text_series(normalized["synapse_row_id"])
+    normalized["synapse_id"] = _clean_text_series(normalized["synapse_id"])
+    normalized["pre_root_id"] = _normalize_int_series(normalized["pre_root_id"], "pre_root_id")
+    normalized["post_root_id"] = _normalize_int_series(normalized["post_root_id"], "post_root_id")
+    normalized["source_row_number"] = _normalize_int_series(normalized["source_row_number"], "source_row_number")
+    for axis in ["x", "y", "z", "pre_x", "pre_y", "pre_z", "post_x", "post_y", "post_z", "confidence", "weight"]:
+        normalized[axis] = _normalize_optional_float_series(normalized[axis], axis)
+    for column in ["neuropil", "source_file"]:
+        normalized[column] = _clean_text_series(normalized[column])
+    normalized["nt_type"] = _clean_text_series(normalized["nt_type"]).str.upper()
+    normalized["sign"] = _clean_text_series(normalized["sign"]).str.lower()
+    _validate_synapse_localization_rows(normalized, label)
+    return normalized.loc[:, SYNAPSE_REGISTRY_COLUMNS]
 
 
 def _load_visual_annotations_table(path: Path | None) -> pd.DataFrame:
@@ -952,7 +1104,7 @@ def _build_provenance_payload(
 
 def _build_synapse_registry_provenance(
     *,
-    synapse_source_path: Path | None,
+    source_provenance: dict[str, Any] | None,
     synapse_registry_path: Path,
     snapshot_version: str,
     materialization_version: str,
@@ -967,7 +1119,7 @@ def _build_synapse_registry_provenance(
         "snapshot_version": snapshot_version,
         "materialization_version": materialization_version,
         "row_count": int(row_count),
-        "source": _file_provenance(synapse_source_path),
+        "source": source_provenance,
         "output": {
             "path": str(synapse_registry_path),
         },

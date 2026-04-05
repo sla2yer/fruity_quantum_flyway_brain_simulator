@@ -268,6 +268,112 @@ def resolve_numerical_validation_plan(
     }
 
 
+def _build_numerical_validation_plan_from_context(
+    *,
+    validation_plan: Mapping[str, Any],
+    simulation_plan: Mapping[str, Any],
+    arm_ids: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(validation_plan, Mapping):
+        raise ValueError("validation_plan must be a mapping.")
+    if not isinstance(simulation_plan, Mapping):
+        raise ValueError("simulation_plan must be a mapping.")
+
+    validation_config = copy.deepcopy(dict(validation_plan["validation_config"]))
+    config_reference = copy.deepcopy(dict(validation_plan["config_reference"]))
+    source_plan_reference = copy.deepcopy(dict(validation_plan["validation_plan_reference"]))
+    target_arm_ids = _resolve_target_surface_wave_arm_ids(
+        simulation_plan=simulation_plan,
+        validation_config=validation_config,
+        arm_ids=arm_ids,
+    )
+    active_validator_ids = [
+        validator_id
+        for validator_id in validation_plan["active_validator_ids"]
+        if validator_id
+        in {
+            OPERATOR_BUNDLE_GATE_ALIGNMENT_VALIDATOR_ID,
+            SURFACE_WAVE_STABILITY_ENVELOPE_VALIDATOR_ID,
+        }
+    ]
+    if not active_validator_ids:
+        raise ValueError(
+            "Resolved validation configuration does not activate the numerical_sanity layer."
+        )
+    criteria_assignments = [
+        copy.deepcopy(dict(item))
+        for item in validation_plan["criteria_profile_assignments"]
+        if str(item["validator_id"]) in set(active_validator_ids)
+    ]
+    timestep_suite = _build_timestep_suite_reference(
+        validation_config=validation_config,
+        active_validator_ids=active_validator_ids,
+    )
+    plan_reference = build_validation_plan_reference(
+        experiment_id=str(simulation_plan["manifest_reference"]["experiment_id"]),
+        contract_reference=copy.deepcopy(
+            dict(source_plan_reference["contract_reference"])
+        ),
+        active_layer_ids=[NUMERICAL_SANITY_LAYER_ID],
+        active_validator_family_ids=[NUMERICAL_STABILITY_FAMILY_ID],
+        active_validator_ids=active_validator_ids,
+        criteria_profile_references=[
+            item["criteria_profile_reference"] for item in criteria_assignments
+        ],
+        criteria_profile_assignments=[
+            {
+                "validator_id": item["validator_id"],
+                "criteria_profile_reference": item["criteria_profile_reference"],
+            }
+            for item in criteria_assignments
+        ],
+        evidence_bundle_references={},
+        target_arm_ids=target_arm_ids,
+        comparison_group_ids=[],
+        perturbation_suite_references=(
+            [] if timestep_suite is None else [copy.deepcopy(timestep_suite)]
+        ),
+        plan_version=NUMERICAL_VALIDATION_PLAN_VERSION,
+    )
+    bundle_metadata = build_validation_bundle_metadata(
+        validation_plan_reference=plan_reference,
+        processed_simulator_results_dir=validation_plan["validation_bundle"]["metadata"][
+            "output_root_reference"
+        ]["processed_simulator_results_dir"],
+    )
+    return {
+        "plan_version": NUMERICAL_VALIDATION_PLAN_VERSION,
+        "manifest_reference": copy.deepcopy(
+            dict(simulation_plan["manifest_reference"])
+        ),
+        "validation_config": validation_config,
+        "config_reference": config_reference,
+        "active_layer_ids": [NUMERICAL_SANITY_LAYER_ID],
+        "active_validator_family_ids": [NUMERICAL_STABILITY_FAMILY_ID],
+        "active_validator_ids": list(active_validator_ids),
+        "criteria_profile_assignments": criteria_assignments,
+        "perturbation_suites": (
+            [] if timestep_suite is None else [copy.deepcopy(timestep_suite)]
+        ),
+        "target_arm_ids": target_arm_ids,
+        "validation_plan_reference": plan_reference,
+        "validation_bundle": {
+            "bundle_id": str(bundle_metadata["bundle_id"]),
+            "validation_spec_hash": str(bundle_metadata["validation_spec_hash"]),
+            "metadata": copy.deepcopy(bundle_metadata),
+        },
+        "output_locations": {
+            "bundle_directory": str(
+                Path(bundle_metadata["bundle_layout"]["bundle_directory"]).resolve()
+            ),
+            "report_directory": str(
+                Path(bundle_metadata["bundle_layout"]["report_directory"]).resolve()
+            ),
+            "artifacts": copy.deepcopy(dict(bundle_metadata["artifacts"])),
+        },
+    }
+
+
 def run_numerical_validation_suite(
     cases: Sequence[NumericalValidationCase],
     *,
@@ -424,23 +530,37 @@ def execute_numerical_validation_workflow(
     schema_path: str | Path,
     design_lock_path: str | Path,
     arm_ids: Sequence[str] | None = None,
+    simulation_plan: Mapping[str, Any] | None = None,
+    validation_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    plan = resolve_numerical_validation_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
-        arm_ids=arm_ids,
+    resolved_simulation_plan = (
+        simulation_plan
+        if isinstance(simulation_plan, Mapping)
+        else resolve_manifest_simulation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+        )
     )
-    simulation_plan = resolve_manifest_simulation_plan(
-        manifest_path=manifest_path,
-        config_path=config_path,
-        schema_path=schema_path,
-        design_lock_path=design_lock_path,
+    plan = (
+        _build_numerical_validation_plan_from_context(
+            validation_plan=validation_plan,
+            simulation_plan=resolved_simulation_plan,
+            arm_ids=arm_ids,
+        )
+        if isinstance(validation_plan, Mapping)
+        else resolve_numerical_validation_plan(
+            manifest_path=manifest_path,
+            config_path=config_path,
+            schema_path=schema_path,
+            design_lock_path=design_lock_path,
+            arm_ids=arm_ids,
+        )
     )
     cfg = load_config(config_path)
     cases = _build_cases_from_simulation_plan(
-        simulation_plan=simulation_plan,
+        simulation_plan=resolved_simulation_plan,
         target_arm_ids=plan["target_arm_ids"],
         timestep_sweep_factors=_plan_timestep_sweep_factors(plan),
         operator_qa_dir=cfg["paths"]["operator_qa_dir"],
