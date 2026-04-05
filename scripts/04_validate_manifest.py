@@ -30,12 +30,25 @@ def main() -> int:
         default="config/milestone_1_design_lock.yaml",
         help="Path to the Milestone 1 design-lock metadata file.",
     )
+    parser.add_argument(
+        "--config",
+        help=(
+            "Optional runtime config used to resolve processed bundle roots so validation "
+            "emits the same stimulus bundle paths as manifest-driven execution."
+        ),
+    )
+    parser.add_argument(
+        "--processed-stimulus-dir",
+        help="Optional explicit processed stimulus root. Overrides the value from --config.",
+    )
     args = parser.parse_args()
 
     summary = validate_manifest(
         manifest_path=ROOT / args.manifest,
         schema_path=ROOT / args.schema,
         design_lock_path=ROOT / args.design_lock,
+        config_path=None if args.config is None else ROOT / args.config,
+        processed_stimulus_dir=args.processed_stimulus_dir,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

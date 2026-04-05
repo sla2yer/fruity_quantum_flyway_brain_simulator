@@ -13,13 +13,12 @@ from typing import Any
 
 import numpy as np
 
-from .config import REPO_ROOT, load_config
+from .config import load_config
 from .io_utils import ensure_dir, write_json
-from .manifests import validate_manifest
+from .manifests import resolve_manifest_input_roots, validate_manifest
 from .stimulus_contract import (
     ASSET_STATUS_READY,
     ASSET_STATUS_SKIPPED,
-    DEFAULT_PROCESSED_STIMULUS_DIR,
     FRAME_CACHE_KEY,
     PREVIEW_GIF_KEY,
     load_stimulus_bundle_metadata,
@@ -114,9 +113,10 @@ def resolve_stimulus_input(
         cfg = load_config(config_path)
         if "stimulus" not in cfg or "stimulus_registry_entry" not in cfg:
             raise ValueError("Config does not resolve a canonical stimulus reference.")
-        resolved_dir = _resolve_processed_stimulus_dir(
-            processed_stimulus_dir or cfg["paths"]["processed_stimulus_dir"]
-        )
+        resolved_dir = resolve_manifest_input_roots(
+            processed_stimulus_dir=processed_stimulus_dir
+            or cfg["paths"]["processed_stimulus_dir"]
+        ).processed_stimulus_dir
         resolved_stimulus = ResolvedStimulusSpec(
             stimulus_spec=copy.deepcopy(cfg["stimulus"]),
             registry_entry=copy.deepcopy(cfg["stimulus_registry_entry"]),
@@ -137,7 +137,9 @@ def resolve_stimulus_input(
     if schema_path is None or design_lock_path is None:
         raise ValueError("schema_path and design_lock_path are required when resolving from a manifest.")
 
-    resolved_dir = _resolve_processed_stimulus_dir(processed_stimulus_dir)
+    resolved_dir = resolve_manifest_input_roots(
+        processed_stimulus_dir=processed_stimulus_dir
+    ).processed_stimulus_dir
     summary = validate_manifest(
         manifest_path=manifest_path,
         schema_path=schema_path,
@@ -798,11 +800,3 @@ def _resolve_bundle_metadata_path(
     if resolved_input is None:
         raise ValueError("Either bundle_metadata_path or resolved_input must be provided.")
     return resolved_input.bundle_metadata_path.resolve()
-
-
-def _resolve_processed_stimulus_dir(
-    processed_stimulus_dir: str | Path | None,
-) -> Path:
-    if processed_stimulus_dir is None:
-        return (REPO_ROOT / DEFAULT_PROCESSED_STIMULUS_DIR).resolve()
-    return Path(processed_stimulus_dir).resolve()

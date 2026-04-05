@@ -67,6 +67,7 @@ from .io_utils import read_root_ids
 from .manifests import (
     load_json,
     load_yaml,
+    resolve_manifest_input_roots,
     validate_manifest_payload,
 )
 from .mixed_fidelity_policy import (
@@ -497,6 +498,10 @@ def resolve_manifest_simulation_plan(
         raise ValueError("Loaded config is missing config metadata.")
     if project_root is None:
         raise ValueError("Loaded config is missing project-root metadata.")
+    resolved_input_roots = resolve_manifest_input_roots(
+        processed_stimulus_dir=cfg["paths"]["processed_stimulus_dir"],
+        processed_retinal_dir=cfg["paths"]["processed_retinal_dir"],
+    )
 
     manifest_payload = load_yaml(manifest_file)
     schema_payload = load_json(schema_file)
@@ -506,7 +511,7 @@ def resolve_manifest_simulation_plan(
         schema=schema_payload,
         design_lock=design_lock_payload,
         manifest_path=manifest_file,
-        processed_stimulus_dir=cfg["paths"]["processed_stimulus_dir"],
+        processed_stimulus_dir=resolved_input_roots.processed_stimulus_dir,
     )
 
     runtime_config = normalize_simulation_runtime_config(
@@ -535,8 +540,8 @@ def resolve_manifest_simulation_plan(
         runtime_config=runtime_config,
         schema_path=schema_file,
         design_lock_path=design_lock_file,
-        processed_stimulus_dir=Path(cfg["paths"]["processed_stimulus_dir"]),
-        processed_retinal_dir=Path(cfg["paths"]["processed_retinal_dir"]),
+        processed_stimulus_dir=resolved_input_roots.processed_stimulus_dir,
+        processed_retinal_dir=resolved_input_roots.processed_retinal_dir,
     )
     circuit_assets = _resolve_circuit_assets(
         manifest=manifest_payload,

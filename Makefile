@@ -231,7 +231,7 @@ milestone17-readiness:
 	$(PYTHON) scripts/37_milestone17_readiness.py --config $(M17_CONFIG) $(M17_READINESS_ARGS)
 
 validate-manifest:
-	$(PYTHON) scripts/04_validate_manifest.py --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)
+	$(PYTHON) scripts/04_validate_manifest.py --config $(CONFIG) --manifest $(MANIFEST) --schema $(SCHEMA) --design-lock $(DESIGN_LOCK)
 
 test:
 	$(PYTHON) -m unittest discover -s tests -v

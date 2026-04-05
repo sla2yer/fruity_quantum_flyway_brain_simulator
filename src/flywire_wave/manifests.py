@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 import json
 from pathlib import Path
 from typing import Any
@@ -8,11 +9,20 @@ from typing import Any
 import yaml
 from jsonschema import Draft202012Validator
 
+from .config import get_config_path, load_config
+from .retinal_contract import DEFAULT_PROCESSED_RETINAL_DIR
 from .retinal_geometry import ResolvedRetinalGeometry, resolve_retinal_geometry_spec
 from .stimulus_contract import DEFAULT_PROCESSED_STIMULUS_DIR
 from .stimulus_registry import ResolvedStimulusSpec, resolve_stimulus_spec
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@dataclass(frozen=True)
+class ManifestInputRoots:
+    config_path: Path | None
+    processed_stimulus_dir: Path
+    processed_retinal_dir: Path
 
 
 def load_yaml(path: str | Path) -> dict[str, Any]:
@@ -38,6 +48,7 @@ def validate_manifest(
     schema_path: str | Path,
     design_lock_path: str | Path,
     *,
+    config_path: str | Path | None = None,
     processed_stimulus_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     manifest = load_yaml(manifest_path)
@@ -48,6 +59,7 @@ def validate_manifest(
         schema=schema,
         design_lock=design_lock,
         manifest_path=manifest_path,
+        config_path=config_path,
         processed_stimulus_dir=processed_stimulus_dir,
     )
 
@@ -58,6 +70,7 @@ def validate_manifest_payload(
     design_lock: dict[str, Any],
     manifest_path: str | Path | None = None,
     *,
+    config_path: str | Path | None = None,
     processed_stimulus_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     validator = Draft202012Validator(schema)
@@ -106,7 +119,11 @@ def validate_manifest_payload(
     except ValueError as exc:
         raise ValueError(f"Manifest stimulus is invalid: {exc}") from exc
 
-    resolved_processed_stimulus_dir = _resolve_processed_stimulus_dir(processed_stimulus_dir)
+    resolved_input_roots = resolve_manifest_input_roots(
+        config_path=config_path,
+        processed_stimulus_dir=processed_stimulus_dir,
+    )
+    resolved_processed_stimulus_dir = resolved_input_roots.processed_stimulus_dir
     stimulus_contract = resolved_stimulus.build_contract_metadata(
         processed_stimulus_dir=resolved_processed_stimulus_dir
     )
@@ -153,10 +170,47 @@ def resolve_manifest_retinal_geometry(manifest: Mapping[str, Any]) -> ResolvedRe
     return resolve_retinal_geometry_spec(manifest)
 
 
-def _resolve_processed_stimulus_dir(processed_stimulus_dir: str | Path | None) -> Path:
-    if processed_stimulus_dir is not None:
-        return Path(processed_stimulus_dir).resolve()
-    return (REPO_ROOT / DEFAULT_PROCESSED_STIMULUS_DIR).resolve()
+def resolve_manifest_input_roots(
+    *,
+    config_path: str | Path | None = None,
+    processed_stimulus_dir: str | Path | None = None,
+    processed_retinal_dir: str | Path | None = None,
+) -> ManifestInputRoots:
+    resolved_config_path: Path | None = None
+    configured_paths: Mapping[str, Any] = {}
+    if config_path is not None:
+        cfg = load_config(config_path)
+        resolved_config_path = get_config_path(cfg)
+        if resolved_config_path is None:
+            raise ValueError("Loaded config is missing config metadata.")
+        configured_paths = cfg["paths"]
+
+    return ManifestInputRoots(
+        config_path=resolved_config_path,
+        processed_stimulus_dir=_resolve_processed_bundle_root(
+            explicit_path=processed_stimulus_dir,
+            configured_path=configured_paths.get("processed_stimulus_dir"),
+            default_path=DEFAULT_PROCESSED_STIMULUS_DIR,
+        ),
+        processed_retinal_dir=_resolve_processed_bundle_root(
+            explicit_path=processed_retinal_dir,
+            configured_path=configured_paths.get("processed_retinal_dir"),
+            default_path=DEFAULT_PROCESSED_RETINAL_DIR,
+        ),
+    )
+
+
+def _resolve_processed_bundle_root(
+    *,
+    explicit_path: str | Path | None,
+    configured_path: Any,
+    default_path: Path,
+) -> Path:
+    if explicit_path is not None:
+        return Path(explicit_path).resolve()
+    if configured_path is not None:
+        return Path(configured_path).resolve()
+    return (REPO_ROOT / default_path).resolve()
 
 
 def _validate_manifest_stimulus_declaration(manifest: Mapping[str, Any]) -> None:

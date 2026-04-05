@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,9 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from flywire_wave.manifests import load_json, load_yaml, validate_manifest, validate_manifest_payload
+from flywire_wave.simulation_planning import resolve_manifest_simulation_plan
+from flywire_wave.stimulus_bundle import record_stimulus_bundle, resolve_stimulus_input
+from tests.test_simulation_planning import _write_simulation_fixture
 
 
 class ManifestValidationTest(unittest.TestCase):
@@ -87,6 +91,60 @@ class ManifestValidationTest(unittest.TestCase):
                         design_lock=self.design_lock,
                     )
                 self.assertIn(case["error_substring"], str(ctx.exception))
+
+    def test_validation_and_simulation_plan_share_nondefault_processed_stimulus_root(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = ROOT / "manifests/examples/milestone_1_demo.yaml"
+            schema_path = ROOT / "schemas/milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config/milestone_1_design_lock.yaml"
+            config_path = _write_simulation_fixture(tmp_dir)
+
+            resolved_input = resolve_stimulus_input(
+                manifest_path=manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+            )
+            recorded_summary = record_stimulus_bundle(resolved_input)
+            validation_summary = validate_manifest(
+                manifest_path=manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                config_path=config_path,
+            )
+            simulation_plan = resolve_manifest_simulation_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+
+            expected_metadata_path = str(Path(recorded_summary["stimulus_bundle_metadata_path"]).resolve())
+            self.assertTrue(
+                expected_metadata_path.startswith(str((tmp_dir / "out" / "stimuli").resolve()))
+            )
+            self.assertEqual(
+                validation_summary["stimulus_bundle_metadata_path"],
+                expected_metadata_path,
+            )
+            self.assertEqual(
+                validation_summary["stimulus_bundle_reference"]["bundle_id"],
+                recorded_summary["stimulus_bundle_id"],
+            )
+            for arm_plan in simulation_plan["arm_plans"]:
+                self.assertEqual(
+                    arm_plan["stimulus_reference"],
+                    validation_summary["stimulus_bundle_reference"],
+                )
+                self.assertEqual(
+                    arm_plan["input_reference"]["stimulus_bundle_reference"],
+                    validation_summary["stimulus_bundle_reference"],
+                )
+                self.assertEqual(
+                    arm_plan["input_reference"]["stimulus_bundle_metadata_path"],
+                    expected_metadata_path,
+                )
 
     def _build_manifest_fixture(self, patch: dict[str, object]) -> dict[str, object]:
         manifest = copy.deepcopy(self.base_manifest)

@@ -22,6 +22,7 @@ from .retinal_geometry import ResolvedRetinalGeometry, build_body_to_head_transf
 from .retinal_inspection import generate_retinal_inspection_report
 from .retinal_sampling import AnalyticVisualFieldSource, project_visual_source
 from .scene_playback import ResolvedSceneSpec, load_scene_entrypoint, resolve_scene_spec
+from .manifests import resolve_manifest_input_roots
 from .stimulus_bundle import (
     ResolvedStimulusInput,
     StimulusBundleReplay,
@@ -72,14 +73,20 @@ def resolve_retinal_bundle_input(
             cfg,
             context="config",
         )
+        resolved_input_roots = resolve_manifest_input_roots(
+            processed_stimulus_dir=processed_stimulus_dir
+            or cfg["paths"]["processed_stimulus_dir"],
+            processed_retinal_dir=processed_retinal_dir
+            or cfg["paths"]["processed_retinal_dir"],
+        )
         recording = _resolve_recording_options(
             payload=cfg,
-            processed_retinal_dir=processed_retinal_dir,
-            fallback_processed_retinal_dir=cfg["paths"]["processed_retinal_dir"],
+            processed_retinal_dir=resolved_input_roots.processed_retinal_dir,
+            fallback_processed_retinal_dir=resolved_input_roots.processed_retinal_dir,
         )
         resolved_stimulus_input = resolve_stimulus_input(
             config_path=config_path,
-            processed_stimulus_dir=processed_stimulus_dir or cfg["paths"]["processed_stimulus_dir"],
+            processed_stimulus_dir=resolved_input_roots.processed_stimulus_dir,
         )
         visual_source, source_descriptor, source_lineage, frame_times_ms = _resolve_stimulus_visual_source(
             resolved_input=resolved_stimulus_input,
@@ -117,16 +124,22 @@ def resolve_retinal_bundle_input(
             retinal_cfg,
             context="retinal_config",
         )
+        resolved_input_roots = resolve_manifest_input_roots(
+            processed_stimulus_dir=processed_stimulus_dir
+            or retinal_cfg["paths"]["processed_stimulus_dir"],
+            processed_retinal_dir=processed_retinal_dir
+            or retinal_cfg["paths"]["processed_retinal_dir"],
+        )
         recording = _resolve_recording_options(
             payload=retinal_cfg,
-            processed_retinal_dir=processed_retinal_dir,
-            fallback_processed_retinal_dir=retinal_cfg["paths"]["processed_retinal_dir"],
+            processed_retinal_dir=resolved_input_roots.processed_retinal_dir,
+            fallback_processed_retinal_dir=resolved_input_roots.processed_retinal_dir,
         )
         resolved_stimulus_input = resolve_stimulus_input(
             manifest_path=manifest_path,
             schema_path=schema_path,
             design_lock_path=design_lock_path,
-            processed_stimulus_dir=processed_stimulus_dir or retinal_cfg["paths"]["processed_stimulus_dir"],
+            processed_stimulus_dir=resolved_input_roots.processed_stimulus_dir,
         )
         visual_source, source_descriptor, source_lineage, frame_times_ms = _resolve_stimulus_visual_source(
             resolved_input=resolved_stimulus_input,
