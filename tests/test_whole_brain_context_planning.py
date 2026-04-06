@@ -394,6 +394,35 @@ class WholeBrainContextPlanningTest(unittest.TestCase):
 
             self.assertIn("do not match the locally resolved active subset", str(mismatch_ctx.exception))
 
+    def test_showcase_source_fails_clearly_for_showcase_state_bundle_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+            showcase_plan = resolve_showcase_session_plan(
+                config_path=fixture["config_path"],
+                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                suite_review_summary_path=fixture["suite_review_summary_path"],
+                table_dimension_ids=["motion_direction"],
+            )
+            showcase_package = package_showcase_session(showcase_plan)
+            showcase_state_path = Path(showcase_package["showcase_state_path"]).resolve()
+            showcase_state = json.loads(showcase_state_path.read_text(encoding="utf-8"))
+            showcase_state["bundle_reference"]["bundle_id"] = (
+                "showcase_session.v1:fixture:mismatch"
+            )
+            write_json(showcase_state, showcase_state_path)
+
+            with self.assertRaises(ValueError) as mismatch_ctx:
+                resolve_whole_brain_context_session_plan(
+                    config_path=fixture["config_path"],
+                    showcase_session_metadata_path=showcase_package["metadata_path"],
+                )
+
+            self.assertIn(
+                "showcase_session metadata and state must reference the same bundle_id",
+                str(mismatch_ctx.exception),
+            )
+
 
 def _materialize_subset_bundle_from_config(
     config_path: str | Path,

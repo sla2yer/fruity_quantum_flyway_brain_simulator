@@ -50,6 +50,7 @@ from flywire_wave.selection import (
     write_selected_root_roster,
     write_subset_manifest,
 )
+from flywire_wave.simulation_asset_resolution import ROOT_ASSET_RECORD_VERSION
 from flywire_wave.simulation_planning import (
     discover_simulation_run_plans,
     resolve_manifest_mixed_fidelity_plan,
@@ -166,6 +167,21 @@ class SimulationPlanningTest(unittest.TestCase):
                 len(baseline_plan["circuit_assets"]["circuit_asset_hash"]),
                 64,
             )
+            selected_root_asset = baseline_plan["circuit_assets"]["selected_root_assets"][0]
+            self.assertEqual(
+                selected_root_asset["asset_record"]["version"],
+                ROOT_ASSET_RECORD_VERSION,
+            )
+            self.assertNotIn("geometry_asset_records", selected_root_asset)
+            self.assertNotIn("operator_asset_records", selected_root_asset)
+            self.assertNotIn("required_operator_assets", selected_root_asset)
+            self.assertNotIn("descriptor_sidecar_path", selected_root_asset)
+            self.assertNotIn("qa_sidecar_path", selected_root_asset)
+            self.assertNotIn("coupling_asset_records", selected_root_asset)
+            self.assertNotIn("required_coupling_assets", selected_root_asset)
+            self.assertNotIn("edge_bundle_paths", selected_root_asset)
+            self.assertNotIn("operator_bundle", selected_root_asset)
+            self.assertNotIn("coupling_bundle", selected_root_asset)
             surface_wave_plan = first_plan["arm_plans"][1]
             self.assertEqual(surface_wave_plan["arm_reference"]["arm_id"], "surface_wave_intact")
             self.assertEqual(
@@ -284,6 +300,89 @@ class SimulationPlanningTest(unittest.TestCase):
                 ),
                 3,
             )
+
+    def test_operator_metadata_drift_ignores_non_contract_fields(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = ROOT / "manifests" / "examples" / "milestone_1_demo.yaml"
+            schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+            config_path = _write_simulation_fixture(tmp_dir)
+
+            resolved_input = resolve_stimulus_input(
+                manifest_path=manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+            )
+            record_stimulus_bundle(resolved_input)
+
+            operator_metadata_path = (
+                tmp_dir / "out" / "processed_graphs" / "101_operator_metadata.json"
+            )
+            operator_metadata = json.loads(operator_metadata_path.read_text(encoding="utf-8"))
+            operator_metadata["review_annotation"] = {
+                "ticket": "FWW-MAINT-002",
+                "note": "non-contract field should not trip drift detection",
+            }
+            operator_metadata_path.write_text(
+                json.dumps(operator_metadata, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            plan = resolve_manifest_simulation_plan(
+                manifest_path=manifest_path,
+                config_path=config_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            wave_plan = next(
+                arm_plan
+                for arm_plan in plan["arm_plans"]
+                if arm_plan["arm_reference"]["model_mode"] == "surface_wave"
+                and arm_plan["topology_condition"] == "intact"
+            )
+            self.assertEqual(
+                wave_plan["model_configuration"]["surface_wave_execution_plan"][
+                    "selected_root_operator_assets"
+                ][0]["root_id"],
+                101,
+            )
+
+    def test_operator_metadata_drift_uses_canonical_contract_fields(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = ROOT / "manifests" / "examples" / "milestone_1_demo.yaml"
+            schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+            design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+            config_path = _write_simulation_fixture(tmp_dir)
+
+            resolved_input = resolve_stimulus_input(
+                manifest_path=manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+            )
+            record_stimulus_bundle(resolved_input)
+
+            operator_metadata_path = (
+                tmp_dir / "out" / "processed_graphs" / "101_operator_metadata.json"
+            )
+            operator_metadata = json.loads(operator_metadata_path.read_text(encoding="utf-8"))
+            operator_metadata["preferred_discretization_family"] = "surface_graph_uniform_laplacian"
+            operator_metadata_path.write_text(
+                json.dumps(operator_metadata, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as ctx:
+                resolve_manifest_simulation_plan(
+                    manifest_path=manifest_path,
+                    config_path=config_path,
+                    schema_path=schema_path,
+                    design_lock_path=design_lock_path,
+                )
+            self.assertIn("operator metadata drift", str(ctx.exception))
 
     def test_manifest_mixed_fidelity_plan_resolution_is_deterministic_and_records_per_root_assignments(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:

@@ -41,6 +41,7 @@ from flywire_wave.manifests import load_json
 from flywire_wave.mesh_pipeline import process_mesh_into_wave_assets
 from flywire_wave.simulation_planning import resolve_manifest_simulation_plan
 from flywire_wave.simulator_result_contract import (
+    METADATA_JSON_KEY,
     METRICS_TABLE_KEY,
     READOUT_TRACES_KEY,
     STATE_SUMMARY_KEY,
@@ -186,10 +187,11 @@ class SimulatorExecutionSmokeTest(unittest.TestCase):
                 schema_path=fixture["schema_path"],
                 design_lock_path=fixture["design_lock_path"],
             )
-            planned_bundle_id = (
-                plan["arm_plans"][0]["result_bundle"]["reference"]["bundle_id"]
+            _assert_planned_result_bundle_alignment(
+                test_case=self,
+                planned_arm=plan["arm_plans"][0],
+                bundle_metadata=metadata,
             )
-            self.assertEqual(planned_bundle_id, metadata["bundle_id"])
 
     def test_cli_executes_surface_wave_manifest_arm_and_writes_wave_extensions(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
@@ -369,12 +371,15 @@ class SimulatorExecutionSmokeTest(unittest.TestCase):
                 schema_path=fixture["schema_path"],
                 design_lock_path=fixture["design_lock_path"],
             )
-            planned_bundle_id = next(
-                arm_plan["result_bundle"]["reference"]["bundle_id"]
-                for arm_plan in plan["arm_plans"]
-                if arm_plan["arm_reference"]["arm_id"] == "surface_wave_intact"
+            _assert_planned_result_bundle_alignment(
+                test_case=self,
+                planned_arm=next(
+                    arm_plan
+                    for arm_plan in plan["arm_plans"]
+                    if arm_plan["arm_reference"]["arm_id"] == "surface_wave_intact"
+                ),
+                bundle_metadata=metadata,
             )
-            self.assertEqual(planned_bundle_id, metadata["bundle_id"])
 
     def test_execute_manifest_simulation_writes_deterministic_mixed_morphology_bundle(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
@@ -542,6 +547,36 @@ class SimulatorExecutionSmokeTest(unittest.TestCase):
 
             self.assertEqual(result["executed_run_count"], 1)
 
+    def test_execute_manifest_simulation_requires_planned_result_bundle_metadata(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_execution_fixture(Path(tmp_dir_str))
+            simulation_plan = resolve_manifest_simulation_plan(
+                manifest_path=fixture["manifest_path"],
+                config_path=fixture["config_path"],
+                schema_path=fixture["schema_path"],
+                design_lock_path=fixture["design_lock_path"],
+            )
+            baseline_arm = next(
+                arm_plan
+                for arm_plan in simulation_plan["arm_plans"]
+                if arm_plan["arm_reference"]["arm_id"] == "baseline_p0_intact"
+            )
+            baseline_arm["result_bundle"].pop("metadata")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "arm_plan.result_bundle.metadata is required for manifest execution packaging.",
+            ):
+                execute_manifest_simulation(
+                    manifest_path=fixture["manifest_path"],
+                    config_path=fixture["config_path"],
+                    schema_path=fixture["schema_path"],
+                    design_lock_path=fixture["design_lock_path"],
+                    model_mode="baseline",
+                    arm_id="baseline_p0_intact",
+                    simulation_plan=simulation_plan,
+                )
+
 
 def _materialize_execution_fixture(tmp_dir: Path) -> dict[str, Path]:
     output_dir = tmp_dir / "out"
@@ -626,6 +661,32 @@ def _materialize_execution_fixture(tmp_dir: Path) -> dict[str, Path]:
         "design_lock_path": design_lock_path.resolve(),
         "metrics_json_path": metrics_json_path,
     }
+
+
+def _assert_planned_result_bundle_alignment(
+    *,
+    test_case: unittest.TestCase,
+    planned_arm: dict[str, object],
+    bundle_metadata: dict[str, object],
+) -> None:
+    planned_bundle = planned_arm["result_bundle"]
+    planned_reference = planned_bundle["reference"]
+    planned_metadata = planned_bundle["metadata"]
+
+    test_case.assertEqual(planned_reference["bundle_id"], bundle_metadata["bundle_id"])
+    test_case.assertEqual(
+        planned_reference["run_spec_hash"],
+        bundle_metadata["run_spec_hash"],
+    )
+    test_case.assertEqual(
+        planned_metadata["bundle_layout"],
+        bundle_metadata["bundle_layout"],
+    )
+    for artifact_id in (METADATA_JSON_KEY, STATE_SUMMARY_KEY, READOUT_TRACES_KEY, METRICS_TABLE_KEY):
+        test_case.assertEqual(
+            planned_metadata["artifacts"][artifact_id]["path"],
+            bundle_metadata["artifacts"][artifact_id]["path"],
+        )
 
 
 def _write_execution_geometry_manifest(output_dir: Path, manifest_path: Path) -> None:

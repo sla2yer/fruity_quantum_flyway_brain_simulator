@@ -689,6 +689,32 @@ class ShowcaseSessionPlanningTest(unittest.TestCase):
                 "shared baseline-versus-wave timebase",
                 str(timebase_ctx.exception),
             )
+
+    def test_planning_fails_clearly_for_dashboard_state_bundle_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
+
+            dashboard_state_path = Path(
+                fixture["dashboard_package"]["session_state_path"]
+            ).resolve()
+            state = json.loads(dashboard_state_path.read_text(encoding="utf-8"))
+            state["bundle_reference"]["bundle_id"] = "dashboard_session.v1:fixture:mismatch"
+            write_json(state, dashboard_state_path)
+
+            with self.assertRaises(ValueError) as mismatch_ctx:
+                resolve_showcase_session_plan(
+                    config_path=fixture["config_path"],
+                    dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
+                    suite_package_metadata_path=fixture["suite_package_metadata_path"],
+                    suite_review_summary_path=fixture["suite_review_summary_path"],
+                )
+
+            self.assertIn(
+                "dashboard_session metadata and state must reference the same bundle_id",
+                str(mismatch_ctx.exception),
+            )
+
+
 def _saved_preset(plan: dict[str, Any], preset_id: str) -> dict[str, Any]:
     return next(item for item in plan["saved_presets"] if item["preset_id"] == preset_id)
 

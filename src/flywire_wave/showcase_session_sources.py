@@ -9,7 +9,6 @@ from typing import Any
 from .dashboard_session_contract import (
     ANALYSIS_BUNDLE_METADATA_ROLE_ID as DASHBOARD_ANALYSIS_BUNDLE_METADATA_ROLE_ID,
     CIRCUIT_PANE_ID,
-    DASHBOARD_SESSION_CONTRACT_VERSION,
     DASHBOARD_SESSION_METADATA_ROLE_ID as DASHBOARD_METADATA_ROLE_ID,
     DASHBOARD_SESSION_PAYLOAD_ROLE_ID as DASHBOARD_PAYLOAD_ROLE_ID,
     DASHBOARD_SESSION_STATE_ROLE_ID as DASHBOARD_STATE_ROLE_ID,
@@ -38,11 +37,15 @@ from .experiment_suite_packaging import (
     load_experiment_suite_package_metadata,
 )
 from .experiment_suite_reporting import generate_experiment_suite_review_report
+from .review_surface_artifacts import (
+    lift_packaged_artifact_references,
+    merge_explicit_artifact_overrides,
+    validate_packaged_dashboard_bundle_alignment,
+)
 from .showcase_session_contract import (
     ANALYSIS_BUNDLE_METADATA_ROLE_ID,
     ANALYSIS_OFFLINE_REPORT_ROLE_ID,
     ANALYSIS_UI_PAYLOAD_ROLE_ID,
-    DASHBOARD_CONTEXT_SCOPE,
     DASHBOARD_SESSION_METADATA_ROLE_ID,
     DASHBOARD_SESSION_PAYLOAD_ROLE_ID,
     DASHBOARD_SESSION_SOURCE_KIND,
@@ -170,49 +173,13 @@ def build_showcase_upstream_artifact_references(
 ) -> list[dict[str, Any]]:
     dashboard_metadata = dashboard_context["metadata"]
     dashboard_paths = discover_dashboard_session_bundle_paths(dashboard_metadata)
-    discovered: list[dict[str, Any]] = [
-        build_showcase_session_artifact_reference(
-            artifact_role_id=DASHBOARD_SESSION_METADATA_ROLE_ID,
-            source_kind=DASHBOARD_SESSION_SOURCE_KIND,
-            path=dashboard_paths[DASHBOARD_METADATA_JSON_KEY],
-            contract_version=DASHBOARD_SESSION_CONTRACT_VERSION,
-            bundle_id=str(dashboard_metadata["bundle_id"]),
-            artifact_id=DASHBOARD_METADATA_JSON_KEY,
-            format=str(dashboard_metadata["artifacts"][DASHBOARD_METADATA_JSON_KEY]["format"]),
-            artifact_scope=DASHBOARD_CONTEXT_SCOPE,
-            status=str(dashboard_metadata["artifacts"][DASHBOARD_METADATA_JSON_KEY]["status"]),
-        ),
-        build_showcase_session_artifact_reference(
-            artifact_role_id=DASHBOARD_SESSION_PAYLOAD_ROLE_ID,
-            source_kind=DASHBOARD_SESSION_SOURCE_KIND,
-            path=dashboard_paths[SESSION_PAYLOAD_ARTIFACT_ID],
-            contract_version=DASHBOARD_SESSION_CONTRACT_VERSION,
-            bundle_id=str(dashboard_metadata["bundle_id"]),
-            artifact_id=SESSION_PAYLOAD_ARTIFACT_ID,
-            format=str(
-                dashboard_metadata["artifacts"][SESSION_PAYLOAD_ARTIFACT_ID]["format"]
-            ),
-            artifact_scope=DASHBOARD_CONTEXT_SCOPE,
-            status=str(
-                dashboard_metadata["artifacts"][SESSION_PAYLOAD_ARTIFACT_ID]["status"]
-            ),
-        ),
-        build_showcase_session_artifact_reference(
-            artifact_role_id=DASHBOARD_SESSION_STATE_ROLE_ID,
-            source_kind=DASHBOARD_SESSION_SOURCE_KIND,
-            path=dashboard_paths[SESSION_STATE_ARTIFACT_ID],
-            contract_version=DASHBOARD_SESSION_CONTRACT_VERSION,
-            bundle_id=str(dashboard_metadata["bundle_id"]),
-            artifact_id=SESSION_STATE_ARTIFACT_ID,
-            format=str(
-                dashboard_metadata["artifacts"][SESSION_STATE_ARTIFACT_ID]["format"]
-            ),
-            artifact_scope=DASHBOARD_CONTEXT_SCOPE,
-            status=str(
-                dashboard_metadata["artifacts"][SESSION_STATE_ARTIFACT_ID]["status"]
-            ),
-        ),
-    ]
+    discovered: list[dict[str, Any]] = lift_packaged_artifact_references(
+        metadata=dashboard_metadata,
+        bundle_paths=dashboard_paths,
+        contract_metadata=contract_metadata,
+        source_kind=DASHBOARD_SESSION_SOURCE_KIND,
+        build_artifact_reference=build_showcase_session_artifact_reference,
+    )
 
     analysis_metadata = analysis_context["metadata"]
     analysis_paths = analysis_context["bundle_paths"]
@@ -656,14 +623,11 @@ def _validate_dashboard_payload(
             "Showcase planning requires at least one selected root in the dashboard circuit context."
         )
 
-    if str(metadata["bundle_id"]) != str(payload["bundle_reference"]["bundle_id"]):
-        raise ValueError(
-            "dashboard_session metadata and payload must reference the same bundle_id."
-        )
-    if str(metadata["bundle_id"]) != str(state["bundle_reference"]["bundle_id"]):
-        raise ValueError(
-            "dashboard_session metadata and state must reference the same bundle_id."
-        )
+    validate_packaged_dashboard_bundle_alignment(
+        metadata=metadata,
+        payload=payload,
+        state=state,
+    )
 
 
 def _resolve_analysis_context(
@@ -962,39 +926,24 @@ def _merge_explicit_artifact_overrides(
     raw_explicit_artifacts: Mapping[str, Mapping[str, Any]],
     contract_metadata: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    hooks = {
-        str(item["artifact_role_id"]): dict(item)
-        for item in contract_metadata["artifact_hook_catalog"]
-    }
-    merged = {
-        str(item["artifact_role_id"]): copy.deepcopy(dict(item)) for item in discovered
-    }
-    for role_id, raw in raw_explicit_artifacts.items():
-        base = merged.get(role_id, {})
-        hook = hooks[role_id]
-        merged[role_id] = build_showcase_session_artifact_reference(
-            artifact_role_id=role_id,
-            source_kind=str(raw.get("source_kind", base.get("source_kind", hook["source_kind"]))),
-            path=raw.get("path", base["path"]),
-            contract_version=str(
-                raw.get(
-                    "contract_version",
-                    base.get("contract_version", hook["required_contract_version"]),
-                )
-            ),
-            bundle_id=str(raw.get("bundle_id", base.get("bundle_id", f"explicit:{role_id}"))),
-            artifact_id=str(raw.get("artifact_id", base.get("artifact_id", hook["artifact_id"]))),
-            format=(
-                None
-                if raw.get("format", base.get("format")) is None
-                else str(raw.get("format", base.get("format")))
-            ),
-            artifact_scope=str(
-                raw.get("artifact_scope", base.get("artifact_scope", hook["artifact_scope"]))
-            ),
-            status=str(raw.get("status", base.get("status", ASSET_STATUS_READY))),
-        )
-    return list(merged.values())
+    return merge_explicit_artifact_overrides(
+        discovered,
+        raw_explicit_artifacts=raw_explicit_artifacts,
+        contract_metadata=contract_metadata,
+        build_artifact_reference=build_showcase_session_artifact_reference,
+        resolve_status=_showcase_override_status,
+    )
+
+
+def _showcase_override_status(
+    role_id: str,
+    raw: Mapping[str, Any],
+    base: Mapping[str, Any],
+    hook: Mapping[str, Any],
+    resolved_path: str,
+) -> str:
+    del role_id, hook, resolved_path
+    return str(raw.get("status", base.get("status", ASSET_STATUS_READY)))
 
 
 def _discover_dashboard_metadata_from_suite_package(

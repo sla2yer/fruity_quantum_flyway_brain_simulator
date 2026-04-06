@@ -38,12 +38,28 @@ class SelectionPresetToolTest(unittest.TestCase):
             self.assertEqual(len(summary["generated_presets"]), 1)
 
             generated = summary["generated_presets"][0]
+            publication = summary["publication"]
             self.assertEqual(generated["preset_name"], "motion_medium")
             self.assertEqual(generated["root_id_count"], 13)
+            self.assertEqual(
+                generated["publication"],
+                {
+                    "published_as_active_subset": True,
+                    "selected_root_ids_updated": True,
+                    "subset_scoped_coupling_refreshed": False,
+                },
+            )
+            self.assertEqual(publication["preset_name"], "motion_medium")
+            self.assertEqual(publication["artifact_root_ids_path"], generated["paths"]["root_ids"])
+            self.assertEqual(publication["selected_root_ids_path"], str(selected_root_ids_path))
+            self.assertTrue(publication["selected_root_ids_updated"])
+            self.assertFalse(publication["subset_scoped_coupling_refreshed"])
+            self.assertIsNone(publication["subset_scoped_coupling"])
 
             manifest = json.loads(Path(generated["paths"]["manifest_json"]).read_text(encoding="utf-8"))
             stats = json.loads(Path(generated["paths"]["stats_json"]).read_text(encoding="utf-8"))
             preview = Path(generated["paths"]["preview_markdown"]).read_text(encoding="utf-8")
+            index_payload = json.loads((subset_output_dir / "subset_index.json").read_text(encoding="utf-8"))
 
             self.assertEqual(manifest["preset_name"], "motion_medium")
             self.assertEqual(len(manifest["root_ids"]), 13)
@@ -58,6 +74,7 @@ class SelectionPresetToolTest(unittest.TestCase):
                 read_root_ids(selected_root_ids_path),
                 [int(root_id) for root_id in manifest["root_ids"]],
             )
+            self.assertEqual(index_payload, summary)
 
     def test_generate_all_presets_respects_inheritance_and_relation_append(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_str:
@@ -89,6 +106,30 @@ class SelectionPresetToolTest(unittest.TestCase):
                     "motion_minimal": 10,
                     "motion_medium": 13,
                     "motion_dense": 14,
+                },
+            )
+            publication_by_preset = {
+                item["preset_name"]: item["publication"]
+                for item in summary["generated_presets"]
+            }
+            self.assertEqual(
+                publication_by_preset,
+                {
+                    "motion_minimal": {
+                        "published_as_active_subset": False,
+                        "selected_root_ids_updated": False,
+                        "subset_scoped_coupling_refreshed": False,
+                    },
+                    "motion_medium": {
+                        "published_as_active_subset": True,
+                        "selected_root_ids_updated": True,
+                        "subset_scoped_coupling_refreshed": False,
+                    },
+                    "motion_dense": {
+                        "published_as_active_subset": False,
+                        "selected_root_ids_updated": False,
+                        "subset_scoped_coupling_refreshed": False,
+                    },
                 },
             )
 
@@ -136,7 +177,7 @@ class SelectionPresetToolTest(unittest.TestCase):
                 "flywire_wave.registry._load_synapse_table",
                 wraps=registry_module._load_synapse_table,
             ) as load_synapse_table:
-                generate_subsets_from_config(cfg, config_path=tmp_dir / "config.yaml")
+                summary = generate_subsets_from_config(cfg, config_path=tmp_dir / "config.yaml")
 
             selected_root_ids = set(read_root_ids(selected_root_ids_path))
             synapse_registry = load_synapse_registry(processed_coupling_dir / "synapse_registry.csv")
@@ -145,6 +186,20 @@ class SelectionPresetToolTest(unittest.TestCase):
             )
 
             self.assertEqual(load_synapse_table.call_count, 0)
+            self.assertTrue(summary["publication"]["selected_root_ids_updated"])
+            self.assertTrue(summary["publication"]["subset_scoped_coupling_refreshed"])
+            self.assertEqual(
+                summary["generated_presets"][0]["publication"],
+                {
+                    "published_as_active_subset": True,
+                    "selected_root_ids_updated": True,
+                    "subset_scoped_coupling_refreshed": True,
+                },
+            )
+            self.assertEqual(
+                summary["publication"]["subset_scoped_coupling"]["synapse_registry_path"],
+                str((processed_coupling_dir / "synapse_registry.csv").resolve()),
+            )
             self.assertEqual(synapse_registry["synapse_id"].tolist(), ["syn-1", "syn-4"])
             self.assertTrue(synapse_registry["pre_root_id"].isin(selected_root_ids).all())
             self.assertTrue(synapse_registry["post_root_id"].isin(selected_root_ids).all())
@@ -188,6 +243,34 @@ class SelectionPresetToolTest(unittest.TestCase):
             self.assertEqual(
                 Path(generated_paths["root_ids"]).resolve(),
                 expected_paths.root_ids.resolve(),
+            )
+
+    def test_active_publication_records_alias_update_only_when_contents_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            registry_path, connectivity_path = _write_fixture_registry(tmp_dir)
+            selected_root_ids_path = tmp_dir / "active_root_ids.txt"
+            subset_output_dir = tmp_dir / "subsets"
+
+            cfg = _fixture_config(
+                registry_path=registry_path,
+                connectivity_path=connectivity_path,
+                selected_root_ids_path=selected_root_ids_path,
+                subset_output_dir=subset_output_dir,
+            )
+
+            first_summary = generate_subsets_from_config(cfg, config_path=tmp_dir / "config.yaml")
+            second_summary = generate_subsets_from_config(cfg, config_path=tmp_dir / "config.yaml")
+
+            self.assertTrue(first_summary["publication"]["selected_root_ids_updated"])
+            self.assertFalse(second_summary["publication"]["selected_root_ids_updated"])
+            self.assertEqual(
+                second_summary["generated_presets"][0]["publication"],
+                {
+                    "published_as_active_subset": True,
+                    "selected_root_ids_updated": False,
+                    "subset_scoped_coupling_refreshed": False,
+                },
             )
 
 

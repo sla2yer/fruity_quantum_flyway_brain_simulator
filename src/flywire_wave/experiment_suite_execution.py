@@ -15,17 +15,24 @@ from .experiment_suite_contract import (
     BASE_CONDITION_LINEAGE_KIND,
     DASHBOARD_SESSION_ROLE_ID,
     EXPERIMENT_ANALYSIS_BUNDLE_ROLE_ID,
+    SATISFIED_DEPENDENCY_WORK_ITEM_STATUSES,
     SEEDED_ABLATION_VARIANT_LINEAGE_KIND,
     SEED_REPLICATE_LINEAGE_KIND,
     SIMULATOR_RESULT_BUNDLE_ROLE_ID,
+    STAGE_EXECUTION_RESULT_WORK_ITEM_STATUSES,
     VALIDATION_BUNDLE_ROLE_ID,
+    WAITING_WORK_ITEM_STATUSES,
     WORK_ITEM_STATUS_BLOCKED,
     WORK_ITEM_STATUS_FAILED,
     WORK_ITEM_STATUS_PARTIAL,
     WORK_ITEM_STATUS_PLANNED,
+    WORK_ITEM_STATUS_READY,
     WORK_ITEM_STATUS_RUNNING,
     WORK_ITEM_STATUS_SKIPPED,
     WORK_ITEM_STATUS_SUCCEEDED,
+    ordered_experiment_suite_work_item_status_counts,
+    roll_up_experiment_suite_work_item_statuses,
+    work_item_status_allows_resume,
     write_experiment_suite_metadata,
 )
 from .experiment_ablation_transforms import EXPERIMENT_SUITE_ABLATION_CONFIG_KEY
@@ -73,17 +80,6 @@ _SIMULATION_LINEAGE_PRIORITY = {
 _ANALYSIS_LINEAGE_PRIORITY = {
     BASE_CONDITION_LINEAGE_KIND: 0,
     ABLATION_VARIANT_LINEAGE_KIND: 1,
-}
-_SATISFIED_DEPENDENCY_STATUSES = {
-    WORK_ITEM_STATUS_SUCCEEDED,
-    WORK_ITEM_STATUS_SKIPPED,
-}
-_RETRYABLE_STATUSES = {
-    WORK_ITEM_STATUS_PLANNED,
-    WORK_ITEM_STATUS_RUNNING,
-    WORK_ITEM_STATUS_BLOCKED,
-    WORK_ITEM_STATUS_FAILED,
-    WORK_ITEM_STATUS_PARTIAL,
 }
 
 StageExecutor = Callable[[Mapping[str, Any]], Mapping[str, Any]]
@@ -159,6 +155,8 @@ def execute_experiment_suite_plan(
         state_path=state_path,
         existing_state=existing_state,
     )
+    _synchronize_waiting_work_item_statuses(state=state, schedule=schedule)
+    write_json(state, state_path)
     _persist_suite_execution_inputs(
         plan=normalized_plan,
         schedule=schedule,
@@ -354,6 +352,7 @@ def execute_experiment_suite_plan(
         }:
             break
 
+    _synchronize_waiting_work_item_statuses(state=state, schedule=schedule)
     _refresh_state_rollups(state)
     write_json(state, state_path)
     package_summary = package_experiment_suite_outputs(
@@ -1285,11 +1284,11 @@ def _resolve_execution_decision(
     blocking = [
         item
         for item in dependency_statuses
-        if item["status"] not in _SATISFIED_DEPENDENCY_STATUSES
+        if item["status"] not in SATISFIED_DEPENDENCY_WORK_ITEM_STATUSES
     ]
     if blocking:
         return {"action": "blocked", "blocking_dependencies": blocking}
-    if status not in _RETRYABLE_STATUSES:
+    if not work_item_status_allows_resume(status):
         raise ValueError(
             f"Unsupported orchestration status {status!r} for work_item_id "
             f"{schedule_entry['work_item_id']!r}."
@@ -1406,30 +1405,13 @@ def _initialize_execution_state(
 
 def _refresh_state_rollups(state: dict[str, Any]) -> None:
     counts: dict[str, int] = defaultdict(int)
+    statuses: list[str] = []
     for item in state["work_items"]:
-        counts[str(item["status"])] += 1
-    ordered_counts = {
-        WORK_ITEM_STATUS_PLANNED: counts.get(WORK_ITEM_STATUS_PLANNED, 0),
-        WORK_ITEM_STATUS_RUNNING: counts.get(WORK_ITEM_STATUS_RUNNING, 0),
-        WORK_ITEM_STATUS_SUCCEEDED: counts.get(WORK_ITEM_STATUS_SUCCEEDED, 0),
-        WORK_ITEM_STATUS_PARTIAL: counts.get(WORK_ITEM_STATUS_PARTIAL, 0),
-        WORK_ITEM_STATUS_FAILED: counts.get(WORK_ITEM_STATUS_FAILED, 0),
-        WORK_ITEM_STATUS_BLOCKED: counts.get(WORK_ITEM_STATUS_BLOCKED, 0),
-        WORK_ITEM_STATUS_SKIPPED: counts.get(WORK_ITEM_STATUS_SKIPPED, 0),
-    }
-    state["status_counts"] = ordered_counts
-    if ordered_counts[WORK_ITEM_STATUS_RUNNING] > 0:
-        state["overall_status"] = WORK_ITEM_STATUS_RUNNING
-    elif ordered_counts[WORK_ITEM_STATUS_FAILED] > 0:
-        state["overall_status"] = WORK_ITEM_STATUS_FAILED
-    elif ordered_counts[WORK_ITEM_STATUS_PARTIAL] > 0:
-        state["overall_status"] = WORK_ITEM_STATUS_PARTIAL
-    elif ordered_counts[WORK_ITEM_STATUS_BLOCKED] > 0:
-        state["overall_status"] = WORK_ITEM_STATUS_BLOCKED
-    elif ordered_counts[WORK_ITEM_STATUS_PLANNED] > 0:
-        state["overall_status"] = WORK_ITEM_STATUS_PARTIAL
-    else:
-        state["overall_status"] = WORK_ITEM_STATUS_SUCCEEDED
+        status = str(item["status"])
+        counts[status] += 1
+        statuses.append(status)
+    state["status_counts"] = ordered_experiment_suite_work_item_status_counts(counts)
+    state["overall_status"] = roll_up_experiment_suite_work_item_statuses(statuses)
 
 
 def _validate_execution_state_against_plan(
@@ -1579,13 +1561,7 @@ def _normalize_stage_execution_result(
 ) -> dict[str, Any]:
     result = dict(raw_result or {})
     status = str(result.get("status", WORK_ITEM_STATUS_SUCCEEDED))
-    if status not in {
-        WORK_ITEM_STATUS_SUCCEEDED,
-        WORK_ITEM_STATUS_PARTIAL,
-        WORK_ITEM_STATUS_FAILED,
-        WORK_ITEM_STATUS_BLOCKED,
-        WORK_ITEM_STATUS_SKIPPED,
-    }:
+    if status not in STAGE_EXECUTION_RESULT_WORK_ITEM_STATUSES:
         raise ValueError(
             f"Stage executor returned unsupported orchestration status {status!r}."
         )
@@ -1614,6 +1590,51 @@ def _normalize_stage_execution_result(
         "summary": copy.deepcopy(dict(summary)),
         "downstream_artifacts": normalized_artifacts,
     }
+
+
+def _synchronize_waiting_work_item_statuses(
+    *,
+    state: dict[str, Any],
+    schedule: Mapping[str, Any],
+) -> None:
+    state_records_by_id = {
+        str(item["work_item_id"]): item for item in state["work_items"]
+    }
+    for entry in schedule["schedule"]:
+        record = state_records_by_id[str(entry["work_item_id"])]
+        current_status = str(record["status"])
+        if current_status not in WAITING_WORK_ITEM_STATUSES:
+            continue
+        dependency_statuses = _dependency_status_snapshot(
+            entry["dependency_work_item_ids"],
+            state_records_by_id=state_records_by_id,
+        )
+        next_status, next_detail = _resolved_waiting_work_item_state(
+            dependency_statuses
+        )
+        record["status"] = next_status
+        record["status_detail"] = next_detail
+    _refresh_state_rollups(state)
+
+
+def _resolved_waiting_work_item_state(
+    dependency_statuses: Sequence[Mapping[str, Any]],
+) -> tuple[str, str]:
+    blocking_dependencies = [
+        item
+        for item in dependency_statuses
+        if item["status"] not in SATISFIED_DEPENDENCY_WORK_ITEM_STATUSES
+    ]
+    if not blocking_dependencies:
+        return WORK_ITEM_STATUS_READY, _ready_status_detail(dependency_statuses)
+    blocking_statuses = {str(item["status"]) for item in blocking_dependencies}
+    if blocking_statuses & {
+        WORK_ITEM_STATUS_FAILED,
+        WORK_ITEM_STATUS_PARTIAL,
+        WORK_ITEM_STATUS_BLOCKED,
+    }:
+        return WORK_ITEM_STATUS_BLOCKED, _blocked_status_detail(blocking_dependencies)
+    return WORK_ITEM_STATUS_PLANNED, _planned_status_detail(blocking_dependencies)
 
 
 def _primary_artifact_role_id(schedule_entry: Mapping[str, Any]) -> str | None:
@@ -1687,6 +1708,28 @@ def _blocked_status_detail(
             for item in blocking_dependencies
         )
     )
+
+
+def _planned_status_detail(
+    waiting_dependencies: Sequence[Mapping[str, Any]],
+) -> str:
+    if not waiting_dependencies:
+        return "Awaiting deterministic schedule execution."
+    return (
+        "Waiting for dependencies to finish: "
+        + ", ".join(
+            f"{item['work_item_id']}={item['status']}"
+            for item in waiting_dependencies
+        )
+    )
+
+
+def _ready_status_detail(
+    dependency_statuses: Sequence[Mapping[str, Any]],
+) -> str:
+    if not dependency_statuses:
+        return "Ready to execute; no upstream work-item dependencies remain."
+    return "All dependencies succeeded or were skipped; ready to execute."
 
 
 def _build_dry_run_summary(

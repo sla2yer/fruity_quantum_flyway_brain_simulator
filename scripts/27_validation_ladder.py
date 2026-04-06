@@ -10,7 +10,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from flywire_wave.validation_ladder_smoke import run_validation_ladder_smoke_workflow
 from flywire_wave.validation_reporting import (
     package_validation_ladder_outputs,
     write_validation_ladder_regression_baseline,
@@ -100,6 +99,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     if args.command == "smoke":
+        from flywire_wave.validation_ladder_smoke import (
+            run_validation_ladder_smoke_workflow,
+        )
+
         baseline_path = None if args.no_baseline else _resolve_optional_path(args.baseline)
         result = run_validation_ladder_smoke_workflow(
             processed_simulator_results_dir=Path(args.processed_simulator_results_dir),

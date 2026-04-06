@@ -24,15 +24,12 @@ from .experiment_suite_contract import (
     SEED_REPLICATE_LINEAGE_KIND,
     SIMULATOR_RESULT_BUNDLE_ROLE_ID,
     SIMULATOR_RESULT_SOURCE_KIND,
+    SUPPORTED_WORK_ITEM_STATUSES,
     VALIDATION_BUNDLE_ROLE_ID,
     VALIDATION_BUNDLE_SOURCE_KIND,
-    WORK_ITEM_STATUS_BLOCKED,
-    WORK_ITEM_STATUS_FAILED,
-    WORK_ITEM_STATUS_PARTIAL,
     WORK_ITEM_STATUS_PLANNED,
-    WORK_ITEM_STATUS_RUNNING,
-    WORK_ITEM_STATUS_SKIPPED,
-    WORK_ITEM_STATUS_SUCCEEDED,
+    ordered_experiment_suite_work_item_status_counts,
+    roll_up_experiment_suite_work_item_statuses,
 )
 from .experiment_suite_planning import (
     EXPERIMENT_SUITE_PLAN_VERSION,
@@ -101,15 +98,6 @@ _STAGE_ROLE_ID = {
     STAGE_ANALYSIS: EXPERIMENT_ANALYSIS_BUNDLE_ROLE_ID,
     STAGE_VALIDATION: VALIDATION_BUNDLE_ROLE_ID,
     STAGE_DASHBOARD: DASHBOARD_SESSION_ROLE_ID,
-}
-_CELL_STATUS_PRIORITY = {
-    WORK_ITEM_STATUS_RUNNING: 0,
-    WORK_ITEM_STATUS_FAILED: 1,
-    WORK_ITEM_STATUS_PARTIAL: 2,
-    WORK_ITEM_STATUS_BLOCKED: 3,
-    WORK_ITEM_STATUS_PLANNED: 4,
-    WORK_ITEM_STATUS_SKIPPED: 5,
-    WORK_ITEM_STATUS_SUCCEEDED: 6,
 }
 _ARTIFACT_IDS = (
     METADATA_JSON_KEY,
@@ -298,15 +286,7 @@ def build_experiment_suite_result_index(
         for item in resolved_state["work_items"]
     }
     stage_status_counts: dict[str, dict[str, int]] = {
-        stage_id: {
-            WORK_ITEM_STATUS_PLANNED: 0,
-            WORK_ITEM_STATUS_RUNNING: 0,
-            WORK_ITEM_STATUS_SUCCEEDED: 0,
-            WORK_ITEM_STATUS_PARTIAL: 0,
-            WORK_ITEM_STATUS_FAILED: 0,
-            WORK_ITEM_STATUS_BLOCKED: 0,
-            WORK_ITEM_STATUS_SKIPPED: 0,
-        }
+        stage_id: ordered_experiment_suite_work_item_status_counts()
         for stage_id in stage_order
     }
 
@@ -1514,26 +1494,17 @@ def _ablation_identity_ids(cell: Mapping[str, Any]) -> list[str]:
 def _roll_up_cell_status(stage_records: Sequence[Mapping[str, Any]]) -> str:
     if not stage_records:
         return WORK_ITEM_STATUS_PLANNED
-    ordered = sorted(
-        (str(item["status"]) for item in stage_records),
-        key=lambda value: int(_CELL_STATUS_PRIORITY.get(value, 999)),
+    return roll_up_experiment_suite_work_item_statuses(
+        [str(item["status"]) for item in stage_records],
+        default_status=WORK_ITEM_STATUS_PLANNED,
     )
-    return ordered[0]
 
 
 def _cell_status_counts(cell_records: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = defaultdict(int)
     for item in cell_records:
         counts[str(item["overall_status"])] += 1
-    return {
-        WORK_ITEM_STATUS_PLANNED: counts.get(WORK_ITEM_STATUS_PLANNED, 0),
-        WORK_ITEM_STATUS_RUNNING: counts.get(WORK_ITEM_STATUS_RUNNING, 0),
-        WORK_ITEM_STATUS_SUCCEEDED: counts.get(WORK_ITEM_STATUS_SUCCEEDED, 0),
-        WORK_ITEM_STATUS_PARTIAL: counts.get(WORK_ITEM_STATUS_PARTIAL, 0),
-        WORK_ITEM_STATUS_FAILED: counts.get(WORK_ITEM_STATUS_FAILED, 0),
-        WORK_ITEM_STATUS_BLOCKED: counts.get(WORK_ITEM_STATUS_BLOCKED, 0),
-        WORK_ITEM_STATUS_SKIPPED: counts.get(WORK_ITEM_STATUS_SKIPPED, 0),
-    }
+    return ordered_experiment_suite_work_item_status_counts(counts)
 
 
 def _summary_metadata_path(summary: Mapping[str, Any]) -> str | None:
@@ -1897,20 +1868,15 @@ def _render_inventory_report(
     )
     for stage_id in result_index["stage_order"]:
         counts = result_index["summary"]["stage_status_counts"][stage_id]
-        lines.append(
-            "- {stage_id}: planned={planned}, running={running}, succeeded={succeeded}, "
-            "partial={partial}, failed={failed}, blocked={blocked}, skipped={skipped}".format(
-                stage_id=stage_id,
-                planned=counts.get(WORK_ITEM_STATUS_PLANNED, 0),
-                running=counts.get(WORK_ITEM_STATUS_RUNNING, 0),
-                succeeded=counts.get(WORK_ITEM_STATUS_SUCCEEDED, 0),
-                partial=counts.get(WORK_ITEM_STATUS_PARTIAL, 0),
-                failed=counts.get(WORK_ITEM_STATUS_FAILED, 0),
-                blocked=counts.get(WORK_ITEM_STATUS_BLOCKED, 0),
-                skipped=counts.get(WORK_ITEM_STATUS_SKIPPED, 0),
-            )
-        )
+        lines.append(f"- {stage_id}: {_format_work_item_status_counts(counts)}")
     return "\n".join(lines) + "\n"
+
+
+def _format_work_item_status_counts(counts: Mapping[str, Any]) -> str:
+    ordered = ordered_experiment_suite_work_item_status_counts(counts)
+    return ", ".join(
+        f"{status}={ordered[status]}" for status in SUPPORTED_WORK_ITEM_STATUSES
+    )
 
 
 def _normalize_optional_nonempty_string(

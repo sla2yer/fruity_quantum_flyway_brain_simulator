@@ -16,10 +16,12 @@ from flywire_wave.experiment_suite_contract import (
     BASE_CONDITION_LINEAGE_KIND,
     WORK_ITEM_STATUS_BLOCKED,
     WORK_ITEM_STATUS_FAILED,
+    WORK_ITEM_STATUS_READY,
     WORK_ITEM_STATUS_SUCCEEDED,
 )
 from flywire_wave.experiment_suite_execution import (
     DEFAULT_EXECUTION_STATE_FILENAME,
+    build_experiment_suite_execution_schedule,
     execute_experiment_suite_plan,
     load_experiment_suite_execution_state,
 )
@@ -275,6 +277,99 @@ class ExperimentSuitePackagingTest(unittest.TestCase):
                 load_experiment_suite_result_index(second_package["result_index_path"]),
                 result_index,
             )
+
+    def test_packaging_rolls_up_ready_work_items_in_result_index_and_inventory_report(
+        self,
+    ) -> None:
+        schema_path = ROOT / "schemas" / "milestone_1_experiment_manifest.schema.json"
+        design_lock_path = ROOT / "config" / "milestone_1_design_lock.yaml"
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            manifest_path = _write_manifest_fixture(
+                tmp_dir,
+                manifest_overrides={"seed_sweep": [11, 17], "random_seed": 11},
+            )
+            config_path = _write_simulation_fixture(tmp_dir)
+            _record_fixture_stimulus_bundle(
+                manifest_path=manifest_path,
+                processed_stimulus_dir=tmp_dir / "out" / "stimuli",
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            suite_manifest_path = _write_suite_manifest_fixture(
+                tmp_dir=tmp_dir,
+                manifest_path=manifest_path,
+                suite_block=_minimal_execution_suite_block(
+                    output_root=tmp_dir / "out" / "suite_packaging"
+                ),
+            )
+            plan = resolve_experiment_suite_plan(
+                config_path=config_path,
+                suite_manifest_path=suite_manifest_path,
+                schema_path=schema_path,
+                design_lock_path=design_lock_path,
+            )
+            schedule = build_experiment_suite_execution_schedule(plan)
+            failing_work_item_id = next(
+                item["work_item_id"]
+                for item in schedule["schedule"]
+                if item["stage_id"] == "simulation"
+            )
+
+            summary = execute_experiment_suite_plan(
+                plan,
+                fail_fast=True,
+                stage_executors={
+                    "simulation": _fixture_packaging_stage_executor(
+                        "simulation",
+                        fail_work_item_id=failing_work_item_id,
+                    ),
+                    "analysis": _fixture_packaging_stage_executor("analysis"),
+                    "validation": _fixture_packaging_stage_executor("validation"),
+                    "dashboard": _fixture_packaging_stage_executor("dashboard"),
+                },
+            )
+
+            self.assertEqual(summary["overall_status"], WORK_ITEM_STATUS_FAILED)
+
+            package_metadata = load_experiment_suite_package_metadata(
+                summary["package"]["metadata_path"]
+            )
+            result_index = load_experiment_suite_result_index(package_metadata)
+            ready_cells = discover_experiment_suite_package_cells(
+                package_metadata,
+                overall_status=WORK_ITEM_STATUS_READY,
+            )
+            inventory_report_path = discover_experiment_suite_package_paths(
+                package_metadata
+            )[INVENTORY_REPORT_ARTIFACT_ID]
+            inventory_report = inventory_report_path.read_text(encoding="utf-8")
+
+            self.assertEqual(
+                result_index["summary"]["stage_status_counts"]["simulation"][
+                    WORK_ITEM_STATUS_READY
+                ],
+                3,
+            )
+            self.assertEqual(
+                package_metadata["summary"]["stage_status_counts"]["simulation"][
+                    WORK_ITEM_STATUS_READY
+                ],
+                3,
+            )
+            self.assertEqual(
+                result_index["summary"]["cell_status_counts"][WORK_ITEM_STATUS_READY],
+                3,
+            )
+            self.assertEqual(len(ready_cells), 3)
+            self.assertTrue(
+                all(
+                    cell["stage_records"][0]["status"] == WORK_ITEM_STATUS_READY
+                    for cell in ready_cells
+                )
+            )
+            self.assertIn("ready=3", inventory_report)
 
 
 def _fixture_packaging_stage_executor(

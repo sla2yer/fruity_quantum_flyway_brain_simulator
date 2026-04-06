@@ -126,6 +126,11 @@ runner may mark a work item as `failed` or `blocked`; that does not imply
 anything about biological plausibility. Grant-owned scientific interpretation
 still begins on the validation and review surfaces defined earlier.
 
+Planner output initializes work items as `planned`. The persisted execution
+state may promote waiting work items to `ready` once all declared dependencies
+have succeeded or been skipped. Stage executors themselves only return terminal
+attempt results: `succeeded`, `partial`, `failed`, `blocked`, or `skipped`.
+
 ## Artifact Roles And Discovery
 
 The suite contract freezes one artifact-role catalog for both upstream inputs

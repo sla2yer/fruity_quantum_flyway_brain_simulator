@@ -710,6 +710,9 @@ freezes:
   `failed`,
   `blocked`,
   and `skipped`
+- suite planning persists work items as `planned`; execution-state persistence
+  may promote them to `ready` after dependencies succeed or are skipped, while
+  stage executors only report terminal attempt outcomes
 - metadata-backed artifact-role hooks for:
   - upstream `suite_manifest_input`, `experiment_manifest_input`, and
     `simulation_plan`

@@ -50,6 +50,53 @@ class VerifyAccessScriptTest(unittest.TestCase):
             self.assertIn("FlyWire/CAVE info lookup failed for datastack 'flywire_fafb_public'", combined_output)
             self.assertIn("dataset.datastack_name", combined_output)
 
+    def test_verify_auth_failures_print_token_refresh_guidance(self) -> None:
+        scenarios = [
+            (
+                "client-init-401",
+                {"VERIFY_STUB_CAVE_INIT_MODE": "http401"},
+                "FlyWire/CAVE client initialization auth failed for datastack 'flywire_fafb_public': HTTP 401",
+            ),
+            (
+                "client-init-403",
+                {"VERIFY_STUB_CAVE_INIT_MODE": "http403"},
+                "FlyWire/CAVE client initialization auth failed for datastack 'flywire_fafb_public': HTTP 403",
+            ),
+            (
+                "info-lookup-401",
+                {"VERIFY_STUB_INFO_MODE": "http401"},
+                "FlyWire/CAVE info lookup auth failed for datastack 'flywire_fafb_public': HTTP 401",
+            ),
+            (
+                "info-lookup-403",
+                {"VERIFY_STUB_INFO_MODE": "http403"},
+                "FlyWire/CAVE info lookup auth failed for datastack 'flywire_fafb_public': HTTP 403",
+            ),
+        ]
+
+        for name, env_overrides, expected_message in scenarios:
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+                    tmp_dir = Path(tmp_dir_str)
+                    config_path = _write_verify_config(tmp_dir, fetch_skeletons=False)
+                    stub_dir = _write_verify_stubs(tmp_dir)
+
+                    result = _run_verify(
+                        config_path,
+                        stub_dir,
+                        env_overrides=env_overrides,
+                        expect_success=False,
+                    )
+
+                    self.assertEqual(result.returncode, 1)
+                    combined_output = result.stdout + result.stderr
+                    self.assertNotIn("Traceback", combined_output)
+                    self.assertIn(expected_message, combined_output)
+                    self.assertIn(
+                        "Next step: refresh `FLYWIRE_TOKEN` or your local caveclient token, then rerun `make verify`.",
+                        combined_output,
+                    )
+
     def test_verify_fails_when_token_sync_needs_cloudvolume(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
@@ -160,6 +207,113 @@ class VerifyAccessScriptTest(unittest.TestCase):
             self.assertIn("meshing.require_skeletons", combined_output)
             self.assertIn("meshing.fetch_skeletons", combined_output)
 
+    def test_verify_require_materialize_handles_transient_failures(self) -> None:
+        scenarios = [
+            ("http503", "Materialize access is temporarily unavailable"),
+            ("network", "Materialize access is temporarily unavailable"),
+        ]
+
+        for mode, expected_message in scenarios:
+            with self.subTest(mode=mode):
+                with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+                    tmp_dir = Path(tmp_dir_str)
+                    config_path = _write_verify_config(tmp_dir, fetch_skeletons=False)
+                    stub_dir = _write_verify_stubs(tmp_dir)
+
+                    result = _run_verify(
+                        config_path,
+                        stub_dir,
+                        env_overrides={"VERIFY_STUB_MATERIALIZE_MODE": mode},
+                        extra_args=["--require-materialize"],
+                        expect_success=False,
+                    )
+
+                    self.assertEqual(result.returncode, 1)
+                    combined_output = result.stdout + result.stderr
+                    self.assertIn(expected_message, combined_output)
+                    self.assertIn(
+                        "Next step: retry after the FlyWire materialize service recovers.",
+                        combined_output,
+                    )
+
+    def test_verify_require_materialize_rejects_invisible_version(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            config_path = _write_verify_config(tmp_dir, fetch_skeletons=False)
+            stub_dir = _write_verify_stubs(tmp_dir)
+
+            result = _run_verify(
+                config_path,
+                stub_dir,
+                env_overrides={"VERIFY_STUB_MATERIALIZE_MODE": "invisible-version"},
+                extra_args=["--require-materialize"],
+                expect_success=False,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("Requested version: 783", combined_output)
+            self.assertIn("Materialization versions visible: [782]", combined_output)
+            self.assertIn(
+                "Requested materialization version 783 is not visible in this environment.",
+                combined_output,
+            )
+
+    def test_verify_require_materialize_success_reports_versions_and_tables(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            config_path = _write_verify_config(tmp_dir, fetch_skeletons=False)
+            stub_dir = _write_verify_stubs(tmp_dir, include_fafbseg=True)
+
+            result = _run_verify(
+                config_path,
+                stub_dir,
+                extra_args=["--require-materialize"],
+            )
+
+            self.assertEqual(result.returncode, 0)
+            combined_output = result.stdout + result.stderr
+            self.assertIn("Requested version: 783", combined_output)
+            self.assertIn("Materialization versions visible: [783]", combined_output)
+            self.assertIn("Tables: ['cells']", combined_output)
+            self.assertIn("Materialize access: OK", combined_output)
+
+    def test_verify_reports_token_sync_success_outcomes(self) -> None:
+        scenarios = [
+            ("updated", "", "FlyWire token sync: updated local secret storage"),
+            (
+                "already-configured",
+                "already-configured",
+                "FlyWire token sync: already configured",
+            ),
+        ]
+
+        for name, credential_mode, expected_message in scenarios:
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
+                    tmp_dir = Path(tmp_dir_str)
+                    config_path = _write_verify_config(tmp_dir, fetch_skeletons=False)
+                    stub_dir = _write_verify_stubs(
+                        tmp_dir,
+                        include_fafbseg=True,
+                        include_cloudvolume=True,
+                    )
+
+                    result = _run_verify(
+                        config_path,
+                        stub_dir,
+                        env_overrides={
+                            "FLYWIRE_TOKEN": "secret-token",
+                            "VERIFY_STUB_CREDENTIAL_MODE": credential_mode,
+                        },
+                    )
+
+                    self.assertEqual(result.returncode, 0)
+                    combined_output = result.stdout + result.stderr
+                    self.assertIn(expected_message, combined_output)
+                    self.assertIn("fafbseg setup: OK", combined_output)
+                    self.assertIn("Mesh preflight looks good.", combined_output)
+
     def test_verify_succeeds_when_mesh_prerequisites_are_present(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
@@ -193,6 +347,7 @@ def _run_verify(
     env["FLYWIRE_TOKEN"] = ""
     env["VERIFY_STUB_INFO_MODE"] = "ok"
     env["VERIFY_STUB_CAVE_INIT_MODE"] = "ok"
+    env["VERIFY_STUB_MATERIALIZE_MODE"] = "ok"
     env["VERIFY_STUB_SECRET_MODE"] = ""
     env["VERIFY_STUB_CREDENTIAL_MODE"] = ""
     existing_pythonpath = env.get("PYTHONPATH", "")
@@ -266,6 +421,19 @@ def _write_verify_stubs(
     stub_dir = fixture_dir / "stubs"
     stub_dir.mkdir(parents=True, exist_ok=True)
 
+    (stub_dir / "sitecustomize.py").write_text(
+        textwrap.dedent(
+            """
+            import time
+
+
+            time.sleep = lambda _seconds: None
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
     (stub_dir / "requests.py").write_text(
         textwrap.dedent(
             """
@@ -324,6 +492,12 @@ def _write_verify_stubs(
                             f"https://global.daf-apis.com/info/datastack/{datastack_name}",
                             "unknown datastack",
                         )
+                    if mode == "http401":
+                        raise _http_error(
+                            401,
+                            f"https://global.daf-apis.com/info/datastack/{datastack_name}",
+                            "unauthorized",
+                        )
                     if mode == "http403":
                         raise _http_error(
                             403,
@@ -339,10 +513,30 @@ def _write_verify_stubs(
 
             class _MaterializeClient:
                 def get_versions(self) -> list[int]:
+                    mode = os.getenv("VERIFY_STUB_MATERIALIZE_MODE", "ok")
+                    if mode == "http503":
+                        raise _http_error(
+                            503,
+                            "https://global.daf-apis.com/materialize/versions",
+                            "service unavailable",
+                        )
+                    if mode == "network":
+                        raise requests.ConnectionError("stub materialize network failure")
+                    if mode == "invisible-version":
+                        return [782]
                     return [783]
 
 
                 def get_tables(self) -> list[str]:
+                    mode = os.getenv("VERIFY_STUB_MATERIALIZE_MODE", "ok")
+                    if mode == "http503":
+                        raise _http_error(
+                            503,
+                            "https://global.daf-apis.com/materialize/tables",
+                            "service unavailable",
+                        )
+                    if mode == "network":
+                        raise requests.ConnectionError("stub materialize network failure")
                     return ["cells"]
 
 
@@ -352,6 +546,8 @@ def _write_verify_stubs(
                     mode = os.getenv("VERIFY_STUB_CAVE_INIT_MODE", "ok")
                     if mode == "http401":
                         raise _http_error(401, "https://global.daf-apis.com/info", "bad token")
+                    if mode == "http403":
+                        raise _http_error(403, "https://global.daf-apis.com/info", "forbidden")
                     if mode == "network":
                         raise requests.ConnectionError("stub init network failure")
                     if mode == "timeout":

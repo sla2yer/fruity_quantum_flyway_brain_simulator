@@ -66,6 +66,9 @@ from .skeleton_runtime_assets import (
 from .surface_operators import deserialize_sparse_matrix
 
 
+ROOT_ASSET_RECORD_VERSION = "simulation_root_asset_record.v1"
+
+
 def resolve_subset_manifest_reference(
     *,
     subset_name: Any,
@@ -248,43 +251,37 @@ def resolve_circuit_assets(
                 f"Selected root {root_id} is missing ready edge coupling bundles "
                 f"{missing_edge_paths!r}."
             )
+        operator_contract_identity = _build_operator_contract_identity(
+            operator_bundle=operator_bundle,
+            operator_asset_records=operator_asset_records,
+        )
+        coupling_contract_identity = _build_coupling_contract_identity(
+            coupling_bundle=coupling_bundle,
+            coupling_asset_records=coupling_asset_records,
+            edge_bundle_records=edge_bundle_records,
+        )
         per_root_assets.append(
             {
                 "root_id": root_id,
                 "cell_type": str(record.get("cell_type", "")),
                 "project_role": str(record.get("project_role", "")),
-                "geometry_asset_records": geometry_asset_records,
-                "operator_bundle_status": str(operator_bundle["status"]),
-                "operator_asset_records": operator_asset_records,
-                "required_operator_assets": {
-                    asset_key: str(operator_asset_records[asset_key]["path"])
-                    for asset_key in operator_asset_records
+                "asset_record": {
+                    "version": ROOT_ASSET_RECORD_VERSION,
+                    "geometry": {
+                        "asset_records": geometry_asset_records,
+                    },
+                    "operator": {
+                        "bundle_metadata": operator_bundle,
+                        "asset_records": operator_asset_records,
+                        "contract_identity": operator_contract_identity,
+                    },
+                    "coupling": {
+                        "bundle_metadata": coupling_bundle,
+                        "asset_records": coupling_asset_records,
+                        "edge_bundle_records": edge_bundle_records,
+                        "contract_identity": coupling_contract_identity,
+                    },
                 },
-                "descriptor_sidecar_path": str(
-                    Path(str(record.get("descriptor_sidecar_path", ""))).resolve()
-                ),
-                "qa_sidecar_path": str(
-                    Path(str(record.get("qa_sidecar_path", ""))).resolve()
-                ),
-                "coupling_bundle_status": str(coupling_bundle["status"]),
-                "coupling_asset_records": coupling_asset_records,
-                "required_coupling_assets": {
-                    LOCAL_SYNAPSE_REGISTRY_KEY: str(
-                        coupling_asset_records[LOCAL_SYNAPSE_REGISTRY_KEY]["path"]
-                    ),
-                    INCOMING_ANCHOR_MAP_KEY: str(
-                        coupling_asset_records[INCOMING_ANCHOR_MAP_KEY]["path"]
-                    ),
-                    OUTGOING_ANCHOR_MAP_KEY: str(
-                        coupling_asset_records[OUTGOING_ANCHOR_MAP_KEY]["path"]
-                    ),
-                    COUPLING_INDEX_KEY: str(
-                        coupling_asset_records[COUPLING_INDEX_KEY]["path"]
-                    ),
-                },
-                "edge_bundle_paths": edge_bundle_records,
-                "operator_bundle": operator_bundle,
-                "coupling_bundle": coupling_bundle,
             }
         )
 
@@ -299,7 +296,9 @@ def resolve_circuit_assets(
                     "root_id": item["root_id"],
                     "cell_type": item["cell_type"],
                     "project_role": item["project_role"],
-                    "coupling_bundle": item["coupling_bundle"],
+                    "coupling_contract_identity": copy.deepcopy(
+                        _coupling_contract_identity(item)
+                    ),
                 }
                 for item in per_root_assets
             ],
@@ -315,7 +314,9 @@ def resolve_circuit_assets(
                     "root_id": item["root_id"],
                     "cell_type": item["cell_type"],
                     "project_role": item["project_role"],
-                    "operator_bundle": item["operator_bundle"],
+                    "operator_contract_identity": copy.deepcopy(
+                        _operator_contract_identity(item)
+                    ),
                 }
                 for item in per_root_assets
             ],
@@ -344,10 +345,21 @@ def resolve_circuit_assets(
 def load_mixed_fidelity_descriptor_payload(
     root_mapping: Mapping[str, Any],
 ) -> dict[str, Any] | None:
-    descriptor_sidecar_path = root_mapping.get("descriptor_sidecar_path")
-    if descriptor_sidecar_path is None:
-        return None
-    descriptor_path = Path(str(descriptor_sidecar_path)).resolve()
+    try:
+        descriptor_sidecar = _require_mapping(
+            resolve_local_asset_reference(
+                root_mapping=root_mapping,
+                asset_key="geometry_descriptors",
+            ),
+            field_name="selected_root_asset.geometry_descriptors",
+        )
+    except (KeyError, TypeError, ValueError):
+        descriptor_sidecar_path = root_mapping.get("descriptor_sidecar_path")
+        if descriptor_sidecar_path is None:
+            return None
+        descriptor_path = Path(str(descriptor_sidecar_path)).resolve()
+    else:
+        descriptor_path = Path(str(descriptor_sidecar["path"])).resolve()
     if not descriptor_path.exists():
         return None
     descriptor_payload = load_json(descriptor_path)
@@ -439,18 +451,9 @@ def resolve_local_asset_reference(
     root_mapping: Mapping[str, Any],
     asset_key: str,
 ) -> Any:
-    geometry_asset_records = _require_mapping(
-        root_mapping.get("geometry_asset_records"),
-        field_name="selected_root_asset.geometry_asset_records",
-    )
-    operator_asset_records = _require_mapping(
-        root_mapping.get("operator_asset_records"),
-        field_name="selected_root_asset.operator_asset_records",
-    )
-    coupling_asset_records = _require_mapping(
-        root_mapping.get("coupling_asset_records"),
-        field_name="selected_root_asset.coupling_asset_records",
-    )
+    geometry_asset_records = _geometry_asset_records(root_mapping)
+    operator_asset_records = _operator_asset_records(root_mapping)
+    coupling_asset_records = _coupling_asset_records(root_mapping)
     if asset_key == "raw_mesh":
         return _require_mapping(
             geometry_asset_records[RAW_MESH_KEY],
@@ -578,7 +581,7 @@ def selected_peer_edge_bundles(
     return [
         copy.deepcopy(_require_mapping(item, field_name="edge_bundle_paths"))
         for item in _require_sequence(
-            root_mapping.get("edge_bundle_paths"),
+            _edge_bundle_records(root_mapping),
             field_name="selected_root_asset.edge_bundle_paths",
         )
         if bool(_require_mapping(item, field_name="edge_bundle_paths").get("selected_peer"))
@@ -594,23 +597,17 @@ def resolve_surface_wave_operator_asset(
     hybrid_morphology: Mapping[str, Any],
 ) -> dict[str, Any]:
     root_id = int(root_mapping["root_id"])
-    operator_bundle = _require_mapping(
-        root_mapping.get("operator_bundle"),
-        field_name=f"circuit_assets.selected_root_assets[{root_id}].operator_bundle",
-    )
+    operator_bundle = _operator_bundle_metadata(root_mapping)
     operator_status = _normalize_nonempty_string(
-        root_mapping.get("operator_bundle_status", operator_bundle.get("status")),
-        field_name=f"circuit_assets.selected_root_assets[{root_id}].operator_bundle_status",
+        operator_bundle.get("status"),
+        field_name=f"circuit_assets.selected_root_assets[{root_id}].operator_bundle.status",
     )
     if operator_status != ASSET_STATUS_READY:
         raise ValueError(
             f"surface_wave arm {arm_id!r} requires ready operator bundles for "
             f"selected root {root_id}, found status {operator_status!r}."
         )
-    operator_asset_records = _require_mapping(
-        root_mapping.get("operator_asset_records"),
-        field_name=f"circuit_assets.selected_root_assets[{root_id}].operator_asset_records",
-    )
+    operator_asset_records = _operator_asset_records(root_mapping)
     missing_operator_paths = [
         asset_key
         for asset_key in (
@@ -644,10 +641,13 @@ def resolve_surface_wave_operator_asset(
         )
     ).resolve()
     loaded_operator_metadata = load_operator_bundle_metadata(metadata_path)
-    if loaded_operator_metadata != dict(operator_bundle):
+    if _build_operator_contract_identity(
+        operator_bundle=loaded_operator_metadata,
+        operator_asset_records=operator_asset_records,
+    ) != _operator_contract_identity(root_mapping):
         raise ValueError(
             f"surface_wave arm {arm_id!r} found operator metadata drift for root "
-            f"{root_id}: manifest record does not match {metadata_path}."
+            f"{root_id}: canonical operator contract does not match {metadata_path}."
         )
 
     normalization = _normalize_nonempty_string(
@@ -779,10 +779,7 @@ def resolve_skeleton_runtime_asset_reference(
     *,
     root_mapping: Mapping[str, Any],
 ) -> dict[str, Any]:
-    geometry_asset_records = _require_mapping(
-        root_mapping.get("geometry_asset_records"),
-        field_name="selected_root_asset.geometry_asset_records",
-    )
+    geometry_asset_records = _geometry_asset_records(root_mapping)
     raw_skeleton_record = _require_mapping(
         geometry_asset_records[RAW_SKELETON_KEY],
         field_name="selected_root_asset.raw_skeleton",
@@ -840,10 +837,7 @@ def resolve_root_coupling_asset_record(
     hybrid_morphology: Mapping[str, Any],
 ) -> dict[str, Any]:
     root_id = int(root_mapping["root_id"])
-    coupling_bundle = _require_mapping(
-        root_mapping.get("coupling_bundle"),
-        field_name=f"circuit_assets.selected_root_assets[{root_id}].coupling_bundle",
-    )
+    coupling_bundle = _coupling_bundle_metadata(root_mapping)
     topology_family = _normalize_nonempty_string(
         coupling_bundle.get("topology_family"),
         field_name=f"coupling_bundle[{root_id}].topology_family",
@@ -873,10 +867,7 @@ def resolve_root_coupling_asset_record(
             f"{blocked_selected_edges!r}."
         )
 
-    coupling_asset_records = _require_mapping(
-        root_mapping.get("coupling_asset_records"),
-        field_name=f"circuit_assets.selected_root_assets[{root_id}].coupling_asset_records",
-    )
+    coupling_asset_records = _coupling_asset_records(root_mapping)
     return {
         "root_id": root_id,
         "hybrid_morphology": copy.deepcopy(hybrid_morphology),
@@ -910,6 +901,370 @@ def resolve_root_coupling_asset_record(
         ),
         "selected_edge_bundle_paths": selected_edge_bundle_paths,
     }
+
+
+def _build_operator_contract_identity(
+    *,
+    operator_bundle: Mapping[str, Any],
+    operator_asset_records: Mapping[str, Any],
+) -> dict[str, Any]:
+    transfer_operators = _require_mapping(
+        operator_bundle.get("transfer_operators"),
+        field_name="operator_bundle.transfer_operators",
+    )
+    return {
+        "contract_version": str(operator_bundle["contract_version"]),
+        "status": str(operator_bundle["status"]),
+        "realization_mode": str(operator_bundle["realization_mode"]),
+        "preferred_discretization_family": str(
+            operator_bundle["preferred_discretization_family"]
+        ),
+        "discretization_family": str(operator_bundle["discretization_family"]),
+        "mass_treatment": str(operator_bundle["mass_treatment"]),
+        "normalization": str(operator_bundle["normalization"]),
+        "boundary_condition_mode": str(operator_bundle["boundary_condition_mode"]),
+        "anisotropy_model": str(operator_bundle["anisotropy_model"]),
+        "fallback_policy": copy.deepcopy(operator_bundle["fallback_policy"]),
+        "operator_assembly": copy.deepcopy(operator_bundle["operator_assembly"]),
+        "geodesic_neighborhood": copy.deepcopy(operator_bundle["geodesic_neighborhood"]),
+        "fine_operator_path": str(
+            Path(str(operator_asset_records[FINE_OPERATOR_KEY]["path"])).resolve()
+        ),
+        "coarse_operator_path": str(
+            Path(str(operator_asset_records[COARSE_OPERATOR_KEY]["path"])).resolve()
+        ),
+        "transfer_operator_path": str(
+            Path(str(operator_asset_records[TRANSFER_OPERATORS_KEY]["path"])).resolve()
+        ),
+        "operator_metadata_path": str(
+            Path(str(operator_asset_records[OPERATOR_METADATA_KEY]["path"])).resolve()
+        ),
+        "surface_to_patch_membership_available": _transfer_operator_available(
+            transfer_operators,
+            transfer_key="surface_to_patch_membership",
+        ),
+        "fine_to_coarse_restriction_available": _transfer_operator_available(
+            transfer_operators,
+            transfer_key="fine_to_coarse_restriction",
+        ),
+        "coarse_to_fine_prolongation_available": _transfer_operator_available(
+            transfer_operators,
+            transfer_key="coarse_to_fine_prolongation",
+        ),
+        "normalized_state_transfer_available": _transfer_operator_available(
+            transfer_operators,
+            transfer_key="normalized_state_transfer",
+        ),
+    }
+
+
+def _build_coupling_contract_identity(
+    *,
+    coupling_bundle: Mapping[str, Any],
+    coupling_asset_records: Mapping[str, Any],
+    edge_bundle_records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "contract_version": str(coupling_bundle["contract_version"]),
+        "status": str(coupling_bundle["status"]),
+        "topology_family": str(coupling_bundle["topology_family"]),
+        "fallback_hierarchy": copy.deepcopy(coupling_bundle["fallback_hierarchy"]),
+        "kernel_family": str(coupling_bundle["kernel_family"]),
+        "sign_representation": str(coupling_bundle["sign_representation"]),
+        "delay_representation": str(coupling_bundle["delay_representation"]),
+        "delay_model": str(coupling_bundle["delay_model"]),
+        "delay_model_parameters": copy.deepcopy(
+            coupling_bundle["delay_model_parameters"]
+        ),
+        "aggregation_rule": str(coupling_bundle["aggregation_rule"]),
+        "missing_geometry_policy": str(coupling_bundle["missing_geometry_policy"]),
+        "source_cloud_normalization": str(
+            coupling_bundle["source_cloud_normalization"]
+        ),
+        "target_cloud_normalization": str(
+            coupling_bundle["target_cloud_normalization"]
+        ),
+        "local_synapse_registry_path": str(
+            Path(str(coupling_asset_records[LOCAL_SYNAPSE_REGISTRY_KEY]["path"])).resolve()
+        ),
+        "incoming_anchor_map_path": str(
+            Path(str(coupling_asset_records[INCOMING_ANCHOR_MAP_KEY]["path"])).resolve()
+        ),
+        "outgoing_anchor_map_path": str(
+            Path(str(coupling_asset_records[OUTGOING_ANCHOR_MAP_KEY]["path"])).resolve()
+        ),
+        "coupling_index_path": str(
+            Path(str(coupling_asset_records[COUPLING_INDEX_KEY]["path"])).resolve()
+        ),
+        "edge_bundle_records": [
+            {
+                "pre_root_id": int(edge_bundle["pre_root_id"]),
+                "post_root_id": int(edge_bundle["post_root_id"]),
+                "peer_root_id": int(edge_bundle["peer_root_id"]),
+                "relation_to_root": str(edge_bundle["relation_to_root"]),
+                "path": str(Path(str(edge_bundle["path"])).resolve()),
+                "status": str(edge_bundle["status"]),
+                "selected_peer": bool(edge_bundle["selected_peer"]),
+            }
+            for edge_bundle in edge_bundle_records
+        ],
+    }
+
+
+def _asset_record(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    asset_record = root_mapping.get("asset_record")
+    if asset_record is None:
+        return None
+    return _require_mapping(
+        asset_record,
+        field_name="selected_root_asset.asset_record",
+    )
+
+
+def _geometry_asset_records(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    asset_record = _asset_record(root_mapping)
+    if asset_record is not None:
+        geometry = _require_mapping(
+            asset_record.get("geometry"),
+            field_name="selected_root_asset.asset_record.geometry",
+        )
+        return _require_mapping(
+            geometry.get("asset_records"),
+            field_name="selected_root_asset.asset_record.geometry.asset_records",
+        )
+    return _require_mapping(
+        root_mapping.get("geometry_asset_records"),
+        field_name="selected_root_asset.geometry_asset_records",
+    )
+
+
+def _operator_asset_section(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    asset_record = _asset_record(root_mapping)
+    if asset_record is not None:
+        return _require_mapping(
+            asset_record.get("operator"),
+            field_name="selected_root_asset.asset_record.operator",
+        )
+    return {
+        "bundle_metadata": _require_mapping(
+            root_mapping.get("operator_bundle"),
+            field_name="selected_root_asset.operator_bundle",
+        ),
+        "asset_records": _require_mapping(
+            root_mapping.get("operator_asset_records"),
+            field_name="selected_root_asset.operator_asset_records",
+        ),
+        "contract_identity": _build_operator_contract_identity(
+            operator_bundle=_require_mapping(
+                root_mapping.get("operator_bundle"),
+                field_name="selected_root_asset.operator_bundle",
+            ),
+            operator_asset_records=_require_mapping(
+                root_mapping.get("operator_asset_records"),
+                field_name="selected_root_asset.operator_asset_records",
+            ),
+        ),
+    }
+
+
+def _operator_bundle_metadata(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    return _require_mapping(
+        _operator_asset_section(root_mapping).get("bundle_metadata"),
+        field_name="selected_root_asset.operator.bundle_metadata",
+    )
+
+
+def _operator_asset_records(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    return _require_mapping(
+        _operator_asset_section(root_mapping).get("asset_records"),
+        field_name="selected_root_asset.operator.asset_records",
+    )
+
+
+def _operator_contract_identity(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    operator_section = _operator_asset_section(root_mapping)
+    contract_identity = operator_section.get("contract_identity")
+    if contract_identity is not None:
+        return _require_mapping(
+            contract_identity,
+            field_name="selected_root_asset.operator.contract_identity",
+        )
+    return _build_operator_contract_identity(
+        operator_bundle=_operator_bundle_metadata(root_mapping),
+        operator_asset_records=_operator_asset_records(root_mapping),
+    )
+
+
+def _coupling_asset_section(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    asset_record = _asset_record(root_mapping)
+    if asset_record is not None:
+        return _require_mapping(
+            asset_record.get("coupling"),
+            field_name="selected_root_asset.asset_record.coupling",
+        )
+    coupling_bundle = root_mapping.get("coupling_bundle")
+    coupling_asset_records = root_mapping.get("coupling_asset_records")
+    if coupling_bundle is not None and coupling_asset_records is not None:
+        return {
+            "bundle_metadata": _require_mapping(
+                coupling_bundle,
+                field_name="selected_root_asset.coupling_bundle",
+            ),
+            "asset_records": _require_mapping(
+                coupling_asset_records,
+                field_name="selected_root_asset.coupling_asset_records",
+            ),
+            "edge_bundle_records": _require_sequence(
+                root_mapping.get("edge_bundle_paths"),
+                field_name="selected_root_asset.edge_bundle_paths",
+            ),
+            "contract_identity": _build_coupling_contract_identity(
+                coupling_bundle=_require_mapping(
+                    coupling_bundle,
+                    field_name="selected_root_asset.coupling_bundle",
+                ),
+                coupling_asset_records=_require_mapping(
+                    coupling_asset_records,
+                    field_name="selected_root_asset.coupling_asset_records",
+                ),
+                edge_bundle_records=_require_sequence(
+                    root_mapping.get("edge_bundle_paths"),
+                    field_name="selected_root_asset.edge_bundle_paths",
+                ),
+            ),
+        }
+    required_coupling_assets = root_mapping.get("required_coupling_assets")
+    if required_coupling_assets is not None:
+        required_paths = _require_mapping(
+            required_coupling_assets,
+            field_name="selected_root_asset.required_coupling_assets",
+        )
+        synthesized_asset_records = {
+            LOCAL_SYNAPSE_REGISTRY_KEY: {
+                "path": str(required_paths[LOCAL_SYNAPSE_REGISTRY_KEY]),
+                "status": str(root_mapping.get("coupling_bundle_status", ASSET_STATUS_READY)),
+                "exists": Path(str(required_paths[LOCAL_SYNAPSE_REGISTRY_KEY])).exists(),
+            },
+            INCOMING_ANCHOR_MAP_KEY: {
+                "path": str(required_paths[INCOMING_ANCHOR_MAP_KEY]),
+                "status": str(root_mapping.get("coupling_bundle_status", ASSET_STATUS_READY)),
+                "exists": Path(str(required_paths[INCOMING_ANCHOR_MAP_KEY])).exists(),
+            },
+            OUTGOING_ANCHOR_MAP_KEY: {
+                "path": str(required_paths[OUTGOING_ANCHOR_MAP_KEY]),
+                "status": str(root_mapping.get("coupling_bundle_status", ASSET_STATUS_READY)),
+                "exists": Path(str(required_paths[OUTGOING_ANCHOR_MAP_KEY])).exists(),
+            },
+            COUPLING_INDEX_KEY: {
+                "path": str(required_paths[COUPLING_INDEX_KEY]),
+                "status": str(root_mapping.get("coupling_bundle_status", ASSET_STATUS_READY)),
+                "exists": Path(str(required_paths[COUPLING_INDEX_KEY])).exists(),
+            },
+        }
+        return {
+            "bundle_metadata": {
+                "status": str(root_mapping.get("coupling_bundle_status", ASSET_STATUS_READY)),
+                "topology_family": DISTRIBUTED_PATCH_CLOUD_TOPOLOGY,
+                "fallback_hierarchy": [SURFACE_PATCH_CLOUD_MODE],
+                "kernel_family": "",
+                "sign_representation": "",
+                "delay_representation": "",
+                "delay_model": "",
+                "delay_model_parameters": {},
+                "aggregation_rule": "",
+                "missing_geometry_policy": "",
+                "source_cloud_normalization": "",
+                "target_cloud_normalization": "",
+                "contract_version": "",
+            },
+            "asset_records": synthesized_asset_records,
+            "edge_bundle_records": _require_sequence(
+                root_mapping.get("edge_bundle_paths"),
+                field_name="selected_root_asset.edge_bundle_paths",
+            ),
+        }
+    raise ValueError("selected_root_asset is missing coupling asset authority.")
+
+
+def _coupling_bundle_metadata(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    return _require_mapping(
+        _coupling_asset_section(root_mapping).get("bundle_metadata"),
+        field_name="selected_root_asset.coupling.bundle_metadata",
+    )
+
+
+def _coupling_asset_records(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    return _require_mapping(
+        _coupling_asset_section(root_mapping).get("asset_records"),
+        field_name="selected_root_asset.coupling.asset_records",
+    )
+
+
+def _coupling_contract_identity(
+    root_mapping: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    coupling_section = _coupling_asset_section(root_mapping)
+    contract_identity = coupling_section.get("contract_identity")
+    if contract_identity is not None:
+        return _require_mapping(
+            contract_identity,
+            field_name="selected_root_asset.coupling.contract_identity",
+        )
+    return _build_coupling_contract_identity(
+        coupling_bundle=_coupling_bundle_metadata(root_mapping),
+        coupling_asset_records=_coupling_asset_records(root_mapping),
+        edge_bundle_records=_edge_bundle_records(root_mapping),
+    )
+
+
+def _edge_bundle_records(
+    root_mapping: Mapping[str, Any],
+) -> Sequence[Any]:
+    coupling_section = _coupling_asset_section(root_mapping)
+    edge_bundle_records = coupling_section.get("edge_bundle_records")
+    if edge_bundle_records is not None:
+        return _require_sequence(
+            edge_bundle_records,
+            field_name="selected_root_asset.coupling.edge_bundle_records",
+        )
+    return _require_sequence(
+        root_mapping.get("edge_bundle_paths"),
+        field_name="selected_root_asset.edge_bundle_paths",
+    )
+
+
+def _transfer_operator_available(
+    transfer_operators: Mapping[str, Any],
+    *,
+    transfer_key: str,
+) -> bool:
+    transfer_operator = transfer_operators.get(transfer_key)
+    if transfer_operator is None:
+        return False
+    return bool(
+        _require_mapping(
+            transfer_operator,
+            field_name=f"operator_bundle.transfer_operators.{transfer_key}",
+        ).get("available")
+    )
 
 
 def resolve_surface_wave_coupling_asset(

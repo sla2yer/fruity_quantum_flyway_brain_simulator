@@ -16,7 +16,6 @@ from .coupling_contract import (
     build_coupling_contract_paths,
 )
 from .dashboard_session_contract import (
-    DASHBOARD_SESSION_CONTRACT_VERSION,
     METADATA_JSON_KEY as DASHBOARD_METADATA_JSON_KEY,
     SESSION_PAYLOAD_ARTIFACT_ID,
     SESSION_STATE_ARTIFACT_ID,
@@ -27,13 +26,18 @@ from .dashboard_session_planning import resolve_dashboard_session_plan
 from .io_utils import read_root_ids
 from .manifests import load_yaml
 from .registry import load_synapse_registry
+from .review_surface_artifacts import (
+    lift_packaged_artifact_references,
+    merge_explicit_artifact_overrides,
+    validate_packaged_dashboard_bundle_alignment,
+    validate_packaged_showcase_bundle_alignment,
+)
 from .selection import build_subset_artifact_paths
 from .showcase_session_contract import (
     DASHBOARD_SESSION_METADATA_ROLE_ID as SHOWCASE_DASHBOARD_SESSION_METADATA_ROLE_ID,
     METADATA_JSON_KEY as SHOWCASE_METADATA_JSON_KEY,
     NARRATIVE_PRESET_CATALOG_ARTIFACT_ID,
     SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID,
-    SHOWCASE_SESSION_CONTRACT_VERSION,
     discover_showcase_session_artifact_references,
     discover_showcase_session_bundle_paths,
     load_showcase_session_metadata,
@@ -58,7 +62,6 @@ from .whole_brain_context_contract import (
     CONTEXT_QUERY_CATALOG_ROLE_ID,
     CONTEXT_VIEW_PAYLOAD_ROLE_ID,
     CONTEXT_VIEW_STATE_ROLE_ID,
-    DASHBOARD_CONTEXT_SCOPE,
     DASHBOARD_SESSION_METADATA_ROLE_ID,
     DASHBOARD_SESSION_PAYLOAD_ROLE_ID,
     DASHBOARD_SESSION_SOURCE_KIND,
@@ -74,7 +77,6 @@ from .whole_brain_context_contract import (
     NODE_METADATA_FACET_SCOPE,
     PATHWAY_HIGHLIGHT_REVIEW_QUERY_PROFILE_ID,
     SELECTED_ROOT_IDS_ROLE_ID,
-    SHOWCASE_CONTEXT_SCOPE,
     SHOWCASE_PRESENTATION_STATE_ROLE_ID,
     SHOWCASE_SESSION_METADATA_ROLE_ID,
     SHOWCASE_SESSION_SOURCE_KIND,
@@ -233,6 +235,7 @@ def resolve_whole_brain_context_session_plan(
     )
     discovered_artifact_references = _build_discovered_artifact_references(
         source_context=source_context,
+        contract_metadata=normalized_contract,
     )
     merged_artifact_references = _merge_explicit_artifact_overrides(
         discovered_artifact_references,
@@ -980,20 +983,28 @@ def _resolve_selection_context(
 
 def _planned_dashboard_context(plan: Mapping[str, Any]) -> dict[str, Any]:
     normalized_plan = _require_mapping(plan, field_name="dashboard_session_plan")
+    metadata = _require_mapping(
+        normalized_plan["dashboard_session"],
+        field_name="dashboard_session_plan.dashboard_session",
+    )
+    payload = _require_mapping(
+        normalized_plan["dashboard_session_payload"],
+        field_name="dashboard_session_plan.dashboard_session_payload",
+    )
+    state = _require_mapping(
+        normalized_plan["dashboard_session_state"],
+        field_name="dashboard_session_plan.dashboard_session_state",
+    )
+    validate_packaged_dashboard_bundle_alignment(
+        metadata=metadata,
+        payload=payload,
+        state=state,
+    )
     return {
         "origin": "planned",
-        "metadata": _require_mapping(
-            normalized_plan["dashboard_session"],
-            field_name="dashboard_session_plan.dashboard_session",
-        ),
-        "payload": _require_mapping(
-            normalized_plan["dashboard_session_payload"],
-            field_name="dashboard_session_plan.dashboard_session_payload",
-        ),
-        "state": _require_mapping(
-            normalized_plan["dashboard_session_state"],
-            field_name="dashboard_session_plan.dashboard_session_state",
-        ),
+        "metadata": metadata,
+        "payload": payload,
+        "state": state,
     }
 
 
@@ -1010,10 +1021,11 @@ def _packaged_dashboard_context(metadata: Mapping[str, Any]) -> dict[str, Any]:
         bundle_paths[SESSION_STATE_ARTIFACT_ID],
         field_name="dashboard_session_state",
     )
-    if str(normalized_metadata["bundle_id"]) != str(payload["bundle_reference"]["bundle_id"]):
-        raise ValueError("dashboard_session metadata and payload must reference the same bundle_id.")
-    if str(normalized_metadata["bundle_id"]) != str(state["bundle_reference"]["bundle_id"]):
-        raise ValueError("dashboard_session metadata and state must reference the same bundle_id.")
+    validate_packaged_dashboard_bundle_alignment(
+        metadata=normalized_metadata,
+        payload=payload,
+        state=state,
+    )
     return {
         "origin": "packaged",
         "metadata": normalized_metadata,
@@ -1031,8 +1043,10 @@ def _packaged_showcase_context(metadata: Mapping[str, Any]) -> dict[str, Any]:
         bundle_paths[SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID],
         field_name="showcase_presentation_state",
     )
-    if str(normalized_metadata["bundle_id"]) != str(state["bundle_reference"]["bundle_id"]):
-        raise ValueError("showcase_session metadata and state must reference the same bundle_id.")
+    validate_packaged_showcase_bundle_alignment(
+        metadata=normalized_metadata,
+        state=state,
+    )
     narrative_preset_catalog = _load_json_mapping(
         bundle_paths[NARRATIVE_PRESET_CATALOG_ARTIFACT_ID],
         field_name="showcase_narrative_preset_catalog",
@@ -1051,6 +1065,7 @@ def _packaged_showcase_context(metadata: Mapping[str, Any]) -> dict[str, Any]:
 def _build_discovered_artifact_references(
     *,
     source_context: Mapping[str, Any],
+    contract_metadata: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     selection = _require_mapping(
         source_context["selection_context"],
@@ -1112,94 +1127,59 @@ def _build_discovered_artifact_references(
         )
     dashboard_context = source_context.get("dashboard_context")
     if isinstance(dashboard_context, Mapping):
-        discovered.extend(_dashboard_artifact_references(dashboard_context))
+        discovered.extend(
+            _dashboard_artifact_references(
+                dashboard_context,
+                contract_metadata=contract_metadata,
+            )
+        )
     showcase_context = source_context.get("showcase_context")
     if isinstance(showcase_context, Mapping):
-        discovered.extend(_showcase_artifact_references(showcase_context))
+        discovered.extend(
+            _showcase_artifact_references(
+                showcase_context,
+                contract_metadata=contract_metadata,
+            )
+        )
     return discovered
 
 
 def _dashboard_artifact_references(
     dashboard_context: Mapping[str, Any],
+    *,
+    contract_metadata: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     metadata = _require_mapping(
         dashboard_context["metadata"],
         field_name="dashboard_context.metadata",
     )
     bundle_paths = discover_dashboard_session_bundle_paths(metadata)
-    return [
-        build_whole_brain_context_artifact_reference(
-            artifact_role_id=DASHBOARD_SESSION_METADATA_ROLE_ID,
-            source_kind=DASHBOARD_SESSION_SOURCE_KIND,
-            path=bundle_paths[DASHBOARD_METADATA_JSON_KEY],
-            contract_version=DASHBOARD_SESSION_CONTRACT_VERSION,
-            bundle_id=str(metadata["bundle_id"]),
-            artifact_id=DASHBOARD_METADATA_JSON_KEY,
-            format=str(metadata["artifacts"][DASHBOARD_METADATA_JSON_KEY]["format"]),
-            artifact_scope=DASHBOARD_CONTEXT_SCOPE,
-            status=str(metadata["artifacts"][DASHBOARD_METADATA_JSON_KEY]["status"]),
-        ),
-        build_whole_brain_context_artifact_reference(
-            artifact_role_id=DASHBOARD_SESSION_PAYLOAD_ROLE_ID,
-            source_kind=DASHBOARD_SESSION_SOURCE_KIND,
-            path=bundle_paths[SESSION_PAYLOAD_ARTIFACT_ID],
-            contract_version=DASHBOARD_SESSION_CONTRACT_VERSION,
-            bundle_id=str(metadata["bundle_id"]),
-            artifact_id=SESSION_PAYLOAD_ARTIFACT_ID,
-            format=str(metadata["artifacts"][SESSION_PAYLOAD_ARTIFACT_ID]["format"]),
-            artifact_scope=DASHBOARD_CONTEXT_SCOPE,
-            status=str(metadata["artifacts"][SESSION_PAYLOAD_ARTIFACT_ID]["status"]),
-        ),
-        build_whole_brain_context_artifact_reference(
-            artifact_role_id=DASHBOARD_SESSION_STATE_ROLE_ID,
-            source_kind=DASHBOARD_SESSION_SOURCE_KIND,
-            path=bundle_paths[SESSION_STATE_ARTIFACT_ID],
-            contract_version=DASHBOARD_SESSION_CONTRACT_VERSION,
-            bundle_id=str(metadata["bundle_id"]),
-            artifact_id=SESSION_STATE_ARTIFACT_ID,
-            format=str(metadata["artifacts"][SESSION_STATE_ARTIFACT_ID]["format"]),
-            artifact_scope=DASHBOARD_CONTEXT_SCOPE,
-            status=str(metadata["artifacts"][SESSION_STATE_ARTIFACT_ID]["status"]),
-        ),
-    ]
+    return lift_packaged_artifact_references(
+        metadata=metadata,
+        bundle_paths=bundle_paths,
+        contract_metadata=contract_metadata,
+        source_kind=DASHBOARD_SESSION_SOURCE_KIND,
+        build_artifact_reference=build_whole_brain_context_artifact_reference,
+    )
 
 
 def _showcase_artifact_references(
     showcase_context: Mapping[str, Any],
+    *,
+    contract_metadata: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     metadata = _require_mapping(
         showcase_context["metadata"],
         field_name="showcase_context.metadata",
     )
     bundle_paths = discover_showcase_session_bundle_paths(metadata)
-    return [
-        build_whole_brain_context_artifact_reference(
-            artifact_role_id=SHOWCASE_SESSION_METADATA_ROLE_ID,
-            source_kind=SHOWCASE_SESSION_SOURCE_KIND,
-            path=bundle_paths[SHOWCASE_METADATA_JSON_KEY],
-            contract_version=SHOWCASE_SESSION_CONTRACT_VERSION,
-            bundle_id=str(metadata["bundle_id"]),
-            artifact_id=SHOWCASE_METADATA_JSON_KEY,
-            format=str(metadata["artifacts"][SHOWCASE_METADATA_JSON_KEY]["format"]),
-            artifact_scope=SHOWCASE_CONTEXT_SCOPE,
-            status=str(metadata["artifacts"][SHOWCASE_METADATA_JSON_KEY]["status"]),
-        ),
-        build_whole_brain_context_artifact_reference(
-            artifact_role_id=SHOWCASE_PRESENTATION_STATE_ROLE_ID,
-            source_kind=SHOWCASE_SESSION_SOURCE_KIND,
-            path=bundle_paths[SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID],
-            contract_version=SHOWCASE_SESSION_CONTRACT_VERSION,
-            bundle_id=str(metadata["bundle_id"]),
-            artifact_id=SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID,
-            format=str(
-                metadata["artifacts"][SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID]["format"]
-            ),
-            artifact_scope=SHOWCASE_CONTEXT_SCOPE,
-            status=str(
-                metadata["artifacts"][SHOWCASE_PRESENTATION_STATE_ARTIFACT_ID]["status"]
-            ),
-        ),
-    ]
+    return lift_packaged_artifact_references(
+        metadata=metadata,
+        bundle_paths=bundle_paths,
+        contract_metadata=contract_metadata,
+        source_kind=SHOWCASE_SESSION_SOURCE_KIND,
+        build_artifact_reference=build_whole_brain_context_artifact_reference,
+    )
 
 
 def _merge_explicit_artifact_overrides(
@@ -1208,49 +1188,30 @@ def _merge_explicit_artifact_overrides(
     raw_explicit_artifacts: Mapping[str, Mapping[str, Any]],
     contract_metadata: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    hooks = {
-        str(item["artifact_role_id"]): dict(item)
-        for item in contract_metadata["artifact_hook_catalog"]
-    }
-    merged = {
-        str(item["artifact_role_id"]): copy.deepcopy(dict(item)) for item in discovered
-    }
-    for role_id, raw in raw_explicit_artifacts.items():
-        base = merged.get(role_id, {})
-        hook = hooks.get(role_id)
-        if hook is None:
-            raise ValueError(
-                f"explicit_artifact_references contains unsupported artifact_role_id {role_id!r}."
-            )
-        resolved_path = raw.get("path", base["path"])
-        resolved_status = raw.get("status")
-        if resolved_status is None:
-            if "path" in raw:
-                resolved_status = _status_from_known_path(resolved_path)
-            else:
-                resolved_status = base.get("status", ASSET_STATUS_READY)
-        merged[role_id] = build_whole_brain_context_artifact_reference(
-            artifact_role_id=role_id,
-            source_kind=str(raw.get("source_kind", base.get("source_kind", hook["source_kind"]))),
-            path=resolved_path,
-            contract_version=(
-                hook["required_contract_version"]
-                if raw.get("contract_version", base.get("contract_version")) is None
-                else str(raw.get("contract_version", base.get("contract_version")))
-            ),
-            bundle_id=str(raw.get("bundle_id", base.get("bundle_id", f"explicit:{role_id}"))),
-            artifact_id=str(raw.get("artifact_id", base.get("artifact_id", hook["artifact_id"]))),
-            format=(
-                None
-                if raw.get("format", base.get("format")) is None
-                else str(raw.get("format", base.get("format")))
-            ),
-            artifact_scope=str(
-                raw.get("artifact_scope", base.get("artifact_scope", hook["artifact_scope"]))
-            ),
-            status=str(resolved_status),
-        )
-    return list(merged.values())
+    return merge_explicit_artifact_overrides(
+        discovered,
+        raw_explicit_artifacts=raw_explicit_artifacts,
+        contract_metadata=contract_metadata,
+        build_artifact_reference=build_whole_brain_context_artifact_reference,
+        resolve_status=_whole_brain_context_override_status,
+    )
+
+
+def _whole_brain_context_override_status(
+    role_id: str,
+    raw: Mapping[str, Any],
+    base: Mapping[str, Any],
+    hook: Mapping[str, Any],
+    resolved_path: str,
+) -> str:
+    del role_id, hook
+    resolved_status = raw.get("status")
+    if resolved_status is None:
+        if "path" in raw:
+            resolved_status = _status_from_known_path(resolved_path)
+        else:
+            resolved_status = base.get("status", ASSET_STATUS_READY)
+    return str(resolved_status)
 
 
 def _validate_resolved_artifact_alignment(
@@ -1431,8 +1392,11 @@ def _validate_dashboard_reference_alignment(
         raise ValueError(
             "Dashboard session selected_root_ids do not match the resolved active subset."
         )
-    if str(metadata["bundle_id"]) != str(state["bundle_reference"]["bundle_id"]):
-        raise ValueError("dashboard_session metadata and state must reference the same bundle_id.")
+    validate_packaged_dashboard_bundle_alignment(
+        metadata=metadata,
+        payload=payload,
+        state=state,
+    )
 
 
 def _validate_showcase_reference_alignment(
@@ -1452,6 +1416,10 @@ def _validate_showcase_reference_alignment(
         metadata_ref=metadata_ref,
         state_ref=state_ref,
         planned_artifact_paths=planned_artifact_paths,
+    )
+    validate_packaged_showcase_bundle_alignment(
+        metadata=metadata,
+        state=state,
     )
     selected_root_ids = {int(root_id) for root_id in selection_context["selected_root_ids"]}
     unexpected_focus_root_ids = sorted(
@@ -1798,9 +1766,9 @@ def _build_linked_sessions(
             ),
             "origin": (
                 "planned"
-                if (
-                    source_context.get("dashboard_context") is not None
-                    and _reference_matches_planned_path(
+    if (
+        source_context.get("dashboard_context") is not None
+        and _reference_matches_planned_path(
                         dashboard_ref,
                         role_id=DASHBOARD_SESSION_METADATA_ROLE_ID,
                         planned_artifact_paths=planned_artifact_paths,
@@ -2154,11 +2122,24 @@ def _dashboard_records_for_reference_resolution(
             planned_artifact_paths=planned_artifact_paths,
         )
     ):
-        return (
-            _require_mapping(dashboard_context["metadata"], field_name="dashboard_context.metadata"),
-            _require_mapping(dashboard_context["payload"], field_name="dashboard_context.payload"),
-            _require_mapping(dashboard_context["state"], field_name="dashboard_context.state"),
+        metadata = _require_mapping(
+            dashboard_context["metadata"],
+            field_name="dashboard_context.metadata",
         )
+        payload = _require_mapping(
+            dashboard_context["payload"],
+            field_name="dashboard_context.payload",
+        )
+        state = _require_mapping(
+            dashboard_context["state"],
+            field_name="dashboard_context.state",
+        )
+        validate_packaged_dashboard_bundle_alignment(
+            metadata=metadata,
+            payload=payload,
+            state=state,
+        )
+        return metadata, payload, state
     metadata = _load_dashboard_metadata_reference(
         metadata_ref,
         planned_artifact_paths=planned_artifact_paths,
@@ -2171,10 +2152,11 @@ def _dashboard_records_for_reference_resolution(
         Path(str(state_ref["path"])).resolve(),
         field_name="dashboard_session_state",
     )
-    if str(metadata["bundle_id"]) != str(payload["bundle_reference"]["bundle_id"]):
-        raise ValueError("dashboard_session metadata and payload must reference the same bundle_id.")
-    if str(metadata["bundle_id"]) != str(state["bundle_reference"]["bundle_id"]):
-        raise ValueError("dashboard_session metadata and state must reference the same bundle_id.")
+    validate_packaged_dashboard_bundle_alignment(
+        metadata=metadata,
+        payload=payload,
+        state=state,
+    )
     return metadata, payload, state
 
 
@@ -2205,6 +2187,10 @@ def _showcase_records_for_reference_resolution(
                 ].resolve()
             )
         ):
+            validate_packaged_showcase_bundle_alignment(
+                metadata=metadata,
+                state=state,
+            )
             return metadata, state
     metadata = _load_showcase_metadata_reference(
         metadata_ref,
@@ -2214,6 +2200,10 @@ def _showcase_records_for_reference_resolution(
         state_ref,
         metadata=metadata,
         planned_artifact_paths=planned_artifact_paths,
+    )
+    validate_packaged_showcase_bundle_alignment(
+        metadata=metadata,
+        state=state,
     )
     return metadata, state
 
@@ -2261,10 +2251,7 @@ def _load_dashboard_payload_reference(
             _load_planned_dashboard_payload(metadata, path),
             field_name="dashboard_session_payload",
         )
-    payload = _load_json_mapping(path, field_name="dashboard_session_payload")
-    if str(metadata["bundle_id"]) != str(payload["bundle_reference"]["bundle_id"]):
-        raise ValueError("dashboard_session metadata and payload must reference the same bundle_id.")
-    return payload
+    return _load_json_mapping(path, field_name="dashboard_session_payload")
 
 
 def _load_dashboard_state_reference(
@@ -2279,10 +2266,7 @@ def _load_dashboard_state_reference(
         if planned_path is None or path != Path(planned_path).resolve():
             raise ValueError(f"Dashboard session state is missing at {path}.")
         return _load_planned_dashboard_state(metadata, path)
-    state = _load_json_mapping(path, field_name="dashboard_session_state")
-    if str(metadata["bundle_id"]) != str(state["bundle_reference"]["bundle_id"]):
-        raise ValueError("dashboard_session metadata and state must reference the same bundle_id.")
-    return state
+    return _load_json_mapping(path, field_name="dashboard_session_state")
 
 
 def _load_showcase_metadata_reference(
@@ -2303,11 +2287,16 @@ def _load_showcase_state_reference(
     metadata: Mapping[str, Any],
     planned_artifact_paths: Mapping[str, str],
 ) -> dict[str, Any]:
-    del metadata, planned_artifact_paths
+    del planned_artifact_paths
     path = Path(str(reference["path"])).resolve()
     if not path.exists():
         raise ValueError(f"Showcase presentation state is missing at {path}.")
-    return _load_json_mapping(path, field_name="showcase_presentation_state")
+    state = _load_json_mapping(path, field_name="showcase_presentation_state")
+    validate_packaged_showcase_bundle_alignment(
+        metadata=metadata,
+        state=state,
+    )
+    return state
 
 
 def _load_planned_dashboard_payload(

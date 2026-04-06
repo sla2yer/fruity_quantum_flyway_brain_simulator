@@ -20,8 +20,11 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from flywire_wave.experiment_comparison_analysis import (
     EXPERIMENT_COMPARISON_SUMMARY_VERSION,
+    compute_experiment_comparison_summary,
+    discover_experiment_bundle_set,
     execute_experiment_comparison_workflow,
 )
+from flywire_wave import experiment_comparison_core
 from flywire_wave.experiment_analysis_contract import (
     ANALYSIS_UI_PAYLOAD_ARTIFACT_ID,
     COMPARISON_MATRICES_ARTIFACT_ID,
@@ -62,6 +65,25 @@ from simulation_planning_test_support import (
 
 
 class ExperimentComparisonWorkflowTest(unittest.TestCase):
+    def test_public_facade_reexports_split_discovery_and_core_implementations(self) -> None:
+        self.assertEqual(
+            discover_experiment_bundle_set.__module__,
+            "flywire_wave.experiment_comparison_discovery",
+        )
+        self.assertEqual(
+            compute_experiment_comparison_summary.__module__,
+            "flywire_wave.experiment_comparison_core",
+        )
+        self.assertFalse(
+            hasattr(experiment_comparison_core, "generate_experiment_analysis_report")
+        )
+        self.assertFalse(
+            hasattr(
+                experiment_comparison_core,
+                "build_experiment_analysis_bundle_metadata",
+            )
+        )
+
     def test_fixture_workflow_discovers_bundle_set_aggregates_seeds_and_scores_milestone_panel(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)

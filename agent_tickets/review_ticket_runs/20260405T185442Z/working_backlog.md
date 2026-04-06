@@ -417,381 +417,411 @@ Keep source-mode resolution, artifact discovery and override handling, selection
 `make validate-manifest`
 `make smoke`
 
-## FILECOH-004 - Split experiment comparison discovery, scoring, and export packaging
+## FILECOH-004 - Separate experiment comparison discovery, core scoring, and analysis-bundle packaging behind a stable facade
 - Status: open
 - Priority: high
 - Source: file_length_and_cohesion review
-- Area: experiment comparison analysis
+- Area: experiment comparison workflow
 
 ### Problem
-`experiment_comparison_analysis.py` mixes filesystem bundle discovery, bundle-vs-plan validation, core comparison rollups, null-test evaluation, workflow orchestration, and UI or export packaging. That makes metric or null-test changes harder to review because the same file also owns report generation and artifact writing.
+`experiment_comparison_analysis.py` is still a monolithic public entrypoint that mixes three distinct responsibilities: simulator bundle discovery and plan-alignment validation, core experiment comparison scoring or null-test evaluation, and analysis-bundle packaging for UI or offline report artifacts. The file has also become an integration surface for other workflows, so the refactor now needs to preserve the current import facade instead of treating this as a purely internal move.
 
 ### Evidence
-The file begins with bundle discovery at [experiment_comparison_analysis.py:84](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L84), computes the main summary at [experiment_comparison_analysis.py:255](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L255), orchestrates the full workflow at [experiment_comparison_analysis.py:451](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L451), packages bundle artifacts at [experiment_comparison_analysis.py:503](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L503), builds UI payloads at [experiment_comparison_analysis.py:853](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L853), evaluates null tests at [experiment_comparison_analysis.py:2142](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L2142), and assembles output summaries at [experiment_comparison_analysis.py:2613](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L2613). Those are separate seams in this repo: discovery or validation, analysis, and packaging or export.
+The module is still 2,998 lines long and pulls in packaging dependencies at import time through [experiment_comparison_analysis.py:13](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L13) and [experiment_comparison_analysis.py:27](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L27). It defines bundle discovery at [experiment_comparison_analysis.py:87](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L87), core summary computation at [experiment_comparison_analysis.py:260](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L260), workflow coordination at [experiment_comparison_analysis.py:456](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L456), bundle packaging at [experiment_comparison_analysis.py:521](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L521), UI payload assembly at [experiment_comparison_analysis.py:871](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L871), bundle-vs-plan validation helpers starting at [experiment_comparison_analysis.py:1297](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L1297), null-test evaluation at [experiment_comparison_analysis.py:2300](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L2300), task scoring at [experiment_comparison_analysis.py:2614](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L2614), and output-summary assembly at [experiment_comparison_analysis.py:2771](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L2771).
+
+This module is also imported directly by downstream code, so callers currently depend on its public surface: the CLI at [20_experiment_comparison_analysis.py:16](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/20_experiment_comparison_analysis.py#L16), planning code at [validation_planning.py:17](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_planning.py#L17) and [dashboard_session_planning.py:88](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L88), validation code at [validation_circuit.py:16](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_circuit.py#L16), and suite execution at [experiment_suite_execution.py:651](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L651) and [experiment_suite_execution.py:741](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L741). Current tests also lock in packaging behavior and workflow reuse at [test_experiment_comparison_analysis.py:120](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_comparison_analysis.py#L120), [test_experiment_comparison_analysis.py:195](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_comparison_analysis.py#L195), and [test_experiment_comparison_analysis.py:346](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_comparison_analysis.py#L346).
 
 ### Requested Change
-Split the module into a bundle discovery or validation module, a core comparison computation module, and a packaging or export module for UI payloads and report artifacts. `execute_experiment_comparison_workflow` should remain as a thin coordinator across those boundaries.
+Keep `experiment_comparison_analysis.py` as the stable public facade, but move its implementation seams into focused modules:
+- a discovery module for bundle-set discovery, condition inference, and bundle-vs-plan validation
+- a core comparison module for metric aggregation, null tests, task scoring, and output-summary assembly
+- a packaging module for bundle metadata writing, export payload builders, visualization catalog assembly, UI payload assembly, and offline report handoff
+
+`execute_experiment_comparison_workflow` should remain a thin coordinator over those modules, and existing public imports should continue to work for current callers.
 
 ### Acceptance Criteria
-Bundle discovery and plan-alignment validation no longer live in the same file as null-test scoring and export payload builders. The analysis summary can be computed without importing packaging helpers, and the packaging path consumes a normalized summary object rather than re-owning analysis logic.
+`discover_experiment_bundle_set` and its helper stack no longer live in the same implementation file as packaging or UI export builders.
+
+`compute_experiment_comparison_summary` lives in a core analysis module that does not import report-generation or experiment-analysis bundle packaging helpers at module import time.
+
+Packaging code consumes normalized summary or bundle inputs and owns export writing, UI payload generation, visualization catalog generation, and offline report packaging without re-owning comparison math.
+
+`experiment_comparison_analysis.py` remains a compatibility facade exposing the current public entrypoints used by scripts, validation flows, dashboard planning, and suite execution.
+
+Existing workflow behavior remains intact, including package generation, offline report regeneration from local artifacts, and accepting pre-resolved plans.
 
 ### Verification
 `make test`
 `make smoke`
 
-## FILECOH-005 - Remove CLI and UI/export packaging concerns from simulator execution
+## FILECOH-005 - Split simulator CLI and result-bundle packaging behind a stable execution facade
 - Status: open
-- Priority: medium
+- Priority: high
 - Source: file_length_and_cohesion review
-- Area: simulator execution
+- Area: simulator execution workflow
 
 ### Problem
-`simulator_execution.py` mixes a library workflow API, an argparse CLI entrypoint, baseline and surface-wave execution, bundle writing, provenance generation, and UI comparison payload assembly. That blurs the boundary between execution/runtime code and packaging or presentation code, and it leaves `scripts/run_simulation.py` as a trivial shim instead of the actual CLI surface.
+`simulator_execution.py` is still the stable public entrypoint for manifest-driven simulator runs, but it remains a 1,872-line mixed module that owns CLI parsing, baseline and surface-wave execution orchestration, extension artifact definitions, bundle writing, provenance serialization, and UI-facing comparison payload assembly. The original ticket is still accurate, but the current repo state makes the requirement sharper: preserve the execution API while extracting CLI and result-bundle packaging into dedicated seams.
 
 ### Evidence
-[scripts/run_simulation.py:1](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/run_simulation.py#L1) only imports `main` from the library, while [simulator_execution.py:161](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L161) exposes the reusable execution workflow and [simulator_execution.py:221](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L221) still owns argparse parsing. The same module writes bundle artifacts in [simulator_execution.py:285](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L285) and [simulator_execution.py:354](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L354), then switches to provenance and UI payload shaping at [simulator_execution.py:1582](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L1582) and [simulator_execution.py:1635](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L1635). The tests also depend on simulation-planning fixture writers at [test_simulator_execution.py:56](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L56), which shows execution and planning surfaces are already too entangled.
+[scripts/run_simulation.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/run_simulation.py#L12) still only imports `main` from the library, while [src/flywire_wave/simulator_execution.py:161](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L161) exposes the reusable workflow and [src/flywire_wave/simulator_execution.py:226](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L226) still owns `argparse` parsing. The same module defines extension artifact specs at [src/flywire_wave/simulator_execution.py:597](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L597) and [src/flywire_wave/simulator_execution.py:623](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L623), writes baseline and wave bundle outputs at [src/flywire_wave/simulator_execution.py:290](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L290) and [src/flywire_wave/simulator_execution.py:359](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L359), and builds provenance and UI/export payloads at [src/flywire_wave/simulator_execution.py:1587](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L1587) and [src/flywire_wave/simulator_execution.py:1640](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L1640). This is now a compatibility-sensitive surface: [src/flywire_wave/experiment_suite_execution.py:570](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L570) calls `execute_manifest_simulation` directly, [src/flywire_wave/dashboard_session_planning.py:1545](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L1545) consumes the packaged `ui_comparison_payload` artifact from simulator bundle metadata, and [src/flywire_wave/wave_structure_analysis.py:834](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/wave_structure_analysis.py#L834) resolves `surface_wave_summary` and patch-trace artifacts from the same bundle inventory. Packaging behavior is also still locked into execution tests at [tests/test_simulator_execution.py:102](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L102), [tests/test_simulator_execution.py:266](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L266), [tests/test_simulator_execution.py:280](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L280), and [tests/test_simulator_execution.py:306](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L306). The bundle contract already has dedicated metadata/path helpers in [src/flywire_wave/simulator_result_contract.py:149](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_result_contract.py#L149), [src/flywire_wave/simulator_result_contract.py:378](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_result_contract.py#L378), and [src/flywire_wave/simulator_result_contract.py:817](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_result_contract.py#L817), so the remaining artifact packaging logic no longer belongs in the execution catch-all.
 
 ### Requested Change
-Move the CLI parser into `scripts/run_simulation.py` or a dedicated CLI wrapper, and move result-bundle packaging or UI payload generation behind a simulator packaging boundary. Keep the execution module focused on resolving runnable arm plans, invoking runtimes, and returning structured execution results.
+Keep `execute_manifest_simulation` as the stable library facade and keep its return shape intact. Move CLI parsing and stdout formatting into `scripts/run_simulation.py` or a dedicated simulator CLI module. Move extension artifact-spec builders, bundle writes, provenance assembly, UI comparison payload construction, and wave-only extension serialization into a simulator packaging module that consumes normalized execution results plus the existing `simulator_result_contract` helpers. Preserve current artifact IDs, file formats, and executed-run summary fields so readiness, dashboard, wave-analysis, validation, and suite flows do not need a contract migration.
 
 ### Acceptance Criteria
-`src/flywire_wave/simulator_execution.py` no longer contains argparse handling or UI/export payload builders, and `scripts/run_simulation.py` becomes the real CLI entrypoint instead of a pass-through import. Execution helpers can be imported without pulling in packaging or presentation concerns.
+`scripts/run_simulation.py` or a dedicated CLI sibling becomes the real CLI entrypoint, and `src/flywire_wave/simulator_execution.py` no longer imports `argparse` or owns command-line parsing. `execute_manifest_simulation` remains import-compatible for current callers, but artifact-spec declaration and package writing for `structured_log`, `execution_provenance`, `ui_comparison_payload`, `surface_wave_summary`, `surface_wave_patch_traces`, `surface_wave_coupling_events`, and `mixed_morphology_state_bundle` live outside `simulator_execution.py`. The current artifact IDs, bundle formats, and run-summary fields remain unchanged, and execution-focused tests can exercise orchestration without asserting all packaging payload details in the same module surface.
 
 ### Verification
 `make test`
 `make smoke`
 
-## overengineering_and_abstraction_load
-
-# Overengineering And Abstraction Load Review Tickets
-
-## OVR-001 - Remove the second full resolver from `compare-analysis`
-- Status: open
-- Priority: medium
+## OVR-001 - Close stale duplicate resolver cleanup for `compare-analysis`
+- Status: closed
+- Priority: low
 - Source: overengineering_and_abstraction_load review
-- Area: simulation planning / experiment comparison analysis
+- Area: experiment comparison analysis / simulation planning
 
 ### Problem
-The `make compare-analysis` path resolves the same manifest twice. `execute_experiment_comparison_workflow()` builds a full simulation plan, then asks for a separate readout-analysis plan through a helper that just rebuilds the same simulation plan and extracts one field. That extra abstraction hop does not buy a second real workflow in this repo.
+In the current workspace state, `compare-analysis` no longer has the duplicate manifest-resolution path this ticket described. `execute_experiment_comparison_workflow()` resolves `simulation_plan` once and reads `readout_analysis_plan` directly from that plan. The remaining `resolve_manifest_readout_analysis_plan()` helper is still present as a shared planning shim, but removing that helper repo-wide would be a different cleanup than the original `compare-analysis` bug.
 
 ### Evidence
-- [src/flywire_wave/experiment_comparison_analysis.py:459](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L459) resolves `simulation_plan`, then [src/flywire_wave/experiment_comparison_analysis.py:465](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L465) resolves `analysis_plan` separately.
-- [src/flywire_wave/simulation_planning.py:722](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L722) shows `resolve_manifest_readout_analysis_plan()` immediately calling [src/flywire_wave/simulation_planning.py:482](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L482) and only returning `readout_analysis_plan`.
-- The public happy path is the single manifest-driven target at [Makefile:145](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L145), not two distinct planning backends.
+- [src/flywire_wave/experiment_comparison_analysis.py#L36](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L36) resolves `simulation_plan` once, and [src/flywire_wave/experiment_comparison_analysis.py#L46](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_comparison_analysis.py#L46) extracts `readout_analysis_plan` from `resolved_simulation_plan` instead of calling a second resolver.
+- [Makefile#L150](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L150) routes `compare-analysis` through [scripts/20_experiment_comparison_analysis.py#L43](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/20_experiment_comparison_analysis.py#L43), which directly invokes `execute_experiment_comparison_workflow()`.
+- [src/flywire_wave/simulation_planning.py#L729](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L729) still defines `resolve_manifest_readout_analysis_plan()`, but the current comparison workflow no longer uses it.
+- [tests/test_experiment_comparison_analysis.py#L368](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_comparison_analysis.py#L368) covers the no-replanning path for a pre-resolved `simulation_plan`; `.venv/bin/python -m pytest -q tests/test_experiment_comparison_analysis.py` passes in the current workspace.
 
 ### Requested Change
-Resolve the manifest once in the comparison workflow and read `readout_analysis_plan` directly from that normalized simulation plan. If a helper is still wanted, make it a pure extractor from an existing plan rather than a second full resolver.
+No implementation work is needed under `OVR-001`. Close this ticket as already satisfied by the current `compare-analysis` workflow. If the team still wants to retire `resolve_manifest_readout_analysis_plan()` from shared APIs, that should be tracked separately rather than reopening this ticket.
 
 ### Acceptance Criteria
-- `execute_experiment_comparison_workflow()` performs one top-level manifest/config/schema/design-lock resolution.
-- There is no public helper that re-runs full simulation planning solely to return `readout_analysis_plan`.
-- Experiment-analysis outputs remain unchanged.
+- `make compare-analysis` continues to execute through a single top-level simulation-plan resolution in `execute_experiment_comparison_workflow()`.
+- `readout_analysis_plan` continues to be read from the resolved simulation plan rather than obtained by a second full resolver pass.
+- `OVR-001` is closed with no code change required.
 
 ### Verification
-- `make test`
-- `make smoke`
+- `.venv/bin/python -m pytest -q tests/test_experiment_comparison_analysis.py`
 
-## OVR-002 - Collapse duplicate CLI-runner orchestration in the review tooling
-- Status: open
-- Priority: medium
+## OVR-002 - Duplicate review-side CLI-runner orchestration is already collapsed
+- Status: closed
+- Priority: low
 - Source: overengineering_and_abstraction_load review
 - Area: `agent_tickets` / `review_prompt_tickets`
 
 ### Problem
-The repo carries two near-identical subprocess wrappers for Codex/Codel jobs: one for agent tickets and one for review-prompt jobs. The only real extension point here is runner selection, which is already centralized. Maintaining two staging/streaming/artifact-sync implementations adds ceremony without adding a second meaningful backend.
+This ticket is stale. The repo no longer maintains multiple independent review-job launchers. Review flows already share one prompt-job executor, and the review path already reuses the shared stream/process setup from `agent_tickets`. The only remaining overlap is the smaller split between `run_ticket()` and `run_prompt_job()`, and that split still carries an intentional stderr-handling difference, so it is not the same cleanup this ticket originally described.
 
 ### Evidence
-- [src/flywire_wave/agent_tickets.py:299](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L299) and [src/flywire_wave/review_prompt_tickets.py:154](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L154) both create temp staging dirs, build the same `runner exec --json --cd ... --sandbox ... --output-last-message ...` command, stream output through [src/flywire_wave/agent_tickets.py:224](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L224), and return the same artifact paths.
-- Artifact syncing is duplicated in [src/flywire_wave/agent_tickets.py:287](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L287) and [src/flywire_wave/review_prompt_tickets.py:142](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L142).
-- The review flow at [src/flywire_wave/review_prompt_tickets.py:335](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L335) exists only to run the repo’s `review-tickets` path from [Makefile:133](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L133), not to support a distinct job-execution platform.
+- [src/flywire_wave/review_prompt_tickets.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L12), [src/flywire_wave/review_prompt_tickets.py:358](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L358), and [src/flywire_wave/review_prompt_tickets.py:365](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L365) show the review runner already reuses the shared process-group and stream-handling helpers from `agent_tickets` instead of carrying its own copies.
+- Review execution is already centralized on [src/flywire_wave/review_prompt_tickets.py:306](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L306) via [src/flywire_wave/review_prompt_tickets.py:514](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L514), [src/flywire_wave/review_prompt_tickets.py:618](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L618), and [src/flywire_wave/review_ticket_backlog.py:133](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_ticket_backlog.py#L133), so specialization, review, refresh, and backlog-review passes already go through one review-side launcher.
+- The only remaining overlap is the narrower staging/artifact setup between [src/flywire_wave/agent_tickets.py:299](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L299) and [src/flywire_wave/review_prompt_tickets.py:306](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L306), but those paths still intentionally differ in stderr behavior at [src/flywire_wave/agent_tickets.py:365](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L365) and [src/flywire_wave/review_prompt_tickets.py:351](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L351).
 
 ### Requested Change
-Introduce one shared CLI prompt-job executor and let both ticket execution and review-prompt execution compose it. Keep the specialization/review sequencing logic, but remove the duplicated subprocess/staging/artifact code.
+No implementation work remains for this ticket as written. Keep the current split unless a concrete bug or a new launcher path shows that the remaining ticket-vs-review differences are causing real drift.
 
 ### Acceptance Criteria
-- Only one implementation owns subprocess spawning, stream handling, and artifact-sync for CLI-backed prompt jobs.
-- `run_ticket()` and the review workflow still emit the same prompt/stdout/stderr/last-message artifacts and summaries.
-- Existing ticket and review tests still pass.
+- Ticket stays closed because the duplicate review-side orchestration identified here has already been removed.
+- No code change is required under OVR-002.
 
 ### Verification
-- `make test`
-- `make smoke`
+- Inspect [src/flywire_wave/review_prompt_tickets.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L12), [src/flywire_wave/review_prompt_tickets.py:306](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L306), [src/flywire_wave/review_prompt_tickets.py:514](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L514), [src/flywire_wave/review_prompt_tickets.py:618](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L618), and [src/flywire_wave/review_ticket_backlog.py:133](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_ticket_backlog.py#L133).
+- Inspect [src/flywire_wave/agent_tickets.py:299](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L299) and [src/flywire_wave/review_prompt_tickets.py:351](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L351) to confirm the only remaining overlap is the intentionally different ticket-vs-review execution behavior.
 
-## OVR-003 - Remove the unused “partial arm plan” execution path
+## OVR-003 - Remove the unused result-bundle metadata reconstruction path
 - Status: open
-- Priority: high
+- Priority: medium
 - Source: overengineering_and_abstraction_load review
-- Area: simulation planning / simulator execution
+- Area: simulator packaging / manifest execution
 
 ### Problem
-Execution supports a second hypothetical arm-plan shape where bundle metadata is missing and must be reconstructed from fragments. The actual repo happy path never produces that shape: the planner already materializes `result_bundle.metadata` for every arm before execution. Carrying both shapes creates unnecessary indirection and a second source of truth in the core `baseline` / `surface_wave` path.
+The original ticket target is now too broad and slightly misplaced. Top-level manifest execution no longer reconstructs bundle metadata itself, but simulator packaging still supports a second "partial arm plan" shape where `result_bundle.metadata` is missing and must be rebuilt from loose arm-plan fields. Current repo-owned planners always materialize normalized bundle metadata, and downstream consumers already assume that normalized shape directly. Keeping the packaging fallback preserves an unused second source of truth for bundle ids, artifact paths, and processed-results-dir resolution in the baseline and surface-wave manifest execution path.
 
 ### Evidence
-- [src/flywire_wave/simulation_planning.py:674](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L674), [src/flywire_wave/simulation_planning.py:686](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L686), and [src/flywire_wave/simulation_planning.py:687](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L687) always attach `result_bundle` metadata during plan construction.
-- [src/flywire_wave/simulator_execution.py:172](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L172) and [src/flywire_wave/simulator_execution.py:178](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L178) feed those normalized arm plans straight into execution.
-- [src/flywire_wave/simulator_execution.py:520](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L520) still falls back to rebuilding metadata from `manifest_reference`, `arm_reference`, `determinism`, `selected_assets`, and runtime state.
+- [src/flywire_wave/simulation_planning.py:681](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L681), [src/flywire_wave/simulation_planning.py:694](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L694), and [src/flywire_wave/simulation_planning.py:696](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L696) build and attach `result_bundle.metadata` for every planned arm.
+- [src/flywire_wave/simulation_planning.py:1817](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L1817), [src/flywire_wave/simulation_planning.py:1840](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L1840), and [src/flywire_wave/simulation_planning.py:1841](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L1841) do the same when seed-sweep expansion produces per-seed run plans.
+- [src/flywire_wave/simulator_execution.py:115](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_execution.py#L115) feeds planner-produced arm plans into execution, while [src/flywire_wave/simulator_packaging.py:287](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_packaging.py#L287) resolves bundle metadata during result packaging.
+- [src/flywire_wave/simulator_packaging.py:336](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_packaging.py#L336), [src/flywire_wave/simulator_packaging.py:344](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_packaging.py#L344), [src/flywire_wave/simulator_packaging.py:373](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_packaging.py#L373), and [src/flywire_wave/simulator_packaging.py:385](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulator_packaging.py#L385) still support missing `result_bundle.metadata` by rebuilding metadata and carrying extra processed-results-dir resolution for that fallback.
+- [src/flywire_wave/simulation_analysis_planning.py:1369](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_analysis_planning.py#L1369) and [src/flywire_wave/validation_morphology.py:1230](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_morphology.py#L1230) already require `arm_plan.result_bundle.metadata`, so downstream repo code is standardized on the normalized shape.
+- [src/flywire_wave/milestone9_readiness.py:585](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone9_readiness.py#L585), [src/flywire_wave/milestone10_readiness.py:1107](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone10_readiness.py#L1107), [tests/test_simulator_execution.py:190](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L190), and [tests/test_simulator_execution.py:372](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulator_execution.py#L372) all treat the planner-produced bundle reference as the canonical execution identity.
 
 ### Requested Change
-Make planner-produced `result_bundle.metadata` the only supported execution input. Delete the fallback metadata reconstruction path and simplify processed-results-dir resolution around that single normalized arm-plan shape.
+Require normalized `arm_plan.result_bundle.metadata` in manifest execution packaging and remove the fallback metadata reconstruction branch. Missing bundle metadata should raise a targeted error instead of synthesizing a second metadata representation from `manifest_reference`, `arm_reference`, `determinism`, `selected_assets`, and runtime fields. Keep this scoped to metadata reconstruction; low-level helpers that only tolerate an absent `result_bundle.reference` are out of scope unless they also rebuild metadata.
 
 ### Acceptance Criteria
-- Simulator execution requires normalized arm plans with `result_bundle.metadata`.
-- Missing bundle metadata fails clearly instead of silently reconstructing a second metadata representation.
-- Baseline and surface-wave bundle ids, paths, and artifacts remain unchanged for manifest-driven runs.
+- Manifest-driven packaging requires normalized `arm_plan.result_bundle.metadata`.
+- Result packaging no longer rebuilds simulator-result bundle metadata from loose arm-plan fields.
+- Missing bundle metadata fails clearly and early.
+- Baseline and surface-wave manifest runs preserve the same `bundle_id`, `run_spec_hash`, and artifact paths recorded in planner-produced `result_bundle.reference` / `result_bundle.metadata`.
 
 ### Verification
 - `make test`
 - `make milestone9-readiness`
 - `make milestone10-readiness`
 
-## OVR-004 - Narrow the dashboard build API to the repo’s real entry path
-- Status: open
-- Priority: high
+## OVR-004 - Close: dashboard build API already reflects the repo’s supported multi-entry planning surface
+- Status: closed
+- Priority: low
 - Source: overengineering_and_abstraction_load review
-- Area: dashboard session planning / CLI
+- Area: dashboard session planning / CLI / downstream integration
 
 ### Problem
-Dashboard packaging is exposed as a generalized source-mode framework with manifest, experiment, and explicit per-bundle assembly modes. In this repo, the documented happy path is manifest-driven build plus open/export of an already packaged session. Keeping all three public acquisition modes makes the main local flow harder to understand and forces the planner to act like a bundle-orchestration framework the repo does not actually need.
+The original ticket is no longer accurate for the repo’s current state. It assumes manifest-driven dashboard packaging is the only real public entry path and treats experiment-driven or metadata-driven planning as accidental abstraction. In the current repository, manifest-driven build is still the default `make` workflow, but the broader dashboard planning surface is now a documented, regression-tested, and downstream-used part of the shipped API.
 
 ### Evidence
-- The documented workflow is manifest-driven at [Makefile:148](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L148) and [Makefile:151](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L151), with packaged-session export at [Makefile:154](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L154).
-- The public CLI still exposes experiment and explicit bundle assembly knobs at [scripts/29_dashboard_shell.py:61](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/29_dashboard_shell.py#L61) and [scripts/29_dashboard_shell.py:68](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/29_dashboard_shell.py#L68).
-- The planner defines three source modes at [src/flywire_wave/dashboard_session_planning.py:136](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L136) and exposes a broad multi-input public signature at [src/flywire_wave/dashboard_session_planning.py:158](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L158).
-- The alternate modes are actively maintained for equivalence in [tests/test_dashboard_session_planning.py:193](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_dashboard_session_planning.py#L193) and [tests/test_dashboard_session_planning.py:243](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_dashboard_session_planning.py#L243).
+- The default operator path is still manifest-driven via [Makefile](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L153) and [Makefile](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L156), but that is only the default entrypoint, not the full supported surface.
+- The public CLI intentionally exposes manifest, experiment, and explicit metadata inputs at [scripts/29_dashboard_shell.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/29_dashboard_shell.py#L62), [scripts/29_dashboard_shell.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/29_dashboard_shell.py#L68), and [scripts/29_dashboard_shell.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/29_dashboard_shell.py#L70).
+- The planner still defines three source modes and already includes a manifest-specific wrapper, so a narrow manifest helper exists without removing the broader API at [src/flywire_wave/dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L137), [src/flywire_wave/dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L142), and [src/flywire_wave/dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L159).
+- The current pipeline notes explicitly define `scripts/29_dashboard_shell.py build` as the canonical CLI for manifest-, experiment-, or bundle-driven inputs at [docs/pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md#L651).
+- The shipped Milestone 14 readiness audit deliberately compares manifest-driven and experiment-driven planning through the public API at [src/flywire_wave/milestone14_readiness.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone14_readiness.py#L325).
+- Downstream flows rely on these alternate modes: showcase planning resolves dashboard context from `experiment_id` at [src/flywire_wave/showcase_session_sources.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/showcase_session_sources.py#L511), and suite dashboard packaging injects packaged analysis and validation metadata paths into the planner at [src/flywire_wave/experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L924).
+- Tests still lock in experiment/explicit convergence and precedence as supported behavior at [tests/test_dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_dashboard_session_planning.py#L193) and [tests/test_dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_dashboard_session_planning.py#L243).
 
 ### Requested Change
-Keep one public dashboard build path centered on manifest-driven planning, plus the existing open/export operations on packaged sessions. If explicit bundle assembly is still useful for fixtures, move it behind a private helper instead of the public CLI and public planner signature.
+Close this ticket without implementation. Keep manifest-driven `make dashboard` and `make dashboard-open` as the default repo workflow, but do not narrow the public dashboard CLI or planner surface unless a future design change first removes multi-entry planning from the documented contract, readiness audit, downstream call sites, and regression tests.
 
 ### Acceptance Criteria
-- `scripts/29_dashboard_shell.py build` and `resolve_dashboard_session_plan()` no longer advertise three equivalent acquisition modes publicly.
-- `make dashboard`, `make dashboard-open`, and packaged-session export behavior remain intact.
-- Fixture-only alternate assembly, if retained, is internal rather than part of the main user-facing API.
+- The ticket is closed because the current repository intentionally supports manifest-, experiment-, and metadata-driven dashboard planning.
+- Any future narrowing starts with a design and contract decision, followed by coordinated updates to docs, readiness coverage, downstream integrations, and tests.
 
 ### Verification
-- `make test`
-- `make milestone14-readiness`
+- Review current Make targets, CLI parser, planner API, pipeline notes, readiness audit, downstream dashboard consumers, and dashboard planning tests.
 
-## readability_and_maintainability
-
-# Readability And Maintainability Review Tickets
-
-## FWW-MAINT-001 - Active subset publication is hidden inside preset generation
+## FWW-MAINT-001 - Canonical active-subset publication and coupling refresh remain implicit in subset generation
 - Status: open
-- Priority: high
+- Priority: medium
 - Source: readability_and_maintainability review
-- Area: subset selection
+- Area: selection pipeline
 
 ### Problem
-The canonical selected-root roster for the rest of the pipeline is not modeled as its own step. Instead, `generate_subsets_from_config()` quietly publishes one preset as the authoritative `selected_root_ids` alias and may also refresh the subset-scoped synapse registry as a side effect of iterating generated presets. That makes it hard to tell which subset output is authoritative for `select -> meshes -> assets -> simulation`, and maintainers have to remember that the active preset has extra behavior that other generated presets do not.
+`generate_subsets_from_config()` still mixes two responsibilities: generating subset artifacts for requested presets and publishing the canonical active subset used by the mesh/assets pipeline. The `active_preset` branch quietly writes `paths.selected_root_ids` and may rematerialize the subset-scoped synapse registry, while the CLI wrapper exposes only "generate subsets" as a single action. Newer whole-brain planning code now cross-checks subset artifacts against `paths.selected_root_ids`, so the ambiguity is narrower than the original ticket implied, but the selection-to-mesh/assets handoff still depends on hidden active-preset behavior.
 
 ### Evidence
-- [selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L257) loops over all requested presets, but only the `active_preset` branch writes `paths.selected_root_ids` and conditionally calls `materialize_synapse_registry()`.
-- [selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L283) ties synapse-registry refresh to the presence of `processed_coupling_dir` or `synapse_source_csv`, so the canonical coupling side effect is controlled by path-key presence rather than an explicit publish step.
-- [selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L313) returns only `active_preset` plus generated artifact paths; it does not record whether the canonical alias or subset-scoped coupling registry was actually refreshed.
-- [test_selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_selection.py#L19) and [test_selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_selection.py#L114) show that this hidden side effect is part of the external contract.
+- [selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L382) defines `generate_subsets_from_config()` as the single entry point for both preset generation and active-subset publication.
+- [selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L438) writes `paths.selected_root_ids` only inside the `name == active_preset` branch after per-preset artifacts have already been built.
+- [selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L445) refreshes the synapse registry based on `processed_coupling_dir` or `synapse_source_csv` path-key presence, rather than an explicit publish step or named selection-pipeline action.
+- [selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/selection.py#L475) returns only `active_preset` plus `generated_presets`; it does not report whether canonical root IDs or coupling artifacts were published.
+- [scripts/01_select_subset.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/01_select_subset.py#L44) exposes only `generate_subsets_from_config()`, so the operator-facing selection command still has no distinct publish phase.
+- [scripts/02_fetch_meshes.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/02_fetch_meshes.py#L110) and [scripts/03_build_wave_assets.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/03_build_wave_assets.py#L106) still consume `paths.selected_root_ids` as the canonical downstream roster.
+- [test_selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_selection.py#L21) and [test_selection.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_selection.py#L116) still lock the root-id alias write and subset-scoped synapse-registry refresh into the selection contract.
+- [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L856) already validates subset artifact root IDs against `paths.selected_root_ids`, which narrows this ticket to the selection/asset-prep flow rather than the broader planning/runtime stack.
 
 ### Requested Change
-Separate “build preset artifacts” from “publish canonical active subset” into explicit steps or helpers, and return structured metadata showing which preset became the authoritative root roster and whether subset-scoped coupling artifacts were refreshed.
+Refactor the selection pipeline so "build preset artifacts" and "publish canonical active subset" are separate, explicitly named steps, while preserving current output files and CLI behavior. The publish step should own any `selected_root_ids` alias update and any subset-scoped synapse-registry refresh, and the returned summary should say what was actually published.
 
 ### Acceptance Criteria
-- The code has one explicit helper or phase that publishes the canonical active subset used downstream.
-- The conditions for refreshing the subset-scoped synapse registry are expressed as named selection-pipeline behavior, not as incidental path-key checks inside the preset loop.
-- The returned summary clearly states which preset, if any, updated `selected_root_ids` and coupling-side artifacts.
+- The code has one explicit helper, phase, or orchestration step that publishes the canonical active subset used by downstream `meshes` and `assets` commands.
+- Synapse-registry refresh is triggered as named publish behavior, not as incidental path-key checks embedded in the preset-generation loop.
+- The selection summary/index records whether `paths.selected_root_ids` was updated and whether subset-scoped coupling artifacts were refreshed for the active preset.
+- Existing selection outputs for generated preset artifacts remain unchanged apart from the addition of explicit publication metadata.
 
 ### Verification
 `make test`
 
-## FWW-MAINT-002 - Simulation planning duplicates per-root asset authority across multiple record shapes
+## FWW-MAINT-002 - Simulation asset resolution still duplicates per-root asset authority
 - Status: open
-- Priority: high
+- Priority: medium
 - Source: readability_and_maintainability review
-- Area: surface-wave planning
+- Area: simulation asset resolution
 
 ### Problem
-The planner does not carry one authoritative per-root asset contract forward from the geometry manifest. Instead it expands the same root into parallel structures such as `geometry_asset_records`, `operator_asset_records`, `required_operator_assets`, shortcut sidecar paths, copied `operator_bundle`, copied `coupling_bundle`, and later runtime-specific asset records. Future maintainers have to infer whether the source of truth is the manifest row, the bundle metadata JSON on disk, or one of the planner’s copied dicts.
+The original `simulation_planning.py` references for this ticket are stale, but the underlying issue is still present after the planner split. [resolve_circuit_assets()](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_asset_resolution.py#L158) expands each selected manifest root into parallel planner-owned shapes: `geometry_asset_records`, `operator_asset_records`, `required_operator_assets`, top-level sidecar shortcuts, `coupling_asset_records`, `required_coupling_assets`, `edge_bundle_paths`, and copied `operator_bundle` / `coupling_bundle`. Downstream helpers then mix and match those copies instead of consuming one authoritative per-root asset contract, so ownership is still split between the manifest row, copied bundle metadata, path-only convenience dicts, and derived runtime asset payloads.
 
 ### Evidence
-- [geometry_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_contract.py#L316) already defines operator bundle metadata with canonical per-asset records and rich contract fields.
-- [simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L3013) rebuilds each selected root into new ad hoc maps: `geometry_asset_records`, `operator_asset_records`, `required_operator_assets`, duplicated sidecar paths, `coupling_asset_records`, `required_coupling_assets`, `edge_bundle_paths`, plus full copied `operator_bundle` and `coupling_bundle`.
-- [simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4240) reopens `operator_metadata_path` and compares the loaded JSON to the copied `operator_bundle` for drift, which is a strong sign that ownership is split between duplicated records.
-- [simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_planning.py#L4433) then reconstructs yet another coupling view from `coupling_asset_records` rather than consuming a single normalized root asset object.
+- [build_geometry_manifest_record()](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/geometry_contract.py#L672) already emits rich per-root manifest structures under `assets`, `operator_bundle`, and `coupling_bundle`, even though legacy convenience paths remain on the record.
+- [resolve_circuit_assets()](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_asset_resolution.py#L158) rebuilds those manifest records into new per-root maps and copied bundles, including `required_operator_assets`, `descriptor_sidecar_path`, `qa_sidecar_path`, `required_coupling_assets`, and `edge_bundle_paths`.
+- [load_mixed_fidelity_descriptor_payload()](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_asset_resolution.py#L344) reads the top-level copied `descriptor_sidecar_path` shortcut instead of resolving descriptors from a canonical per-root asset object.
+- [resolve_surface_wave_operator_asset()](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_asset_resolution.py#L597) depends on both `operator_bundle_status` / `operator_bundle` and `operator_asset_records`, then reloads `operator_metadata_path` from disk and compares the JSON against the copied `operator_bundle` for whole-dict drift.
+- [resolve_root_coupling_asset_record()](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_asset_resolution.py#L836) reconstructs yet another coupling view from `coupling_bundle`, `coupling_asset_records`, and filtered `edge_bundle_paths`.
+- [resolve_surface_wave_mixed_fidelity_plan()](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_runtime_planning.py#L475) copies `selected_edge_bundle_paths` again into skeleton runtime assets, showing that the duplication now continues into runtime-facing record shapes.
 
 ### Requested Change
-Introduce one normalized per-root circuit-asset record that remains authoritative from geometry-manifest loading through mixed-fidelity and runtime resolution, and derive path-only convenience views at the use site instead of storing parallel copied bookkeeping.
+Refactor the post-manifest asset handoff so `resolve_circuit_assets()` publishes one normalized per-root asset record and downstream helpers derive path-only or runtime-specific convenience views from that record at the use site. Keep this ticket scoped to planner/runtime asset authority cleanup; do not broaden it into a geometry-manifest schema redesign unless a minimal schema change is required to remove the duplicated ownership.
 
 ### Acceptance Criteria
-- Selected roots are represented by one canonical normalized asset structure through planner-to-runtime handoff.
-- Duplicated fields such as `required_operator_assets`, shortcut sidecar paths, and copied bundle dicts are removed or made derived-only.
-- Drift validation compares stable identifiers or contract fields from the canonical record, not whole-dict equality between duplicated copies.
+- `resolve_circuit_assets()` returns one canonical per-root asset structure that remains authoritative through mixed-fidelity planning and runtime asset resolution.
+- Parallel copies such as `required_operator_assets`, `required_coupling_assets`, top-level `descriptor_sidecar_path` / `qa_sidecar_path`, and repeated `selected_edge_bundle_paths` are removed or reduced to derived-only views.
+- `resolve_surface_wave_operator_asset()` and `resolve_root_coupling_asset_record()` consume the canonical record instead of coordinating separate copied bundle metadata and asset-record maps.
+- Drift checks validate stable contract fields or asset identifiers from the canonical record rather than whole-dict equality between duplicated copies.
 
 ### Verification
 `make smoke`
+`pytest tests/test_baseline_execution.py tests/test_simulator_execution.py tests/test_hybrid_morphology_runtime.py`
 
-## FWW-MAINT-003 - Experiment-suite status taxonomy and executor semantics diverge on `ready`
+## FWW-MAINT-003 - Experiment-suite work-item `ready` remains contract-visible but unsupported by execution and packaging
 - Status: open
 - Priority: medium
 - Source: readability_and_maintainability review
 - Area: experiment suite orchestration
 
 ### Problem
-The experiment-suite contract advertises `ready` as a real work-item status with its own semantics, but the executor and state rollups do not model it. That leaves maintainers unable to tell whether `ready` is a dead status, an intended persisted transition, or something external tooling is allowed to write.
+The repository still publishes `ready` as a canonical experiment-suite work-item status, but the current orchestration code does not treat it as a first-class persisted state. The planner only creates `planned` work items, stage executors may only return terminal statuses, executor resume logic rejects a persisted `ready` work item as unsupported, and package/result-index rollups still omit `ready` from their status tables. That leaves `ready` simultaneously documented and contract-valid, but not round-trippable through current execution state or packaging.
 
 ### Evidence
-- [experiment_suite_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_contract.py#L101) includes `WORK_ITEM_STATUS_READY` in the supported status set.
-- [experiment_suite_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_contract.py#L1894) gives `ready` a distinct description and marks it resumable, implying it is part of the authoritative orchestration state machine.
-- [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L77) excludes `ready` from `_SATISFIED_DEPENDENCY_STATUSES` and `_RETRYABLE_STATUSES`.
-- [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L1201) therefore treats a persisted `ready` work item as an unsupported status.
-- [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L1338) omits `ready` from `status_counts` and `overall_status`, while initialization only seeds `planned` items at [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L1282).
+- [experiment_suite_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_contract.py#L101) defines `WORK_ITEM_STATUS_READY`, includes it in `SUPPORTED_WORK_ITEM_STATUSES`, and [experiment_suite_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_contract.py#L1894) gives it a distinct resumable status definition.
+- [experiment_orchestration_design.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/experiment_orchestration_design.md#L111) and [pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md#L704) still list `ready` in the canonical work-item taxonomy.
+- [experiment_suite_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_planning.py#L2556) and [experiment_suite_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_planning.py#L2603) seed every work item as `planned`; the only `ready` writes in the planner are artifact-reference statuses at [experiment_suite_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_planning.py#L1543), so there is still no work-item producer for `ready`.
+- [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L77) excludes `ready` from `_SATISFIED_DEPENDENCY_STATUSES` and `_RETRYABLE_STATUSES`, and [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L1270) raises `Unsupported orchestration status` for any persisted work item left in `ready`.
+- [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L1575) only accepts `succeeded`, `partial`, `failed`, `blocked`, and `skipped` from stage executors, so executors cannot report `ready` even if the contract keeps advertising it.
+- [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L1407) omits `ready` from state rollups and overall-status selection.
+- [experiment_suite_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_packaging.py#L300) initializes stage-status counts without `ready`, [experiment_suite_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_packaging.py#L336) indexes those counts by the live stage status, and [experiment_suite_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_packaging.py#L105) plus [experiment_suite_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_packaging.py#L1524) also omit `ready` from cell rollup priority and cell-status counts.
 
 ### Requested Change
-Make the status machine single-sourced. Either remove `ready` from the public contract if it is not meant to persist, or implement full executor, dependency, and rollup handling for it from the same transition table.
+Make work-item status semantics single-sourced across contract, planner, execution-state transitions, and package/result-index rollups. Either remove `ready` from the public work-item taxonomy if it is not meant to persist, or implement it end-to-end as a supported persisted state with one shared transition/status model.
 
 ### Acceptance Criteria
-- The public contract and executor recognize the same complete set of work-item statuses.
-- Transition, retry, dependency-satisfaction, and rollup rules come from one shared status model.
-- If `ready` remains supported, persisted execution state can carry it without raising unsupported-status errors.
+- The public contract, docs, planner, executor, and package/result-index code recognize the same complete set of work-item statuses.
+- The repository defines whether `ready` is a persisted work-item state, a transient internal decision, or unsupported, and that choice is enforced from one shared status model.
+- If `ready` remains supported, persisted execution state and package generation can carry it without unsupported-status errors, missing-count rollups, or status-table failures.
+- Regression coverage exercises the chosen `ready` behavior on both execution resume and package/result-index paths.
 
 ### Verification
 `make test`
 
-## FWW-MAINT-004 - Review-surface packagers hand-build the same artifact-reference logic in multiple modules
+## FWW-MAINT-004 - Review-surface source resolvers still duplicate artifact-reference lifting and packaged bundle-alignment checks
 - Status: open
 - Priority: medium
 - Source: readability_and_maintainability review
-- Area: packaged review surfaces
+- Area: review surface source resolution
 
 ### Problem
-Dashboard, showcase, and whole-brain-context planners repeatedly hand-assemble artifact-reference payloads from upstream bundle metadata and then re-check the same bundle-alignment invariants. That obscures which fields are authoritative for packaged review surfaces: discovered bundle paths, metadata `artifacts`, explicit overrides, or copied session references. Any contract change to artifact IDs, scopes, or required alignment now needs synchronized edits across several large modules.
+The original ticket’s `showcase_session_planning.py` citations are stale, because showcase upstream-reference assembly has been moved behind a helper. The underlying issue is still present, though: dashboard, showcase-source resolution, and whole-brain-context planning still each hand-lift bundle metadata into review-surface artifact references with repeated `bundle_id` / `artifact_id` / `format` / `artifact_scope` / `status` plumbing, and packaged dashboard alignment checks are still duplicated across loaders and validators. Contract metadata already carries artifact-hook catalogs for these surfaces, but the current source-resolution paths do not share one helper for “lift bundle metadata into artifact references,” “merge explicit overrides against hook defaults,” and “validate packaged bundle alignment.”
 
 ### Evidence
-- [dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L1359) manually maps each upstream artifact into dashboard references by repeating `bundle_id`, `artifact_id`, `format`, `artifact_scope`, and `status`.
-- [showcase_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/showcase_session_planning.py#L3756) repeats the same pattern for dashboard, analysis, validation, and suite artifacts, then maintains a separate explicit-override merge path at [showcase_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/showcase_session_planning.py#L4203).
-- [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L1185) builds yet another artifact-reference catalog for subset, dashboard, showcase, and connectivity artifacts.
-- The same `bundle_id` alignment rule for dashboard metadata/payload/state is duplicated in [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L1134), [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L3336), [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L3419), and [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L3443).
+- [showcase_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/showcase_session_planning.py#L130) now delegates upstream reference assembly to [showcase_session_sources.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/showcase_session_sources.py#L162), so the old showcase line references are outdated, but the helper still hand-builds dashboard, analysis, validation, and suite artifact references role by role through [showcase_session_sources.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/showcase_session_sources.py#L366).
+- [dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L1333) still enumerates every upstream dashboard reference manually, including simulator UI payloads, offline reports, and linked whole-brain-context artifacts through [dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L1542).
+- [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L1051) separately rebuilds discovered subset, dashboard, and showcase references, and its dashboard/showcase-specific lift logic is duplicated again in [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L1122).
+- Explicit override merging is reimplemented in both [showcase_session_sources.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/showcase_session_sources.py#L959) and [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L1205), each reading `contract_metadata["artifact_hook_catalog"]` and rebuilding the same fallback rules with slightly different status handling.
+- Packaged dashboard bundle-alignment checks are duplicated in [showcase_session_sources.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/showcase_session_sources.py#L659), in packaged-context loading at [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L1013), and again in whole-brain-context reference loaders at [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L2174) and [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L2265).
+- Dashboard contract metadata already defines the authoritative role-to-artifact mapping in [dashboard_session_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_contract.py#L2169), but dashboard planning still bypasses that catalog when constructing upstream references in [dashboard_session_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/dashboard_session_planning.py#L1333).
 
 ### Requested Change
-Introduce shared helpers for “lift bundle metadata into artifact references” and “validate packaged bundle alignment”, with declarative role-to-artifact mappings reused by dashboard, showcase, and whole-brain-context planners.
+Introduce shared review-surface helpers that use contract hook metadata to lift packaged bundle metadata and discovered paths into artifact references, merge explicit artifact overrides, and validate packaged dashboard/showcase bundle alignment. Keep this ticket scoped to the duplicated source-resolution and packaged-surface validation paths in dashboard, showcase-source resolution, and whole-brain-context planning; do not broaden it into a larger contract-schema rewrite unless a minimal hook-shape adjustment is required.
 
 ### Acceptance Criteria
-- Artifact-reference construction for packaged review surfaces is driven by shared helpers or declarative maps rather than repeated hand-written blocks.
-- Bundle-alignment checks for packaged dashboard/showcase/session records are centralized.
-- A contract change to an upstream artifact role or artifact ID requires updating one shared mapping path, not each planner separately.
+- `dashboard_session_planning`, `showcase_session_sources`, and `whole_brain_context_planning` no longer each maintain separate role-by-role blocks for the same packaged dashboard/showcase-style artifact-reference lifting.
+- Explicit artifact override merging is handled by a shared helper or shared abstraction reused by showcase and whole-brain-context paths.
+- Packaged dashboard/showcase `bundle_id` alignment checks are centralized and reused wherever metadata, payload, and state are loaded or validated.
+- Updating an upstream role’s `artifact_id`, scope, or required contract version requires changing one shared mapping/lift path rather than planner-specific copy blocks.
 
 ### Verification
 `make test`
+`pytest tests/test_dashboard_session_planning.py tests/test_showcase_session_planning.py tests/test_whole_brain_context_planning.py`
 
-## testing_and_verification_gaps
-
-# Testing And Verification Gaps Review Tickets
-
-## TESTGAP-001 - Resume-state mismatch rejection is not protected
+## TESTGAP-001 - Resume-state mismatch rejection lacks regression coverage
 - Status: open
-- Priority: high
+- Priority: medium
 - Source: testing_and_verification_gaps review
 - Area: experiment suite execution
 
 ### Problem
-A stale `experiment_suite_execution_state.json` can only be resumed safely if it still matches the current suite identity and work-item ordering. That guard exists in code, but there is no test that seeds an incompatible state file and proves the workflow refuses to reuse it. A regression here could silently resume the wrong suite, skip the wrong work items, or reuse stale packaged outputs without `make test` or `make milestone15-readiness` catching it.
+`execute_experiment_suite_plan()` already rejects persisted resume state that does not match the current suite identity or normalized work-item ordering. The remaining gap is regression coverage: the test suite does not seed an incompatible `experiment_suite_execution_state.json` and prove that mismatched `suite_spec_hash` and `work_item_order` are rejected before resume side effects begin. If that guard regresses, a stale state file could be accepted and resume the wrong suite history without `make test` catching it.
 
 ### Evidence
-- The mismatch checks for `suite_id`, `suite_spec_hash`, and `work_item_order` live in [src/flywire_wave/experiment_suite_execution.py:1366](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L1366).
-- Existing coverage only exercises the happy-path resume flow in [tests/test_experiment_suite_execution.py:58](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py#L58).
-- The Milestone 15 readiness test only verifies the default readiness report path and does not seed an incompatible persisted state in [tests/test_milestone15_readiness.py:21](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_milestone15_readiness.py#L21).
+- The persisted-state validation runs before state initialization, input persistence, and materialized-input preparation in [src/flywire_wave/experiment_suite_execution.py:129](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L129) and [src/flywire_wave/experiment_suite_execution.py:152](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L152).
+- The explicit mismatch checks for `suite_spec_hash` and `work_item_order` live in [src/flywire_wave/experiment_suite_execution.py:1427](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L1427).
+- Existing execution coverage exercises compatible resume behavior and fail-fast resume recovery in [tests/test_experiment_suite_execution.py:60](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py#L60) and [tests/test_experiment_suite_execution.py:249](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py#L249), but there is still no negative-path test that seeds an incompatible persisted state and asserts the rejection path.
 
 ### Requested Change
-Add a deterministic unit test in [tests/test_experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py) that writes a persisted execution-state fixture with a mismatched `suite_spec_hash` and a separate fixture with a mismatched `work_item_order`, then asserts `execute_experiment_suite_plan()` fails before any stage executor runs or package output is refreshed.
+Add a deterministic unit test in [tests/test_experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py) that creates a valid persisted execution state, then mutates `suite_spec_hash` in one subcase and `work_item_order` in another. Assert that `execute_experiment_suite_plan()` raises immediately, with stub stage executors and a patched packaging hook so the test proves resume is rejected before any executor or packaging side effect runs.
 
 ### Acceptance Criteria
 - Reusing a state file with a different `suite_spec_hash` raises a clear `ValueError`.
 - Reusing a state file with a different `work_item_order` raises a clear `ValueError`.
 - No stage executor is called after either mismatch is detected.
+- `package_experiment_suite_outputs()` is not called after either mismatch is detected.
 - The mismatched state file is left unchanged after the rejected resume attempt.
 
 ### Verification
-- `python -m unittest tests.test_experiment_suite_execution -v`
+- `.venv/bin/python -m unittest tests.test_experiment_suite_execution -v`
 - `make test`
 
-## TESTGAP-002 - `validation-ladder-package` is only covered indirectly through the smoke fixture
+## TESTGAP-002 - `validation-ladder package` edge cases and baseline writing still lack direct coverage
 - Status: open
-- Priority: high
+- Priority: medium
 - Source: testing_and_verification_gaps review
 - Area: validation ladder packaging
 
 ### Problem
-The repo documents `scripts/27_validation_ladder.py package` and `make validation-ladder-package` as the path for packaging existing per-layer `validation_bundle.json` artifacts. Current verification only covers the synthetic smoke workflow, not the package path that real numerical, morphology, circuit, and task runs hand off into. A regression in duplicate-layer rejection, required-layer enforcement, input-order normalization, or baseline writing could break real ladder packaging while `make validation-ladder-smoke` and `make milestone13-readiness` still pass.
+The repository now exercises packaged-ladder success behavior through the deterministic smoke fixture, but it still does not directly test the standalone `package` path or its package-specific failure modes. Current coverage does not prove that shuffled input order is normalized, that duplicate layer bundles are rejected, that missing required layers fail clearly, or that `scripts/27_validation_ladder.py package --write-baseline` writes the expected normalized regression snapshot.
 
 ### Evidence
-- The documented package workflow is in [docs/pipeline_notes.md:576](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md#L576) and the Make target is in [Makefile:186](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L186).
-- The package implementation has explicit checks for required layers and duplicate layer IDs in [src/flywire_wave/validation_reporting.py:558](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_reporting.py#L558) and [src/flywire_wave/validation_reporting.py:681](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_reporting.py#L681).
-- Current test coverage only runs the smoke fixture in [tests/test_validation_reporting.py:24](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_validation_reporting.py#L24).
-- Milestone 13 readiness also shells only the `smoke` subcommand in [src/flywire_wave/milestone13_readiness.py:487](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone13_readiness.py#L487).
+- The package workflow is still documented in [docs/pipeline_notes.md:580](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md#L580) and exposed as [Makefile:191](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L191).
+- The CLI has a distinct `package` subcommand plus standalone `--write-baseline` handling in [scripts/27_validation_ladder.py:69](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/27_validation_ladder.py#L69) and [scripts/27_validation_ladder.py:125](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/27_validation_ladder.py#L125).
+- The implementation still contains explicit missing-layer and duplicate-layer checks in [src/flywire_wave/validation_reporting.py:570](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_reporting.py#L570) and [src/flywire_wave/validation_reporting.py:705](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_reporting.py#L705).
+- Current ladder-package test coverage is still only the smoke fixture in [tests/test_validation_reporting.py:24](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_validation_reporting.py#L24), and that workflow calls `package_validation_ladder_outputs()` with a fixed four-layer happy-path input order in [src/flywire_wave/validation_ladder_smoke.py:101](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/validation_ladder_smoke.py#L101).
+- `milestone13-readiness` now audits that `validation-ladder-package` is on the documented command surface, but its CLI check only runs `scripts/27_validation_ladder.py --help` and validates the generic help output rather than executing `package` with real bundles in [src/flywire_wave/milestone13_readiness.py:649](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone13_readiness.py#L649) and [src/flywire_wave/milestone13_readiness.py:683](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/milestone13_readiness.py#L683).
 
 ### Requested Change
-Add a deterministic packaging test module, preferably [tests/test_validation_ladder_package.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_validation_ladder_package.py), that materializes tiny local layer bundles and directly exercises `package_validation_ladder_outputs()` plus `scripts/27_validation_ladder.py package`. Include one shuffled-order success case, one duplicate-layer failure case, one missing-required-layer failure case, and one `--write-baseline` assertion.
+Add focused direct regression coverage for `package_validation_ladder_outputs()` and `scripts/27_validation_ladder.py package`, using tiny local layer bundles. Keep the scope limited to the currently untested package-path behaviors rather than duplicating the existing smoke happy path.
 
 ### Acceptance Criteria
-- Packaging the same layer bundles in different input orders yields the same `bundle_id`, summary bytes, and layer ordering.
+- Packaging the same layer bundles in different input orders yields the same `bundle_id`, identical summary bytes, and normalized layer ordering.
 - Supplying two bundles for the same `layer_id` fails clearly.
-- Requiring all four ladder layers and omitting one fails clearly.
-- `--write-baseline` writes a normalized regression baseline from the packaged summary.
+- Requiring the full ladder layer set and omitting one layer fails clearly.
+- Running `scripts/27_validation_ladder.py package ... --write-baseline ...` writes the normalized regression baseline derived from the packaged summary.
 
 ### Verification
-- `python -m unittest tests.test_validation_ladder_package -v`
+- `python -m unittest tests.test_validation_reporting -v` or `python -m unittest tests.test_validation_ladder_package -v`
 - `make test`
 
-## TESTGAP-003 - `--fail-fast` suite execution behavior is untested
+## TESTGAP-003 - `--fail-fast` returned failed/partial stop path lacks direct regression coverage
 - Status: open
-- Priority: medium
+- Priority: low
 - Source: testing_and_verification_gaps review
-- Area: experiment suite execution CLI
+- Area: experiment suite execution
 
 ### Problem
-The suite runner exposes a `--fail-fast` mode that should stop scheduling after the first failed or partial work item. That branch is separate from the default resume path and is not exercised by current tests or readiness. A regression could keep launching downstream stages after the first failure, contaminating persisted state and review packages, while the existing orchestration tests still pass.
+The original gap is no longer accurate as written: the repository now has direct regression coverage for exception-driven `fail_fast=True` stop/resume behavior and for packaging the resulting `ready` work items. The remaining untested branch is narrower: when a stage executor returns `failed` or `partial` status, or is normalized to `partial` because downstream artifacts are missing, `--fail-fast` should stop before any later work items run. That branch is separate from the exception path, so a regression could keep scheduling downstream work after a partial result while current fail-fast tests still pass.
 
 ### Evidence
-- The CLI flag is part of the public command surface in [scripts/31_run_experiment_suite.py:50](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/31_run_experiment_suite.py#L50).
-- The executor has dedicated `fail_fast` break logic on exceptions and failed or partial statuses in [src/flywire_wave/experiment_suite_execution.py:334](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L334) and [src/flywire_wave/experiment_suite_execution.py:349](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L349).
-- No test references `fail_fast`; current suite execution coverage only uses the default behavior in [tests/test_experiment_suite_execution.py:58](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py#L58).
-- Milestone 15 readiness also exercises only the default workflow path in [tests/test_milestone15_readiness.py:41](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_milestone15_readiness.py#L41).
+- The public CLI still exposes `--fail-fast` and forwards it directly into workflow execution in [scripts/31_run_experiment_suite.py:51](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/31_run_experiment_suite.py#L51) and [scripts/31_run_experiment_suite.py:66](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/31_run_experiment_suite.py#L66).
+- The executor has distinct fail-fast branches for exception handling and for returned failed/partial statuses in [src/flywire_wave/experiment_suite_execution.py:299](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L299), [src/flywire_wave/experiment_suite_execution.py:334](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L334), and [src/flywire_wave/experiment_suite_execution.py:349](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py#L349).
+- Current execution coverage already exercises only the exception-driven fail-fast path and resume recovery in [tests/test_experiment_suite_execution.py:249](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py#L249).
+- Current packaging coverage already exercises fail-fast-ready rollups after that same exception-driven stop in [tests/test_experiment_suite_packaging.py:281](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_packaging.py#L281).
+- There is still no direct `WORK_ITEM_STATUS_PARTIAL` fail-fast assertion in [tests/test_experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py), [tests/test_experiment_suite_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_packaging.py), or [tests/test_milestone15_readiness.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_milestone15_readiness.py).
 
 ### Requested Change
-Extend [tests/test_experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py) with a deterministic `fail_fast=True` scenario that forces one simulation work item to fail, then asserts later work items are not attempted. Add one subprocess-style assertion against `scripts/31_run_experiment_suite.py --fail-fast` if the CLI surface is easy to reuse from the same fixture.
+Extend [tests/test_experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py) with a deterministic `fail_fast=True` scenario where one stage returns `WORK_ITEM_STATUS_PARTIAL` or reports success with a missing downstream artifact so the executor normalizes it to `partial`. Assert that later work items are not attempted, then confirm a subsequent non-`fail_fast` rerun resumes from the stopped state. A subprocess-style CLI assertion for `scripts/31_run_experiment_suite.py --fail-fast` is optional and should stay limited to flag plumbing if the existing fixture is easy to reuse.
 
 ### Acceptance Criteria
-- With `fail_fast=True`, execution stops after the first failed or partial work item.
-- Later work items remain unattempted in the persisted execution state.
-- The stage call log proves no downstream executor ran after the first failing item.
-- A subsequent non-`fail_fast` rerun can resume from the stopped state.
+- With `fail_fast=True`, execution stops after the first work item that returns `failed` or `partial`.
+- The partial-status path created by missing downstream artifacts is covered directly.
+- Later work items remain unattempted in persisted execution state.
+- The stage call log proves no later executor ran after the first returned failed/partial result.
+- A subsequent non-`fail_fast` rerun resumes from the stopped state.
 
 ### Verification
-- `python -m unittest tests.test_experiment_suite_execution -v`
+- `.venv/bin/python -m unittest tests.test_experiment_suite_execution -v`
+- `.venv/bin/python -m unittest tests.test_experiment_suite_packaging -v`
 - `make test`
 
-## TESTGAP-004 - `make verify` has no stubbed regression coverage for auth, outage, or version handling
+## TESTGAP-004 - `tests/test_verify_access.py` misses auth and `--require-materialize` regression branches
 - Status: open
 - Priority: medium
 - Source: testing_and_verification_gaps review
 - Area: preprocessing readiness
 
 ### Problem
-`make all` starts with `make verify`, and `scripts/00_verify_access.py` contains nontrivial classification logic for auth failures, transient materialize outages, `--require-materialize`, missing materialization version `783`, and fafbseg token syncing. None of that is protected by a local deterministic test. A regression could misclassify token failure as a temporary outage or allow the wrong materialization version through without `make test`, `make smoke`, or any readiness command noticing.
+The original ticket is stale: this repo now has a local stubbed regression suite for `scripts/00_verify_access.py`, so the gap is no longer "no tests." The remaining issue is narrower. Current coverage exercises startup shaping, dependency failures, `--auth-only`, and a happy mesh-preflight path, but it does not drive the `CAVEclient` auth/init failure branches, the optional `--require-materialize` outage and invisible-version branches, or the successful token-sync messages. Regressions in those paths would still pass `make test` even though `make verify` remains the first step in `make all`.
 
 ### Evidence
-- The setup docs make `make verify` part of the normal access check and `make all` entry sequence in [README.md:59](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md#L59) and [README.md:88](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/README.md#L88).
-- The verify script contains retry and exit-code logic for auth, transient HTTP/network errors, and materialization visibility in [scripts/00_verify_access.py:36](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L36), [scripts/00_verify_access.py:102](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L102), and [scripts/00_verify_access.py:127](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L127).
-- Secret-sync behavior is implemented separately in [src/flywire_wave/auth.py:9](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/auth.py#L9).
-- No test file references `scripts/00_verify_access.py` or `ensure_flywire_secret`.
+- `make verify` still invokes the verify script, and `make all` still starts with `verify`, in [Makefile:108](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L108) and [Makefile:241](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/Makefile#L241).
+- A stubbed verify suite already exists in [tests/test_verify_access.py:20](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L20), covering info-lookup failure shaping [tests/test_verify_access.py:34](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L34), auth-only mode [tests/test_verify_access.py:111](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L111), and a happy path [tests/test_verify_access.py:163](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L163).
+- The helper always defaults `VERIFY_STUB_CAVE_INIT_MODE` to `ok` in [tests/test_verify_access.py:193](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L193), and although the stubbed `CAVEclient` supports `http401`, network, timeout, and generic init modes in [tests/test_verify_access.py:349](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L349), no test overrides them.
+- The stubbed materialize client only returns a successful version/table response in [tests/test_verify_access.py:340](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L340), and no existing test passes `--require-materialize` through `_run_verify()` in [tests/test_verify_access.py:207](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py#L207).
+- The unexercised production branches are the auth-specific HTTP handling in [scripts/00_verify_access.py:118](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L118), optional materialize probing in [scripts/00_verify_access.py:143](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L143) and [scripts/00_verify_access.py:378](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L378), invisible-version rejection in [scripts/00_verify_access.py:181](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L181), and token-sync success reporting in [scripts/00_verify_access.py:217](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L217), [scripts/00_verify_access.py:219](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/scripts/00_verify_access.py#L219), and [src/flywire_wave/auth.py:9](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/auth.py#L9).
 
 ### Requested Change
-Add a fully local test module, preferably [tests/test_verify_access.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py), that stubs `caveclient`, `requests`, `fafbseg`, and `cloudvolume` and executes `scripts/00_verify_access.py` or `main()` directly. Cover at least: 401 auth failure, transient materialize outage with and without `--require-materialize`, requested materialization version not visible, and successful token-sync plus dataset selection.
+Extend [tests/test_verify_access.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_verify_access.py) rather than adding a new module. Add explicit stubbed cases for `CAVEclient` auth/init failures and for the `--require-materialize` path by making the materialize stub configurable for transient HTTP/network failures, invisible versions, and success. Add a success case with `FLYWIRE_TOKEN` plus `cloudvolume` and `fafbseg` stubs that asserts the token-sync outcome message.
 
 ### Acceptance Criteria
-- Auth failure returns exit code `1` with the auth-specific guidance text.
-- Transient materialize unavailability returns `0` by default and `2` with `--require-materialize`.
-- Invisible materialization version returns `1` and names the requested version.
-- Success path prints the configured datastack, materialization version, and fafbseg token-sync outcome.
-- All of the above run without live FlyWire access.
+- A stubbed `CAVEclient` initialization or info lookup `401`/`403` returns exit code `1` and prints the auth-specific guidance about refreshing `FLYWIRE_TOKEN` or the local caveclient token.
+- With `--require-materialize`, a transient materialize HTTP or network failure returns exit code `1` and prints the temporary-unavailability guidance.
+- With `--require-materialize`, a requested materialization version that is not in the visible version list returns exit code `1` and names the requested version.
+- A successful `--require-materialize` path prints `Requested version`, `Materialization versions visible`, `Tables`, and `Materialize access: OK`.
+- A successful token-sync path prints either `FlyWire token sync: updated local secret storage` or `FlyWire token sync: already configured`, along with the existing `fafbseg setup: OK` success output.
+- All cases run locally with stubs only and require no live FlyWire access.
 
 ### Verification
-- `python -m unittest tests.test_verify_access -v`
+- `./.venv/bin/python -m unittest tests.test_verify_access -v`
 - `make test`

@@ -1,0 +1,9 @@
+Implemented `ready` as a supported persisted experiment-suite work-item state instead of leaving it contract-only.
+
+The status model is now centralized in [experiment_suite_contract.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_contract.py), and both [experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_execution.py) and [experiment_suite_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/experiment_suite_packaging.py) use that shared source for resume semantics, dependency satisfaction, status rollups, and ordered status counts. Execution now promotes waiting work items to persisted `ready` when dependencies are satisfied, resume accepts persisted `ready` cleanly, and package/result-index rollups plus inventory reports include `ready` instead of dropping it. I also clarified the public docs in [experiment_orchestration_design.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/experiment_orchestration_design.md) and [pipeline_notes.md](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/docs/pipeline_notes.md).
+
+Regression coverage was added in [test_experiment_suite_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_execution.py) and [test_experiment_suite_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_experiment_suite_packaging.py) to exercise persisted `ready` on fail-fast resume and on package/result-index rollups.
+
+Verified with:
+- targeted `unittest` for `tests.test_experiment_suite_execution` and `tests.test_experiment_suite_packaging`
+- `make test` passing: `334` tests, `OK`

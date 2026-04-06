@@ -142,6 +142,14 @@ class SubsetArtifactPaths:
     preview_markdown: Path
 
 
+@dataclass(frozen=True)
+class GeneratedPresetArtifacts:
+    preset_name: str
+    description: str | None
+    root_ids: tuple[int, ...]
+    artifact_paths: SubsetArtifactPaths
+
+
 def build_subset_artifact_paths(
     base_dir: str | Path,
     preset_name: str,
@@ -413,73 +421,204 @@ def generate_subsets_from_config(
     subset_output_dir = Path(paths_cfg.get("subset_output_dir", DEFAULT_SUBSET_OUTPUT_DIR))
     ensure_dir(subset_output_dir)
 
-    artifact_summaries: list[dict[str, Any]] = []
+    generated_preset_artifacts: list[GeneratedPresetArtifacts] = []
+    generated_preset_artifacts_by_name: dict[str, GeneratedPresetArtifacts] = {}
     for name in preset_names:
         spec = deepcopy(presets[name])
-        selected_df, stats_payload, manifest_payload, preview_markdown = build_subset_artifacts(
+        generated = _generate_preset_artifacts(
             neuron_registry=neuron_registry,
             connectivity_registry=connectivity_registry,
             preset_name=name,
             spec=spec,
             registry_path=registry_path,
-            connectivity_registry_path=connectivity_registry_path if connectivity_registry_path.exists() else None,
+            connectivity_registry_path=(
+                connectivity_registry_path if connectivity_registry_path.exists() else None
+            ),
             config_path=config_path,
+            subset_output_dir=subset_output_dir,
         )
+        generated_preset_artifacts.append(generated)
+        generated_preset_artifacts_by_name[generated.preset_name] = generated
 
-        artifact_paths = _artifact_paths_for_preset(subset_output_dir, name)
-        _write_subset_outputs(
-            selected_df=selected_df,
-            stats_payload=stats_payload,
-            manifest_payload=manifest_payload,
-            preview_markdown=preview_markdown,
-            artifact_paths=artifact_paths,
+    publication_summary = _publish_canonical_active_subset(
+        cfg=cfg,
+        active_preset=active_preset,
+        generated_presets=generated_preset_artifacts_by_name,
+    )
+    artifact_summaries = [
+        _generated_preset_summary(
+            generated,
+            publication_summary=publication_summary if generated.preset_name == active_preset else None,
         )
-
-        if name == active_preset:
-            selected_root_ids_path = paths_cfg.get("selected_root_ids")
-            if selected_root_ids_path:
-                write_selected_root_roster(
-                    extract_root_ids(selected_df),
-                    selected_root_ids_path,
-                )
-            if "processed_coupling_dir" in paths_cfg or "synapse_source_csv" in paths_cfg:
-                if selected_root_ids_path:
-                    materialize_synapse_registry(
-                        cfg,
-                        root_ids_path=selected_root_ids_path,
-                        scope_label=f"selection:{name}",
-                    )
-                else:
-                    materialize_synapse_registry(
-                        cfg,
-                        root_ids=extract_root_ids(selected_df),
-                        scope_label=f"selection:{name}",
-                    )
-
-        artifact_summaries.append(
-            {
-                "preset_name": name,
-                "description": spec.get("description"),
-                "root_id_count": int(len(selected_df)),
-                "paths": {
-                    "artifact_dir": str(artifact_paths.artifact_dir),
-                    "root_ids": str(artifact_paths.root_ids),
-                    "selected_neurons_csv": str(artifact_paths.selected_neurons_csv),
-                    "stats_json": str(artifact_paths.stats_json),
-                    "manifest_json": str(artifact_paths.manifest_json),
-                    "preview_markdown": str(artifact_paths.preview_markdown),
-                },
-            }
-        )
+        for generated in generated_preset_artifacts
+    ]
 
     index_payload = {
         "generated_at_utc": _now_utc_isoformat(),
         "config_path": str(config_path) if config_path is not None else None,
         "active_preset": active_preset,
+        "publication": publication_summary,
         "generated_presets": artifact_summaries,
     }
     write_json(index_payload, subset_output_dir / SUBSET_INDEX_FILENAME)
     return index_payload
+
+
+def _generate_preset_artifacts(
+    *,
+    neuron_registry: pd.DataFrame,
+    connectivity_registry: pd.DataFrame,
+    preset_name: str,
+    spec: dict[str, Any],
+    registry_path: str | Path,
+    connectivity_registry_path: str | Path | None,
+    config_path: str | Path | None,
+    subset_output_dir: Path,
+) -> GeneratedPresetArtifacts:
+    selected_df, stats_payload, manifest_payload, preview_markdown = build_subset_artifacts(
+        neuron_registry=neuron_registry,
+        connectivity_registry=connectivity_registry,
+        preset_name=preset_name,
+        spec=spec,
+        registry_path=registry_path,
+        connectivity_registry_path=connectivity_registry_path,
+        config_path=config_path,
+    )
+    artifact_paths = _artifact_paths_for_preset(subset_output_dir, preset_name)
+    _write_subset_outputs(
+        selected_df=selected_df,
+        stats_payload=stats_payload,
+        manifest_payload=manifest_payload,
+        preview_markdown=preview_markdown,
+        artifact_paths=artifact_paths,
+    )
+    return GeneratedPresetArtifacts(
+        preset_name=preset_name,
+        description=spec.get("description"),
+        root_ids=tuple(extract_root_ids(selected_df)),
+        artifact_paths=artifact_paths,
+    )
+
+
+def _publish_canonical_active_subset(
+    *,
+    cfg: dict[str, Any],
+    active_preset: str,
+    generated_presets: dict[str, GeneratedPresetArtifacts],
+) -> dict[str, Any]:
+    published_preset = generated_presets.get(active_preset)
+    if published_preset is None:
+        raise ValueError(
+            f"Active preset {active_preset!r} was not generated and cannot be published."
+        )
+
+    paths_cfg = cfg.get("paths", {})
+    published_root_ids = list(published_preset.root_ids)
+    selected_root_ids_path = _normalize_optional_path(paths_cfg.get("selected_root_ids"))
+    selected_root_ids_updated = False
+    if selected_root_ids_path is not None:
+        selected_root_ids_updated = _publish_selected_root_ids_alias(
+            root_ids=published_root_ids,
+            selected_root_ids_path=selected_root_ids_path,
+        )
+
+    coupling_refresh_enabled = _publishes_subset_scoped_coupling(paths_cfg)
+    coupling_refresh_summary = None
+    if coupling_refresh_enabled:
+        if selected_root_ids_path is not None:
+            coupling_refresh_summary = materialize_synapse_registry(
+                cfg,
+                root_ids_path=selected_root_ids_path,
+                scope_label=f"selection:{active_preset}",
+            )
+        else:
+            coupling_refresh_summary = materialize_synapse_registry(
+                cfg,
+                root_ids=published_root_ids,
+                scope_label=f"selection:{active_preset}",
+            )
+
+    return {
+        "preset_name": active_preset,
+        "root_id_count": int(len(published_root_ids)),
+        "artifact_root_ids_path": str(published_preset.artifact_paths.root_ids),
+        "selected_root_ids_path": (
+            str(selected_root_ids_path)
+            if selected_root_ids_path is not None
+            else None
+        ),
+        "selected_root_ids_updated": selected_root_ids_updated,
+        "subset_scoped_coupling_refreshed": coupling_refresh_summary is not None,
+        "subset_scoped_coupling": coupling_refresh_summary,
+    }
+
+
+def _generated_preset_summary(
+    generated: GeneratedPresetArtifacts,
+    *,
+    publication_summary: dict[str, Any] | None,
+) -> dict[str, Any]:
+    publication_metadata = {
+        "published_as_active_subset": False,
+        "selected_root_ids_updated": False,
+        "subset_scoped_coupling_refreshed": False,
+    }
+    if publication_summary is not None:
+        publication_metadata = {
+            "published_as_active_subset": True,
+            "selected_root_ids_updated": bool(
+                publication_summary["selected_root_ids_updated"]
+            ),
+            "subset_scoped_coupling_refreshed": bool(
+                publication_summary["subset_scoped_coupling_refreshed"]
+            ),
+        }
+
+    artifact_paths = generated.artifact_paths
+    return {
+        "preset_name": generated.preset_name,
+        "description": generated.description,
+        "root_id_count": int(len(generated.root_ids)),
+        "publication": publication_metadata,
+        "paths": {
+            "artifact_dir": str(artifact_paths.artifact_dir),
+            "root_ids": str(artifact_paths.root_ids),
+            "selected_neurons_csv": str(artifact_paths.selected_neurons_csv),
+            "stats_json": str(artifact_paths.stats_json),
+            "manifest_json": str(artifact_paths.manifest_json),
+            "preview_markdown": str(artifact_paths.preview_markdown),
+        },
+    }
+
+
+def _normalize_optional_path(value: Any) -> Path | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    return Path(normalized)
+
+
+def _publish_selected_root_ids_alias(
+    *,
+    root_ids: list[int],
+    selected_root_ids_path: Path,
+) -> bool:
+    existing_root_ids: list[int] | None = None
+    if selected_root_ids_path.exists():
+        existing_root_ids = read_selected_root_roster(
+            selected_root_ids_path,
+            field_name="paths.selected_root_ids",
+        )
+    if existing_root_ids == root_ids:
+        return False
+    write_selected_root_roster(root_ids, selected_root_ids_path)
+    return True
+
+
+def _publishes_subset_scoped_coupling(paths_cfg: dict[str, Any]) -> bool:
+    return "processed_coupling_dir" in paths_cfg or "synapse_source_csv" in paths_cfg
 
 
 def build_subset_artifacts(

@@ -30,6 +30,7 @@ from flywire_wave.retinal_contract import (
 )
 from flywire_wave.retinal_geometry import resolve_retinal_geometry_spec
 from flywire_wave.retinal_sampling import AnalyticVisualFieldSource, project_visual_source
+from flywire_wave.simulation_asset_resolution import ROOT_ASSET_RECORD_VERSION
 from flywire_wave.simulation_planning import default_baseline_family_configs
 from flywire_wave.simulator_result_contract import (
     P1_BASELINE_FAMILY,
@@ -136,7 +137,9 @@ class BaselineExecutionIntegrationTest(unittest.TestCase):
             )
 
             edge_path = Path(
-                arm_plan["circuit_assets"]["selected_root_assets"][0]["edge_bundle_paths"][0]["path"]
+                arm_plan["circuit_assets"]["selected_root_assets"][0]["asset_record"][
+                    "coupling"
+                ]["edge_bundle_records"][0]["path"]
             )
             edge_path.unlink()
 
@@ -196,29 +199,39 @@ def _build_fixture_arm_plan(
             {
                 "root_id": root_id,
                 "project_role": project_roles[root_id],
-                "coupling_bundle_status": bundle_metadata["status"],
-                "required_coupling_assets": {
-                    asset_key: bundle_metadata["assets"][asset_key]["path"]
-                    for asset_key in (
-                        "local_synapse_registry",
-                        "incoming_anchor_map",
-                        "outgoing_anchor_map",
-                        "coupling_index",
-                    )
+                "asset_record": {
+                    "version": ROOT_ASSET_RECORD_VERSION,
+                    "coupling": {
+                        "bundle_metadata": copy.deepcopy(bundle_metadata),
+                        "asset_records": {
+                            asset_key: {
+                                "path": str(Path(bundle_metadata["assets"][asset_key]["path"]).resolve()),
+                                "status": str(bundle_metadata["assets"][asset_key]["status"]),
+                                "exists": Path(bundle_metadata["assets"][asset_key]["path"]).exists(),
+                            }
+                            for asset_key in (
+                                "local_synapse_registry",
+                                "incoming_anchor_map",
+                                "outgoing_anchor_map",
+                                "coupling_index",
+                            )
+                        },
+                        "edge_bundle_records": [
+                            {
+                                "pre_root_id": int(edge_bundle["pre_root_id"]),
+                                "post_root_id": int(edge_bundle["post_root_id"]),
+                                "peer_root_id": int(edge_bundle["peer_root_id"]),
+                                "relation_to_root": str(edge_bundle["relation_to_root"]),
+                                "path": str(Path(edge_bundle["path"]).resolve()),
+                                "status": str(edge_bundle["status"]),
+                                "exists": Path(edge_bundle["path"]).exists(),
+                                "selected_peer": True,
+                            }
+                            for edge_bundle in bundle_metadata["edge_bundles"]
+                            if int(edge_bundle["peer_root_id"]) in root_ids
+                        ],
+                    },
                 },
-                "edge_bundle_paths": [
-                    {
-                        "pre_root_id": int(edge_bundle["pre_root_id"]),
-                        "post_root_id": int(edge_bundle["post_root_id"]),
-                        "peer_root_id": int(edge_bundle["peer_root_id"]),
-                        "relation_to_root": str(edge_bundle["relation_to_root"]),
-                        "path": str(Path(edge_bundle["path"]).resolve()),
-                        "status": str(edge_bundle["status"]),
-                        "selected_peer": True,
-                    }
-                    for edge_bundle in bundle_metadata["edge_bundles"]
-                    if int(edge_bundle["peer_root_id"]) in root_ids
-                ],
             }
         )
 

@@ -1,0 +1,24 @@
+## OVR-002 - Duplicate review-side CLI-runner orchestration is already collapsed
+- Status: closed
+- Priority: low
+- Source: overengineering_and_abstraction_load review
+- Area: `agent_tickets` / `review_prompt_tickets`
+
+### Problem
+This ticket is stale. The repo no longer maintains multiple independent review-job launchers. Review flows already share one prompt-job executor, and the review path already reuses the shared stream/process setup from `agent_tickets`. The only remaining overlap is the smaller split between `run_ticket()` and `run_prompt_job()`, and that split still carries an intentional stderr-handling difference, so it is not the same cleanup this ticket originally described.
+
+### Evidence
+- [src/flywire_wave/review_prompt_tickets.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L12), [src/flywire_wave/review_prompt_tickets.py:358](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L358), and [src/flywire_wave/review_prompt_tickets.py:365](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L365) show the review runner already reuses the shared process-group and stream-handling helpers from `agent_tickets` instead of carrying its own copies.
+- Review execution is already centralized on [src/flywire_wave/review_prompt_tickets.py:306](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L306) via [src/flywire_wave/review_prompt_tickets.py:514](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L514), [src/flywire_wave/review_prompt_tickets.py:618](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L618), and [src/flywire_wave/review_ticket_backlog.py:133](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_ticket_backlog.py#L133), so specialization, review, refresh, and backlog-review passes already go through one review-side launcher.
+- The only remaining overlap is the narrower staging/artifact setup between [src/flywire_wave/agent_tickets.py:299](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L299) and [src/flywire_wave/review_prompt_tickets.py:306](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L306), but those paths still intentionally differ in stderr behavior at [src/flywire_wave/agent_tickets.py:365](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L365) and [src/flywire_wave/review_prompt_tickets.py:351](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L351).
+
+### Requested Change
+No implementation work remains for this ticket as written. Keep the current split unless a concrete bug or a new launcher path shows that the remaining ticket-vs-review differences are causing real drift.
+
+### Acceptance Criteria
+- Ticket stays closed because the duplicate review-side orchestration identified here has already been removed.
+- No code change is required under OVR-002.
+
+### Verification
+- Inspect [src/flywire_wave/review_prompt_tickets.py:12](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L12), [src/flywire_wave/review_prompt_tickets.py:306](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L306), [src/flywire_wave/review_prompt_tickets.py:514](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L514), [src/flywire_wave/review_prompt_tickets.py:618](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L618), and [src/flywire_wave/review_ticket_backlog.py:133](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_ticket_backlog.py#L133).
+- Inspect [src/flywire_wave/agent_tickets.py:299](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/agent_tickets.py#L299) and [src/flywire_wave/review_prompt_tickets.py:351](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/review_prompt_tickets.py#L351) to confirm the only remaining overlap is the intentionally different ticket-vs-review execution behavior.

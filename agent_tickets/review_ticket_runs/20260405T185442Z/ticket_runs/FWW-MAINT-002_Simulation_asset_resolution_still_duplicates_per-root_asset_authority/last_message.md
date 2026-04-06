@@ -1,0 +1,10 @@
+Implemented the ticket in [simulation_asset_resolution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/simulation_asset_resolution.py#L161). `resolve_circuit_assets()` now emits one canonical per-root `asset_record` with nested `geometry`, `operator`, and `coupling` authority, instead of publishing parallel top-level copies like `required_operator_assets`, `required_coupling_assets`, sidecar shortcuts, and duplicated edge-bundle views. The downstream readers now consume that canonical record through shared accessors, `resolve_surface_wave_operator_asset()` uses a normalized operator contract identity for drift checks, and `resolve_root_coupling_asset_record()` derives selected edge-bundle paths from the canonical coupling record at use time. I also updated [baseline_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/baseline_execution.py#L710) to read selected edges through the derived canonical view.
+
+I added regression coverage in [test_simulation_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_simulation_planning.py#L170) for the new root-asset contract and for the narrowed operator drift behavior, and updated the baseline fixture in [test_baseline_execution.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_baseline_execution.py#L173) to use the canonical coupling asset record.
+
+Verified:
+- `make smoke`
+- `pytest tests/test_baseline_execution.py tests/test_simulator_execution.py tests/test_hybrid_morphology_runtime.py`
+- Focused regression while iterating: `pytest tests/test_simulation_planning.py tests/test_baseline_execution.py -q`
+
+All passed. `make smoke` did print an existing non-failing startup warning about `codex.data.connections_v2`, but the suite completed `OK` with 332 tests and manifest validation succeeding.

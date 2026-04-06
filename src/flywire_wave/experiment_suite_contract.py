@@ -118,6 +118,98 @@ SUPPORTED_WORK_ITEM_STATUSES = (
     WORK_ITEM_STATUS_SKIPPED,
 )
 
+RESUMABLE_WORK_ITEM_STATUSES = (
+    WORK_ITEM_STATUS_PLANNED,
+    WORK_ITEM_STATUS_READY,
+    WORK_ITEM_STATUS_RUNNING,
+    WORK_ITEM_STATUS_PARTIAL,
+    WORK_ITEM_STATUS_FAILED,
+    WORK_ITEM_STATUS_BLOCKED,
+)
+
+WAITING_WORK_ITEM_STATUSES = (
+    WORK_ITEM_STATUS_PLANNED,
+    WORK_ITEM_STATUS_READY,
+    WORK_ITEM_STATUS_BLOCKED,
+)
+
+SATISFIED_DEPENDENCY_WORK_ITEM_STATUSES = (
+    WORK_ITEM_STATUS_SUCCEEDED,
+    WORK_ITEM_STATUS_SKIPPED,
+)
+
+STAGE_EXECUTION_RESULT_WORK_ITEM_STATUSES = (
+    WORK_ITEM_STATUS_SUCCEEDED,
+    WORK_ITEM_STATUS_PARTIAL,
+    WORK_ITEM_STATUS_FAILED,
+    WORK_ITEM_STATUS_BLOCKED,
+    WORK_ITEM_STATUS_SKIPPED,
+)
+
+WORK_ITEM_STATUS_ROLLUP_PRIORITY = (
+    WORK_ITEM_STATUS_RUNNING,
+    WORK_ITEM_STATUS_FAILED,
+    WORK_ITEM_STATUS_PARTIAL,
+    WORK_ITEM_STATUS_BLOCKED,
+    WORK_ITEM_STATUS_READY,
+    WORK_ITEM_STATUS_PLANNED,
+    WORK_ITEM_STATUS_SKIPPED,
+    WORK_ITEM_STATUS_SUCCEEDED,
+)
+_WORK_ITEM_STATUS_ROLLUP_INDEX = {
+    status: index for index, status in enumerate(WORK_ITEM_STATUS_ROLLUP_PRIORITY)
+}
+
+
+def work_item_status_allows_resume(status: str) -> bool:
+    return str(status) in set(RESUMABLE_WORK_ITEM_STATUSES)
+
+
+def ordered_experiment_suite_work_item_status_counts(
+    counts: Mapping[str, Any] | None = None,
+) -> dict[str, int]:
+    ordered = {
+        status: 0 for status in SUPPORTED_WORK_ITEM_STATUSES
+    }
+    if counts is None:
+        return ordered
+    for raw_status, raw_count in counts.items():
+        status = _normalize_identifier(
+            raw_status,
+            field_name="work_item_status_counts.status",
+        )
+        if status not in ordered:
+            raise ValueError(
+                f"Unsupported experiment-suite work-item status {status!r}."
+            )
+        ordered[status] = int(raw_count)
+    return ordered
+
+
+def roll_up_experiment_suite_work_item_statuses(
+    statuses: Sequence[str],
+    *,
+    default_status: str = WORK_ITEM_STATUS_PLANNED,
+) -> str:
+    if default_status not in _WORK_ITEM_STATUS_ROLLUP_INDEX:
+        raise ValueError(
+            f"default_status must be one of {WORK_ITEM_STATUS_ROLLUP_PRIORITY!r}."
+        )
+    resolved_statuses = [str(item) for item in statuses]
+    if not resolved_statuses:
+        return default_status
+    unknown = sorted(
+        {status for status in resolved_statuses if status not in _WORK_ITEM_STATUS_ROLLUP_INDEX}
+    )
+    if unknown:
+        raise ValueError(
+            f"Unsupported experiment-suite work-item statuses {unknown!r}."
+        )
+    return min(
+        resolved_statuses,
+        key=lambda status: int(_WORK_ITEM_STATUS_ROLLUP_INDEX[status]),
+    )
+
 SUITE_MANIFEST_SOURCE_KIND = "suite_manifest"
 EXPERIMENT_MANIFEST_SOURCE_KIND = "experiment_manifest"
 SIMULATION_PLAN_SOURCE_KIND = "simulation_plan"
@@ -1898,56 +1990,56 @@ def _default_work_item_status_catalog() -> list[dict[str, Any]]:
             display_name="Planned",
             description="The suite work item exists in deterministic ordering but prerequisites have not been checked yet.",
             sequence_index=10,
-            resume_allowed=True,
+            resume_allowed=work_item_status_allows_resume(WORK_ITEM_STATUS_PLANNED),
         ),
         build_experiment_suite_work_item_status_definition(
             status_id=WORK_ITEM_STATUS_READY,
             display_name="Ready",
             description="All declared prerequisites are available and the work item can be executed without reinterpretation.",
             sequence_index=20,
-            resume_allowed=True,
+            resume_allowed=work_item_status_allows_resume(WORK_ITEM_STATUS_READY),
         ),
         build_experiment_suite_work_item_status_definition(
             status_id=WORK_ITEM_STATUS_RUNNING,
             display_name="Running",
             description="The work item has started and may emit partial local outputs, but completion has not yet been established.",
             sequence_index=30,
-            resume_allowed=True,
+            resume_allowed=work_item_status_allows_resume(WORK_ITEM_STATUS_RUNNING),
         ),
         build_experiment_suite_work_item_status_definition(
             status_id=WORK_ITEM_STATUS_SUCCEEDED,
             display_name="Succeeded",
             description="The declared stage completed and the expected downstream artifacts were discovered without contract incompatibility.",
             sequence_index=40,
-            resume_allowed=False,
+            resume_allowed=work_item_status_allows_resume(WORK_ITEM_STATUS_SUCCEEDED),
         ),
         build_experiment_suite_work_item_status_definition(
             status_id=WORK_ITEM_STATUS_PARTIAL,
             display_name="Partial",
             description="Some declared outputs were produced, but the stage is not yet complete enough to treat the work item as succeeded.",
             sequence_index=50,
-            resume_allowed=True,
+            resume_allowed=work_item_status_allows_resume(WORK_ITEM_STATUS_PARTIAL),
         ),
         build_experiment_suite_work_item_status_definition(
             status_id=WORK_ITEM_STATUS_FAILED,
             display_name="Failed",
             description="Execution attempted the stage and produced a deterministic failure that must be addressed or explicitly retried.",
             sequence_index=60,
-            resume_allowed=True,
+            resume_allowed=work_item_status_allows_resume(WORK_ITEM_STATUS_FAILED),
         ),
         build_experiment_suite_work_item_status_definition(
             status_id=WORK_ITEM_STATUS_BLOCKED,
             display_name="Blocked",
             description="Required upstream inputs or compatible prerequisites were unavailable, so the stage could not execute honestly.",
             sequence_index=70,
-            resume_allowed=True,
+            resume_allowed=work_item_status_allows_resume(WORK_ITEM_STATUS_BLOCKED),
         ),
         build_experiment_suite_work_item_status_definition(
             status_id=WORK_ITEM_STATUS_SKIPPED,
             display_name="Skipped",
             description="The stage was intentionally not executed for this suite cell under the declared orchestration policy.",
             sequence_index=80,
-            resume_allowed=False,
+            resume_allowed=work_item_status_allows_resume(WORK_ITEM_STATUS_SKIPPED),
         ),
     ]
 

@@ -165,8 +165,11 @@ def _check_materialize_access(*, client: Any, version: int, datastack: str) -> i
         _print_next_step("confirm the configured materialization service is reachable and retry.")
         return 1
     except (requests.ConnectionError, requests.Timeout) as exc:
-        print(f"Materialize access hit a network error for datastack '{datastack}': {exc}")
-        _print_next_step("verify FlyWire network reachability and rerun `make verify`.")
+        print(
+            "Materialize access is temporarily unavailable "
+            f"for datastack '{datastack}': {exc}"
+        )
+        _print_next_step("retry after the FlyWire materialize service recovers.")
         return 1
     except Exception as exc:
         print(f"Materialize access failed for datastack '{datastack}': {_format_exception(exc)}")

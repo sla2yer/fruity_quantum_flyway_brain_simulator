@@ -19,6 +19,7 @@ from .baseline_families import (
 )
 from .retinal_bundle import load_recorded_retinal_bundle
 from .retinal_contract import DEFAULT_CHANNEL_NAME
+from .simulation_asset_resolution import selected_peer_edge_bundles
 from .simulator_result_contract import (
     BASELINE_MODEL_MODE,
     P1_BASELINE_FAMILY,
@@ -733,12 +734,7 @@ def _collect_selected_edge_paths(
             )
         asset_root_ids.add(root_id)
         for edge_index, edge_bundle in enumerate(
-            _require_sequence(
-                root_asset.get("edge_bundle_paths", []),
-                field_name=(
-                    f"arm_plan.circuit_assets.selected_root_assets[{index}].edge_bundle_paths"
-                ),
-            )
+            selected_peer_edge_bundles(root_asset)
         ):
             edge_record = _require_mapping(
                 edge_bundle,

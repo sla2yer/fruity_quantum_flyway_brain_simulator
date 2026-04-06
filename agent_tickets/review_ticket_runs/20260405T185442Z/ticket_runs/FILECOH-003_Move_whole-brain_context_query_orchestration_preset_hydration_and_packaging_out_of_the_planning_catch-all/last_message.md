@@ -1,0 +1,11 @@
+**Changes**
+- [whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_planning.py#L306) now stops executing the low-level query engine inline. It delegates session query orchestration to [whole_brain_context_session_query.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_session_query.py#L57) and delegates catalog/payload/state assembly plus bundle writes to [whole_brain_context_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_packaging.py#L34).
+- [whole_brain_context_session_query.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_session_query.py#L57) now owns main query execution, preset hydration, and downstream handoff enrichment. That includes the former preset replay/handoff logic moved out of planning.
+- [whole_brain_context_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/src/flywire_wave/whole_brain_context_packaging.py#L102) now owns `context_query_catalog`, `context_view_payload`, `context_view_state`, linked dashboard sub-packaging, and writing the session bundle artifacts.
+- Planning tests were narrowed to orchestration boundaries in [test_whole_brain_context_planning.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_whole_brain_context_planning.py#L281), while detailed preset packaging and handoff lineage coverage moved to [test_whole_brain_context_packaging.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_whole_brain_context_packaging.py#L55) and [test_whole_brain_context_session_query.py](/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/tests/test_whole_brain_context_session_query.py#L51).
+
+**Verified**
+- `make test` passed: 324 tests.
+- `make validate-manifest` passed.
+- `make smoke` passed.
+- Test/smoke still emit the existing non-failing warning `Failed to load DB for data version 783: No module named 'codex.data.connections_v2'`.
