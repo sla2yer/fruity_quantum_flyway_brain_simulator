@@ -57,11 +57,11 @@ except ModuleNotFoundError:
     from test_dashboard_session_planning import _materialize_dashboard_fixture  # type: ignore[no-redef]
 
 try:
-    from tests.test_showcase_session_planning import (
+    from tests.showcase_test_support import (
         _materialize_packaged_showcase_fixture,
     )
 except ModuleNotFoundError:
-    from test_showcase_session_planning import (  # type: ignore[no-redef]
+    from showcase_test_support import (  # type: ignore[no-redef]
         _materialize_packaged_showcase_fixture,
     )
 

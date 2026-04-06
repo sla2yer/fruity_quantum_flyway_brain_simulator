@@ -43,12 +43,12 @@ from flywire_wave.showcase_session_planning import (
 )
 
 try:
-    from tests.test_showcase_session_planning import (
+    from tests.showcase_test_support import (
         _approve_validation_highlight,
         _materialize_packaged_showcase_fixture,
     )
 except ModuleNotFoundError:
-    from test_showcase_session_planning import (  # type: ignore[no-redef]
+    from showcase_test_support import (  # type: ignore[no-redef]
         _approve_validation_highlight,
         _materialize_packaged_showcase_fixture,
     )

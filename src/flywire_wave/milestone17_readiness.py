@@ -309,6 +309,8 @@ def _materialize_milestone17_fixture(
     showcase_fixture_builder = _load_fixture_builder(
         repo_root=repo_root,
         module_names=(
+            "tests.showcase_test_support",
+            "showcase_test_support",
             "tests.test_showcase_session_planning",
             "test_showcase_session_planning",
         ),

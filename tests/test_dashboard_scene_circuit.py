@@ -35,9 +35,9 @@ except ModuleNotFoundError:
     from tests.test_dashboard_session_planning import _materialize_dashboard_fixture
 
 try:
-    from test_showcase_session_planning import _materialize_packaged_showcase_fixture
+    from showcase_test_support import _materialize_packaged_showcase_fixture
 except ModuleNotFoundError:
-    from tests.test_showcase_session_planning import _materialize_packaged_showcase_fixture
+    from tests.showcase_test_support import _materialize_packaged_showcase_fixture
 
 try:
     from test_whole_brain_context_planning import (
