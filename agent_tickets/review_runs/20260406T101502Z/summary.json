@@ -1,0 +1,39 @@
+{
+  "repo_root": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo",
+  "output_dir": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/review_runs/20260406T101502Z",
+  "runner": "manual_review",
+  "sandbox": "workspace-write",
+  "specializer_model": null,
+  "review_model": null,
+  "extra_args": [],
+  "max_workers": 1,
+  "prompt_set_slugs": [
+    "package_structure_and_module_placement"
+  ],
+  "specialization_results": [
+    {
+      "stage": "specialization",
+      "prompt_set": "package_structure_and_module_placement",
+      "title": "Package Structure And Module Placement Review Prompt",
+      "returncode": 0,
+      "specialized_prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/review_runs/20260406T101502Z/specialization/package_structure_and_module_placement/specialized_prompt.md"
+    }
+  ],
+  "review_results": [
+    {
+      "stage": "review",
+      "prompt_set": "package_structure_and_module_placement",
+      "title": "Package Structure And Module Placement Review Prompt",
+      "returncode": 0,
+      "specialized_prompt_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/review_runs/20260406T101502Z/specialization/package_structure_and_module_placement/specialized_prompt.md",
+      "tickets_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/review_runs/20260406T101502Z/reviews/package_structure_and_module_placement/tickets.md"
+    }
+  ],
+  "combined_tickets_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/review_runs/20260406T101502Z/combined_tickets.md",
+  "successful_specialization_count": 1,
+  "successful_review_count": 1,
+  "failed_results": [],
+  "failed_result_count": 0,
+  "success": true,
+  "summary_path": "/home/jack/Documents/github/personal/fly_neural_simulation/flywire_wave_repo/agent_tickets/review_runs/20260406T101502Z/summary.json"
+}
