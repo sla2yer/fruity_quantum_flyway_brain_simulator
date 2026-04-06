@@ -8,7 +8,10 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from .cli_startup_test_utils import run_script_with_blocked_imports
+try:
+    from .cli_startup_test_utils import run_script_with_blocked_imports
+except ImportError:
+    from cli_startup_test_utils import run_script_with_blocked_imports  # type: ignore[no-redef]
 
 
 ROOT = Path(__file__).resolve().parents[1]

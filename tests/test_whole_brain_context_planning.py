@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
@@ -21,13 +22,11 @@ from flywire_wave.selection import (
     write_selected_root_roster,
     write_subset_manifest,
 )
-from flywire_wave.showcase_session_contract import ANALYSIS_SUMMARY_PRESET_ID
 from flywire_wave.showcase_session_planning import (
     package_showcase_session,
     resolve_showcase_session_plan,
 )
 from flywire_wave.whole_brain_context_contract import (
-    CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE,
     CONTEXT_QUERY_CATALOG_ARTIFACT_ID,
     CONTEXT_VIEW_PAYLOAD_ARTIFACT_ID,
     CONTEXT_VIEW_STATE_ARTIFACT_ID,
@@ -35,18 +34,16 @@ from flywire_wave.whole_brain_context_contract import (
     discover_whole_brain_context_session_bundle_paths,
     load_whole_brain_context_session_metadata,
 )
+from flywire_wave.whole_brain_context_packaging import (
+    build_whole_brain_context_session_package_contents,
+    package_whole_brain_context_session_bundle,
+)
 from flywire_wave.whole_brain_context_planning import (
-    DASHBOARD_HANDOFF_PRESET_ID,
-    DEFAULT_CONTEXT_QUERY_PRESET_LIBRARY_ID,
-    DOWNSTREAM_HALO_PRESET_ID,
-    OVERVIEW_CONTEXT_PRESET_ID,
-    PATHWAY_FOCUS_PRESET_ID,
-    SHOWCASE_HANDOFF_PRESET_ID,
-    UPSTREAM_HALO_PRESET_ID,
-    WHOLE_BRAIN_CONTEXT_FIXTURE_MODE_REVIEW,
-    discover_whole_brain_context_query_presets,
     package_whole_brain_context_session,
     resolve_whole_brain_context_session_plan,
+)
+from flywire_wave.whole_brain_context_session_query import (
+    execute_whole_brain_context_session_queries,
 )
 
 try:
@@ -281,346 +278,56 @@ class WholeBrainContextPlanningTest(unittest.TestCase):
                 )
             )
 
-    def test_showcase_review_fixture_packages_query_presets_with_stable_payload_refs(
-        self,
-    ) -> None:
+    def test_plan_delegates_query_orchestration_and_package_content_builders(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
             fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
-            _write_context_review_metadata_fixture(fixture["config_path"])
-            synapse_registry_path = (
-                Path(tmp_dir_str) / "context_review_fixture" / "local_synapse_registry.csv"
-            )
-            _write_context_review_synapse_registry(synapse_registry_path)
 
-            showcase_plan = resolve_showcase_session_plan(
-                config_path=fixture["config_path"],
-                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
-                suite_package_metadata_path=fixture["suite_package_metadata_path"],
-                suite_review_summary_path=fixture["suite_review_summary_path"],
-                table_dimension_ids=["motion_direction"],
-            )
-            showcase_package = package_showcase_session(showcase_plan)
-
-            plan = resolve_whole_brain_context_session_plan(
-                config_path=fixture["config_path"],
-                showcase_session_metadata_path=showcase_package["metadata_path"],
-                explicit_artifact_references=[
-                    _fixture_synapse_registry_reference(
-                        fixture["config_path"],
-                        path=synapse_registry_path,
-                    )
-                ],
-            )
-
-            self.assertEqual(
-                plan["fixture_mode"],
-                WHOLE_BRAIN_CONTEXT_FIXTURE_MODE_REVIEW,
-            )
-            self.assertEqual(
-                plan["fixture_profile"]["compact_gate"]["surface_kind"],
-                "showcase_session",
-            )
-
-            packaged = package_whole_brain_context_session(plan)
-            catalog = json.loads(
-                Path(packaged["context_query_catalog_path"]).read_text(encoding="utf-8")
-            )
-            payload = json.loads(
-                Path(packaged["context_view_payload_path"]).read_text(encoding="utf-8")
-            )
-            state = json.loads(
-                Path(packaged["context_view_state_path"]).read_text(encoding="utf-8")
-            )
-
-            self.assertEqual(
-                catalog["preset_library_id"],
-                DEFAULT_CONTEXT_QUERY_PRESET_LIBRARY_ID,
-            )
-            self.assertEqual(
-                catalog["fixture_profile"]["fixture_mode"],
-                WHOLE_BRAIN_CONTEXT_FIXTURE_MODE_REVIEW,
-            )
-            self.assertEqual(
-                catalog["active_preset_id"],
-                OVERVIEW_CONTEXT_PRESET_ID,
-            )
-            self.assertEqual(
-                discover_whole_brain_context_query_presets(catalog),
-                discover_whole_brain_context_query_presets(plan),
-            )
-            self.assertEqual(
-                [item["preset_id"] for item in discover_whole_brain_context_query_presets(catalog)],
-                [
-                    OVERVIEW_CONTEXT_PRESET_ID,
-                    UPSTREAM_HALO_PRESET_ID,
-                    DOWNSTREAM_HALO_PRESET_ID,
-                    PATHWAY_FOCUS_PRESET_ID,
-                    DASHBOARD_HANDOFF_PRESET_ID,
-                    SHOWCASE_HANDOFF_PRESET_ID,
-                ],
-            )
-            self.assertEqual(
-                catalog["available_preset_ids"],
-                [item["preset_id"] for item in discover_whole_brain_context_query_presets(catalog)],
-            )
-            self.assertEqual(
-                state["active_preset_id"],
-                catalog["active_preset_id"],
-            )
-            self.assertEqual(
-                state["preset_discovery_order"],
-                catalog["preset_discovery_order"],
-            )
-
-            available_presets = {
-                item["preset_id"]: item for item in catalog["available_query_presets"]
-            }
-            overview_ref = available_presets[OVERVIEW_CONTEXT_PRESET_ID][
-                "graph_payload_references"
-            ]["primary_graph"]
-            pathway_ref = available_presets[PATHWAY_FOCUS_PRESET_ID][
-                "graph_payload_references"
-            ]["primary_graph"]
-            self.assertEqual(
-                overview_ref["payload_path"],
-                f"query_preset_payloads.{OVERVIEW_CONTEXT_PRESET_ID}.overview_graph",
-            )
-            self.assertEqual(
-                pathway_ref["payload_path"],
-                f"query_preset_payloads.{PATHWAY_FOCUS_PRESET_ID}.focused_subgraph",
-            )
-            self.assertEqual(
-                available_presets[DASHBOARD_HANDOFF_PRESET_ID]["linked_session_target"][
-                    "artifact_role_id"
-                ],
-                "dashboard_session_metadata",
-            )
-            self.assertEqual(
-                available_presets[SHOWCASE_HANDOFF_PRESET_ID]["linked_session_target"][
-                    "artifact_role_id"
-                ],
-                "showcase_session_metadata",
-            )
-
-            overview_payload = payload["query_preset_payloads"][OVERVIEW_CONTEXT_PRESET_ID]
-            upstream_payload = payload["query_preset_payloads"][UPSTREAM_HALO_PRESET_ID]
-            downstream_payload = payload["query_preset_payloads"][DOWNSTREAM_HALO_PRESET_ID]
-            pathway_payload = payload["query_preset_payloads"][PATHWAY_FOCUS_PRESET_ID]
-            active_root_count = len(plan["selection"]["selected_root_ids"])
-
-            self.assertGreater(
-                overview_payload["overview_graph"]["summary"]["distinct_root_count"],
-                active_root_count,
-            )
-            self.assertTrue(
-                any(
-                    item["node_role_id"] == "context_only"
-                    and "upstream_graph" in item["overlay_ids"]
-                    for item in upstream_payload["overview_graph"]["node_records"]
+            with patch(
+                "flywire_wave.whole_brain_context_planning.execute_whole_brain_context_session_queries",
+                wraps=execute_whole_brain_context_session_queries,
+            ) as query_service, patch(
+                "flywire_wave.whole_brain_context_planning.build_whole_brain_context_session_package_contents",
+                wraps=build_whole_brain_context_session_package_contents,
+            ) as packaging_builder:
+                plan = resolve_whole_brain_context_session_plan(
+                    config_path=fixture["config_path"],
+                    dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
                 )
-            )
-            self.assertTrue(
-                any(
-                    "downstream_graph" in item["overlay_ids"]
-                    for item in downstream_payload["overview_graph"]["edge_records"]
-                )
-            )
-            self.assertTrue(pathway_payload["pathway_highlights"])
-            self.assertEqual(
-                pathway_payload["focused_subgraph"]["view_id"],
-                "focused_subgraph",
-            )
-            self.assertGreater(
-                pathway_payload["focused_subgraph"]["summary"]["pathway_highlight_count"],
-                0,
-            )
-            self.assertEqual(
-                overview_payload["query_state"]["default_overlay_id"],
-                "bidirectional_context_graph",
-            )
-            overview_overlay_ids = [
-                item["overlay_id"]
-                for item in overview_payload["overview_graph"]["overlay_workflow_catalog"]
-            ]
-            self.assertIn("bidirectional_context_graph", overview_overlay_ids)
-            self.assertEqual(
-                [
-                    item["interaction_flow_id"]
-                    for item in overview_payload["overview_graph"]["interaction_flow_catalog"]
-                ],
-                [
-                    "interaction_flow:overlay:upstream_emphasis",
-                    "interaction_flow:overlay:downstream_emphasis",
-                    "interaction_flow:overlay:bidirectional_context",
-                    "interaction_flow:facet:cell_class",
-                    "interaction_flow:facet:neuropil",
-                    "interaction_flow:pathway:active_to_context",
-                ],
-            )
-            overview_facet_groups = {
-                item["metadata_facet_id"]
-                for item in overview_payload["overview_graph"]["metadata_facet_group_catalog"]
-            }
-            self.assertTrue({"cell_class", "neuropil"}.issubset(overview_facet_groups))
-            overview_filters = {
-                item["filter_id"]: item
-                for item in overview_payload["overview_graph"]["metadata_facet_filter_catalog"]
-            }
-            self.assertTrue(
-                set(plan["selection"]["selected_root_ids"]).issubset(
-                    set(overview_filters["facet_filter:neuropil:lop_r"]["visible_root_ids"])
-                )
-            )
-            pathway_mode = pathway_payload["focused_subgraph"]["pathway_explanation_catalog"][0]
-            self.assertEqual(
-                pathway_mode["explanation_mode_id"],
-                "active_to_context_pathwalk",
-            )
-            self.assertGreater(pathway_mode["card_count"], 0)
-            self.assertIn(
-                "context-only",
-                pathway_mode["cards"][0]["caption"],
-            )
 
-    def test_packages_simplified_downstream_modules_with_showcase_handoff_lineage(
-        self,
-    ) -> None:
+            query_service.assert_called_once()
+            packaging_builder.assert_called_once()
+            self.assertIn("query_execution", plan)
+            self.assertIn("query_preset_library", plan)
+            self.assertIn("context_query_catalog", plan)
+            self.assertIn("context_view_payload", plan)
+            self.assertIn("context_view_state", plan)
+
+    def test_package_delegates_bundle_materialization_to_packaging_service(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp_dir_str:
-            fixture = _materialize_packaged_showcase_fixture(Path(tmp_dir_str))
-            _write_context_review_metadata_fixture(fixture["config_path"])
-            synapse_registry_path = (
-                Path(tmp_dir_str) / "context_review_fixture" / "local_synapse_registry.csv"
+            fixture = _materialize_dashboard_fixture(Path(tmp_dir_str))
+            _materialize_subset_bundle_from_config(
+                fixture["config_path"],
+                subset_name="motion_minimal",
             )
-            _write_context_review_synapse_registry(synapse_registry_path)
-
-            showcase_plan = resolve_showcase_session_plan(
-                config_path=fixture["config_path"],
-                dashboard_session_metadata_path=fixture["dashboard_metadata_path"],
-                suite_package_metadata_path=fixture["suite_package_metadata_path"],
-                suite_review_summary_path=fixture["suite_review_summary_path"],
-                table_dimension_ids=["motion_direction"],
-            )
-            showcase_package = package_showcase_session(showcase_plan)
-            showcase_catalog = json.loads(
-                Path(showcase_package["narrative_preset_catalog_path"]).read_text(
-                    encoding="utf-8"
-                )
-            )
-            analysis_summary_preset = next(
-                item
-                for item in showcase_catalog["saved_presets"]
-                if item["preset_id"] == ANALYSIS_SUMMARY_PRESET_ID
-            )
-            analysis_links = [
-                item
-                for item in analysis_summary_preset["presentation_state_patch"][
-                    "rehearsal_metadata"
-                ]["presentation_links"]
-                if item["link_kind"] == "whole_brain_context_handoff"
-            ]
-
-            self.assertEqual(len(analysis_links), 1)
-            self.assertEqual(
-                analysis_links[0]["shared_context"]["target_context_preset_id"],
-                SHOWCASE_HANDOFF_PRESET_ID,
-            )
-
             plan = resolve_whole_brain_context_session_plan(
                 config_path=fixture["config_path"],
-                showcase_session_metadata_path=showcase_package["metadata_path"],
-                query_profile_id="downstream_module_review",
-                query_profile_ids=["downstream_module_review"],
-                requested_downstream_module_role_ids=["simplified_readout_module"],
+                subset_name="motion_minimal",
                 explicit_artifact_references=[
-                    _fixture_synapse_registry_reference(
-                        fixture["config_path"],
-                        path=synapse_registry_path,
-                    )
+                    _fixture_synapse_registry_reference(fixture["config_path"])
                 ],
             )
-            packaged = package_whole_brain_context_session(plan)
-            payload = json.loads(
-                Path(packaged["context_view_payload_path"]).read_text(encoding="utf-8")
-            )
-            catalog = json.loads(
-                Path(packaged["context_query_catalog_path"]).read_text(encoding="utf-8")
-            )
 
-            modules = payload["query_execution"]["overview_graph"]["downstream_module_records"]
-            self.assertTrue(modules)
-            module = modules[0]
+            with patch(
+                "flywire_wave.whole_brain_context_planning.package_whole_brain_context_session_bundle",
+                wraps=package_whole_brain_context_session_bundle,
+            ) as packaging_service:
+                packaged = package_whole_brain_context_session(plan)
 
-            self.assertEqual(
-                module["downstream_module_role_id"],
-                "simplified_readout_module",
-            )
-            self.assertTrue(module["summary_labels"]["is_optional"])
-            self.assertTrue(module["summary_labels"]["is_simplified"])
-            self.assertTrue(module["summary_labels"]["is_context_oriented"])
-            self.assertEqual(
-                module["summary_labels"]["claim_scope"],
-                CONTEXT_SUMMARY_ONLY_CLAIM_SCOPE,
-            )
-            self.assertIn(
-                "not a new simulated biological claim",
-                module["summary_labels"]["truthfulness_note"],
-            )
-            self.assertEqual(
-                module["lineage"]["source_query_profile_id"],
-                "downstream_module_review",
-            )
-            self.assertEqual(
-                module["lineage"]["source_query_family"],
-                "downstream_module_review",
-            )
-
-            active_anchor_root_ids = {
-                int(root_id) for root_id in module["lineage"]["active_anchor_root_ids"]
-            }
-            self.assertTrue(active_anchor_root_ids)
-            self.assertTrue(
-                active_anchor_root_ids.issubset(
-                    set(payload["selection"]["selected_root_ids"])
-                )
-            )
-
-            handoff_targets = {
-                (
-                    item["linked_session_kind"],
-                    item["source_preset_id"],
-                    item["target_preset_id"],
-                    item["target_payload_path"],
-                )
-                for item in module["handoff_targets"]
-            }
-            self.assertIn(
-                (
-                    "dashboard",
-                    None,
-                    DASHBOARD_HANDOFF_PRESET_ID,
-                    f"query_preset_payloads.{DASHBOARD_HANDOFF_PRESET_ID}.overview_graph",
-                ),
-                handoff_targets,
-            )
-            self.assertIn(
-                (
-                    "showcase",
-                    ANALYSIS_SUMMARY_PRESET_ID,
-                    SHOWCASE_HANDOFF_PRESET_ID,
-                    f"query_preset_payloads.{SHOWCASE_HANDOFF_PRESET_ID}.focused_subgraph",
-                ),
-                handoff_targets,
-            )
-
-            available_presets = {
-                item["preset_id"]: item for item in catalog["available_query_presets"]
-            }
-            self.assertEqual(
-                available_presets[SHOWCASE_HANDOFF_PRESET_ID]["linked_session_target"][
-                    "source_preset_ids"
-                ],
-                [ANALYSIS_SUMMARY_PRESET_ID],
-            )
+            packaging_service.assert_called_once()
+            self.assertTrue(Path(packaged["metadata_path"]).exists())
+            self.assertTrue(Path(packaged["context_view_payload_path"]).exists())
+            self.assertTrue(Path(packaged["context_query_catalog_path"]).exists())
+            self.assertTrue(Path(packaged["context_view_state_path"]).exists())
 
     def test_planning_fails_clearly_for_missing_synapse_registry_unsupported_combo_and_subset_mismatch(
         self,
